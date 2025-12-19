@@ -1015,6 +1015,219 @@ def generate_comet_full_html(comet_data: dict, scale: float = 0.8) -> str:
 # Table Transformer로 테이블 영역 감지 → 각 영역별 Comet OCR
 # ============================================================
 
+def detect_table_regions_by_lines(img: Image.Image, min_area_ratio: float = 0.02,
+                                    line_threshold: int = 50) -> list:
+    """
+    굵은 수평선을 기준으로 테이블 영역 분할
+    WORKSHEET처럼 두꺼운 가로선으로 구분된 영역을 찾음
+
+    Args:
+        img: PIL Image
+        min_area_ratio: 최소 영역 비율 (페이지 대비)
+        line_threshold: 선 감지 임계값
+
+    Returns:
+        감지된 테이블 영역 리스트 [{"box": [x1,y1,x2,y2], "score": 0.9}, ...]
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return []
+
+    # PIL → OpenCV
+    img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+
+    # 이진화 (검은 선 감지)
+    _, binary = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
+
+    # 굵은 수평선 감지 (페이지 너비의 30% 이상)
+    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (w // 3, 3))
+    horizontal_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, horizontal_kernel)
+
+    # 수평선의 Y 좌표 찾기
+    row_sums = np.sum(horizontal_lines, axis=1)
+    threshold = w * 128  # 수평선 감지 임계값
+
+    line_y_positions = []
+    in_line = False
+    line_start = 0
+
+    for y in range(h):
+        if row_sums[y] > threshold:
+            if not in_line:
+                line_start = y
+                in_line = True
+        else:
+            if in_line:
+                line_center = (line_start + y) // 2
+                line_y_positions.append(line_center)
+                in_line = False
+
+    # 페이지 경계 추가
+    if not line_y_positions or line_y_positions[0] > 50:
+        line_y_positions.insert(0, 0)
+    if not line_y_positions or line_y_positions[-1] < h - 50:
+        line_y_positions.append(h)
+
+    # 인접한 선 병합 (30픽셀 이내)
+    merged_lines = []
+    for y in line_y_positions:
+        if not merged_lines or y - merged_lines[-1] > 30:
+            merged_lines.append(y)
+    line_y_positions = merged_lines
+
+    # 수평선 사이 영역을 테이블로 분할
+    regions = []
+    min_height = h * 0.05  # 최소 높이 5%
+
+    for i in range(len(line_y_positions) - 1):
+        y1 = line_y_positions[i]
+        y2 = line_y_positions[i + 1]
+
+        # 최소 높이 체크
+        if y2 - y1 < min_height:
+            continue
+
+        # 좌우 여백 감지 (내용이 있는 영역 찾기)
+        region_binary = binary[y1:y2, :]
+        col_sums = np.sum(region_binary, axis=0)
+        content_cols = np.where(col_sums > 0)[0]
+
+        if len(content_cols) == 0:
+            continue
+
+        x1 = max(0, content_cols[0] - 10)
+        x2 = min(w, content_cols[-1] + 10)
+
+        # 최소 너비 체크
+        if x2 - x1 < w * 0.1:
+            continue
+
+        regions.append({
+            "box": [int(x1), int(y1), int(x2), int(y2)],
+            "score": 0.9,
+            "label": "table_by_hlines"
+        })
+
+    return regions
+
+
+def detect_table_regions_by_thick_lines(img: Image.Image) -> list:
+    """
+    두꺼운 검은 박스 테두리로 구분된 영역 감지
+    내부 컨투어(RETR_CCOMP)를 사용하여 박스 안의 영역 찾기
+
+    Args:
+        img: PIL Image
+
+    Returns:
+        감지된 테이블 영역 리스트
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return []
+
+    # PIL → OpenCV
+    img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+
+    # 이진화
+    _, binary = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)
+
+    # 두꺼운 선만 남기기 위해 erosion 후 dilation
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    thick_lines = cv2.erode(binary, kernel, iterations=1)
+    thick_lines = cv2.dilate(thick_lines, kernel, iterations=2)
+
+    # 내부 컨투어 찾기 (RETR_CCOMP: 2레벨 계층)
+    contours, hierarchy = cv2.findContours(thick_lines, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+
+    if hierarchy is None:
+        return []
+
+    page_area = w * h
+    min_area = page_area * 0.02  # 최소 2%
+    max_area = page_area * 0.8   # 최대 80%
+
+    regions = []
+    for i, contour in enumerate(contours):
+        # 내부 컨투어만 선택 (parent가 있는 컨투어)
+        if hierarchy[0][i][3] == -1:  # 외부 컨투어
+            continue
+
+        x, y, cw, ch = cv2.boundingRect(contour)
+        area = cw * ch
+
+        if area < min_area or area > max_area:
+            continue
+
+        if cw < 100 or ch < 50:
+            continue
+
+        regions.append({
+            "box": [x, y, x + cw, y + ch],
+            "score": 0.85,
+            "label": "table_by_thick_border",
+            "area": area
+        })
+
+    # Y 좌표로 정렬
+    regions.sort(key=lambda r: (r["box"][1], r["box"][0]))
+
+    return regions
+
+
+def detect_table_regions_combined(img: Image.Image, detection_threshold: float = 0.5) -> list:
+    """
+    Table Transformer + 선 기반 감지 조합
+    여러 방식을 시도하여 가장 많은 테이블을 찾는 방식 선택
+
+    Args:
+        img: PIL Image
+        detection_threshold: Table Transformer 임계값
+
+    Returns:
+        감지된 테이블 영역 리스트
+    """
+    results = []
+
+    # 1. Table Transformer 시도
+    if TABLE_TRANSFORMER_AVAILABLE:
+        tt_tables = detect_tables(img, threshold=detection_threshold)
+        results.append(("Table Transformer", tt_tables))
+
+    # 2. 수평선 기반 감지 시도
+    hline_regions = detect_table_regions_by_lines(img)
+    results.append(("Horizontal Lines", hline_regions))
+
+    # 3. 두꺼운 박스 테두리 기반 감지 시도
+    thick_regions = detect_table_regions_by_thick_lines(img)
+    results.append(("Thick Border", thick_regions))
+
+    # 가장 많은 영역을 찾은 방식 선택 (최소 2개 이상)
+    best_method = None
+    best_regions = []
+
+    for method, regions in results:
+        if len(regions) > len(best_regions):
+            best_method = method
+            best_regions = regions
+
+    # 어떤 방식도 2개 이상 찾지 못했으면 Table Transformer 결과 사용
+    if len(best_regions) < 2 and TABLE_TRANSFORMER_AVAILABLE:
+        tt_tables = detect_tables(img, threshold=detection_threshold)
+        if tt_tables:
+            return tt_tables
+
+    return best_regions
+
+
 def extract_comet_with_table_detection(pdf_bytes: bytes, progress_callback=None,
                                         detection_threshold: float = 0.5) -> dict:
     """
@@ -1112,23 +1325,15 @@ def extract_comet_with_table_detection(pdf_bytes: bytes, progress_callback=None,
             "html": page_html
         })
 
-        # 테이블 영역 감지
+        # 테이블 영역 감지 (Table Transformer + 선 기반 감지 조합)
         if progress_callback:
             progress_callback(page_num + 1, total_pages, f"페이지 {page_num + 1} 테이블 영역 감지 중...")
 
-        if TABLE_TRANSFORMER_AVAILABLE:
-            # Table Transformer로 테이블 영역 감지
-            detected_tables = detect_tables(img, threshold=detection_threshold)
-        else:
-            # Table Transformer 없으면 전체 페이지를 하나의 테이블로 처리
-            detected_tables = [{
-                "score": 0.99,
-                "label": "table",
-                "box": [0, 0, img.width, img.height]
-            }]
+        # Table Transformer + 선 기반 감지 조합 사용
+        detected_tables = detect_table_regions_combined(img, detection_threshold)
 
         if not detected_tables:
-            # 테이블이 감지되지 않으면 Y 좌표 클러스터링으로 테이블 영역 추정
+            # 아무것도 감지되지 않으면 Y 좌표 클러스터링으로 테이블 영역 추정
             detected_tables = estimate_table_regions_from_ocr(page_ocr_results, img.width, img.height)
 
         # 각 테이블 영역별로 처리
