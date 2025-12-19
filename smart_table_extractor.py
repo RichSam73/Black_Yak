@@ -1010,6 +1010,453 @@ def generate_comet_full_html(comet_data: dict, scale: float = 0.8) -> str:
     return full_html
 
 
+# ============================================================
+# Comet + Table Transformer 하이브리드 방식
+# Table Transformer로 테이블 영역 감지 → 각 영역별 Comet OCR
+# ============================================================
+
+def extract_comet_with_table_detection(pdf_bytes: bytes, progress_callback=None,
+                                        detection_threshold: float = 0.5) -> dict:
+    """
+    Comet + Table Transformer 하이브리드 방식
+    1. Table Transformer로 테이블 영역(bbox) 감지
+    2. 각 테이블 영역에 대해 Comet OCR 적용
+    3. 테이블별로 구조화된 데이터 반환
+
+    Args:
+        pdf_bytes: PDF 파일 바이트
+        progress_callback: 진행상황 콜백 함수
+        detection_threshold: 테이블 감지 임계값 (기본 0.5)
+
+    Returns:
+        {
+            "tables": [
+                {
+                    "page": 1,
+                    "table_index": 1,
+                    "table_name": "COLOR/SIZE QTY",  # 감지된 테이블 제목
+                    "bbox": [x1, y1, x2, y2],
+                    "confidence": 0.95,
+                    "data": [[...], [...], ...],
+                    "row_count": 10,
+                    "col_count": 5,
+                    "ocr_results": [...]  # 원본 OCR 데이터
+                },
+                ...
+            ],
+            "pages": [...],
+            "comet_html": [...],
+            "total_tables": 5,
+            "extraction_method": "comet_hybrid"
+        }
+    """
+    if not PADDLEOCR_AVAILABLE:
+        return {
+            "tables": [],
+            "error": "PaddleOCR가 설치되지 않았습니다.",
+            "extraction_method": "comet_hybrid"
+        }
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    total_pages = len(doc)
+
+    result = {
+        "tables": [],
+        "pages": [],
+        "comet_html": [],
+        "total_pages": total_pages,
+        "total_tables": 0,
+        "is_ai_extracted": True,
+        "extraction_method": "comet_hybrid",
+        "ocr_engine": "PaddleOCR PP-OCRv5",
+        "table_detector": "Table Transformer" if TABLE_TRANSFORMER_AVAILABLE else "Y-coordinate clustering"
+    }
+
+    table_index_global = 0
+
+    for page_num in range(total_pages):
+        if progress_callback:
+            progress_callback(page_num + 1, total_pages, f"페이지 {page_num + 1}/{total_pages} 처리 중...")
+
+        # PDF 페이지를 이미지로 변환
+        page = doc[page_num]
+        zoom = 2.0
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat)
+        img_bytes = pix.tobytes("png")
+        img = Image.open(io.BytesIO(img_bytes))
+
+        # 전체 페이지 OCR 수행
+        if progress_callback:
+            progress_callback(page_num + 1, total_pages, f"페이지 {page_num + 1} OCR 처리 중...")
+
+        page_ocr_results = ocr_full_image_paddle(img)
+
+        # 이미지 base64 인코딩
+        img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+
+        # 페이지 데이터 저장
+        page_data = {
+            "page": page_num + 1,
+            "image_base64": img_base64,
+            "width": img.width,
+            "height": img.height,
+            "ocr_results": page_ocr_results
+        }
+        result["pages"].append(page_data)
+
+        # Comet HTML 생성
+        page_html = generate_comet_overlay_html(page_data, scale=0.8)
+        result["comet_html"].append({
+            "page": page_num + 1,
+            "html": page_html
+        })
+
+        # 테이블 영역 감지
+        if progress_callback:
+            progress_callback(page_num + 1, total_pages, f"페이지 {page_num + 1} 테이블 영역 감지 중...")
+
+        if TABLE_TRANSFORMER_AVAILABLE:
+            # Table Transformer로 테이블 영역 감지
+            detected_tables = detect_tables(img, threshold=detection_threshold)
+        else:
+            # Table Transformer 없으면 전체 페이지를 하나의 테이블로 처리
+            detected_tables = [{
+                "score": 0.99,
+                "label": "table",
+                "box": [0, 0, img.width, img.height]
+            }]
+
+        if not detected_tables:
+            # 테이블이 감지되지 않으면 Y 좌표 클러스터링으로 테이블 영역 추정
+            detected_tables = estimate_table_regions_from_ocr(page_ocr_results, img.width, img.height)
+
+        # 각 테이블 영역별로 처리
+        for table_idx, table_info in enumerate(detected_tables):
+            table_index_global += 1
+            table_box = table_info["box"]  # [x1, y1, x2, y2]
+            table_score = table_info.get("score", 0.99)
+
+            # 테이블 영역 내의 OCR 결과만 필터링
+            table_ocr = filter_ocr_by_bbox(page_ocr_results, table_box)
+
+            if not table_ocr:
+                continue
+
+            # 테이블 제목 추정 (테이블 영역 위쪽 텍스트)
+            table_name = estimate_table_name(page_ocr_results, table_box)
+
+            # OCR 결과를 행/열 구조로 변환
+            table_data = ocr_to_table_structure(table_ocr, table_box)
+
+            if table_data:
+                result["tables"].append({
+                    "page": page_num + 1,
+                    "table_index": table_idx + 1,
+                    "table_index_global": table_index_global,
+                    "table_name": table_name,
+                    "bbox": table_box,
+                    "confidence": float(table_score),
+                    "data": table_data,
+                    "row_count": len(table_data),
+                    "col_count": max(len(row) for row in table_data) if table_data else 0,
+                    "ocr_results": table_ocr,
+                    "extraction_method": "comet_hybrid"
+                })
+
+    doc.close()
+    result["total_tables"] = len(result["tables"])
+
+    return result
+
+
+def filter_ocr_by_bbox(ocr_results: list, bbox: list, margin: int = 5) -> list:
+    """
+    바운딩 박스 내의 OCR 결과만 필터링
+
+    Args:
+        ocr_results: OCR 결과 리스트
+        bbox: [x1, y1, x2, y2] 테이블 영역
+        margin: 마진 (픽셀)
+
+    Returns:
+        필터링된 OCR 결과
+    """
+    x1, y1, x2, y2 = bbox
+    filtered = []
+
+    for item in ocr_results:
+        box = item["box"]
+        # OCR 박스의 중심점이 테이블 영역 내에 있는지 확인
+        center_x = (box[0] + box[2]) / 2
+        center_y = (box[1] + box[3]) / 2
+
+        if (x1 - margin <= center_x <= x2 + margin and
+            y1 - margin <= center_y <= y2 + margin):
+            # 상대 좌표로 변환
+            filtered.append({
+                "text": item["text"],
+                "box": [
+                    item["box"][0] - x1,  # 상대 x1
+                    item["box"][1] - y1,  # 상대 y1
+                    item["box"][2] - x1,  # 상대 x2
+                    item["box"][3] - y1   # 상대 y2
+                ],
+                "box_absolute": item["box"],  # 절대 좌표 유지
+                "score": item.get("score", 1.0)
+            })
+
+    return filtered
+
+
+def estimate_table_name(ocr_results: list, table_bbox: list, search_height: int = 60) -> str:
+    """
+    테이블 영역 위쪽에서 테이블 제목 추정
+
+    Args:
+        ocr_results: 페이지 전체 OCR 결과
+        table_bbox: 테이블 바운딩 박스 [x1, y1, x2, y2]
+        search_height: 테이블 위쪽 검색 높이 (픽셀)
+
+    Returns:
+        추정된 테이블 제목
+    """
+    x1, y1, x2, y2 = table_bbox
+
+    # 테이블 위쪽 영역에서 텍스트 찾기
+    candidates = []
+    for item in ocr_results:
+        box = item["box"]
+        text_center_y = (box[1] + box[3]) / 2
+        text_center_x = (box[0] + box[2]) / 2
+
+        # 테이블 위쪽 search_height 픽셀 내에 있고, x 범위가 겹치는 텍스트
+        if (y1 - search_height <= text_center_y < y1 and
+            x1 <= text_center_x <= x2):
+            candidates.append({
+                "text": item["text"],
+                "y": box[1]
+            })
+
+    if candidates:
+        # 가장 아래쪽(테이블에 가까운) 텍스트 선택
+        candidates.sort(key=lambda x: x["y"], reverse=True)
+        return candidates[0]["text"]
+
+    return ""
+
+
+def estimate_table_regions_from_ocr(ocr_results: list, page_width: int, page_height: int,
+                                     gap_threshold: int = 50) -> list:
+    """
+    OCR 결과의 Y 좌표 분포를 분석하여 테이블 영역 추정
+    큰 Y 갭이 있으면 테이블 구분으로 판단
+
+    Args:
+        ocr_results: OCR 결과 리스트
+        page_width: 페이지 너비
+        page_height: 페이지 높이
+        gap_threshold: 테이블 구분 갭 임계값 (픽셀)
+
+    Returns:
+        추정된 테이블 영역 리스트
+    """
+    if not ocr_results:
+        return []
+
+    # Y 좌표로 정렬
+    sorted_items = sorted(ocr_results, key=lambda x: x["box"][1])
+
+    # 테이블 영역 그룹화
+    groups = []
+    current_group = [sorted_items[0]]
+
+    for i in range(1, len(sorted_items)):
+        prev_y2 = current_group[-1]["box"][3]  # 이전 항목의 y2
+        curr_y1 = sorted_items[i]["box"][1]     # 현재 항목의 y1
+
+        if curr_y1 - prev_y2 > gap_threshold:
+            # 큰 갭 발견 - 새 그룹 시작
+            groups.append(current_group)
+            current_group = [sorted_items[i]]
+        else:
+            current_group.append(sorted_items[i])
+
+    if current_group:
+        groups.append(current_group)
+
+    # 각 그룹을 테이블 영역으로 변환
+    tables = []
+    for group in groups:
+        if len(group) < 3:  # 최소 3개 텍스트가 있어야 테이블로 간주
+            continue
+
+        # 그룹의 바운딩 박스 계산
+        x1 = min(item["box"][0] for item in group)
+        y1 = min(item["box"][1] for item in group)
+        x2 = max(item["box"][2] for item in group)
+        y2 = max(item["box"][3] for item in group)
+
+        # 마진 추가
+        margin = 10
+        x1 = max(0, x1 - margin)
+        y1 = max(0, y1 - margin)
+        x2 = min(page_width, x2 + margin)
+        y2 = min(page_height, y2 + margin)
+
+        tables.append({
+            "score": 0.9,
+            "label": "table_estimated",
+            "box": [x1, y1, x2, y2]
+        })
+
+    return tables
+
+
+def ocr_to_table_structure(ocr_results: list, table_bbox: list,
+                            y_tolerance: int = 15, x_gap_threshold: int = 30) -> list:
+    """
+    OCR 결과를 테이블 행/열 구조로 변환
+
+    Args:
+        ocr_results: 필터링된 OCR 결과 (상대 좌표)
+        table_bbox: 테이블 바운딩 박스
+        y_tolerance: 같은 행으로 간주할 Y 오차
+        x_gap_threshold: 열 구분을 위한 X 갭 임계값
+
+    Returns:
+        2D 테이블 데이터 [[row1_col1, row1_col2, ...], [row2_col1, ...], ...]
+    """
+    if not ocr_results:
+        return []
+
+    # Y 좌표로 정렬 후 행 그룹화
+    sorted_items = sorted(ocr_results, key=lambda x: (x["box"][1], x["box"][0]))
+
+    rows = []
+    current_row = []
+    current_y = None
+
+    for item in sorted_items:
+        y = item["box"][1]
+
+        if current_y is None:
+            current_y = y
+            current_row = [item]
+        elif abs(y - current_y) <= y_tolerance:
+            current_row.append(item)
+        else:
+            # 새 행 시작 - 현재 행을 X 좌표로 정렬
+            rows.append(sorted(current_row, key=lambda x: x["box"][0]))
+            current_row = [item]
+            current_y = y
+
+    if current_row:
+        rows.append(sorted(current_row, key=lambda x: x["box"][0]))
+
+    # 열 위치 추정 (X 좌표 클러스터링)
+    all_x_positions = []
+    for row in rows:
+        for item in row:
+            all_x_positions.append(item["box"][0])
+
+    if not all_x_positions:
+        return []
+
+    # X 좌표 클러스터링으로 열 경계 찾기
+    column_boundaries = estimate_column_boundaries(all_x_positions, x_gap_threshold)
+
+    # 각 행을 열에 맞춰 정렬
+    table_data = []
+    for row in rows:
+        row_data = assign_to_columns(row, column_boundaries)
+        if any(cell.strip() for cell in row_data):  # 빈 행 제외
+            table_data.append(row_data)
+
+    return table_data
+
+
+def estimate_column_boundaries(x_positions: list, gap_threshold: int = 30) -> list:
+    """
+    X 좌표 리스트에서 열 경계 추정
+
+    Args:
+        x_positions: X 좌표 리스트
+        gap_threshold: 열 구분 갭 임계값
+
+    Returns:
+        열 경계 리스트 [(start, end), ...]
+    """
+    if not x_positions:
+        return []
+
+    sorted_x = sorted(set(x_positions))
+
+    # 클러스터링
+    clusters = []
+    current_cluster = [sorted_x[0]]
+
+    for i in range(1, len(sorted_x)):
+        if sorted_x[i] - sorted_x[i-1] <= gap_threshold:
+            current_cluster.append(sorted_x[i])
+        else:
+            clusters.append(current_cluster)
+            current_cluster = [sorted_x[i]]
+
+    if current_cluster:
+        clusters.append(current_cluster)
+
+    # 각 클러스터의 경계
+    boundaries = []
+    for cluster in clusters:
+        start = min(cluster) - gap_threshold // 2
+        end = max(cluster) + gap_threshold // 2
+        boundaries.append((start, end))
+
+    return boundaries
+
+
+def assign_to_columns(row_items: list, column_boundaries: list) -> list:
+    """
+    행의 항목들을 열에 할당
+
+    Args:
+        row_items: 행의 OCR 항목들
+        column_boundaries: 열 경계 리스트
+
+    Returns:
+        열에 맞춰 정렬된 텍스트 리스트
+    """
+    if not column_boundaries:
+        return [item["text"] for item in row_items]
+
+    # 각 열에 해당하는 텍스트 찾기
+    row_data = [""] * len(column_boundaries)
+
+    for item in row_items:
+        x = item["box"][0]
+        text = item["text"]
+
+        # 가장 가까운 열 찾기
+        best_col = 0
+        min_dist = float('inf')
+
+        for col_idx, (start, end) in enumerate(column_boundaries):
+            col_center = (start + end) / 2
+            dist = abs(x - col_center)
+            if dist < min_dist:
+                min_dist = dist
+                best_col = col_idx
+
+        # 이미 값이 있으면 합치기
+        if row_data[best_col]:
+            row_data[best_col] += " " + text
+        else:
+            row_data[best_col] = text
+
+    return row_data
+
+
 def extract_comet_tables(pdf_bytes: bytes, progress_callback=None) -> dict:
     """
     Comet 방식으로 PDF에서 테이블 데이터 추출

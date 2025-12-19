@@ -38,6 +38,7 @@ try:
         extract_vlm_tables,
         extract_tables_auto,
         extract_comet_tables,
+        extract_comet_with_table_detection,
         extract_ocr_with_coordinates,
         generate_comet_overlay_html,
         generate_comet_full_html,
@@ -55,6 +56,7 @@ except ImportError:
     extract_vlm_tables = None
     extract_tables_auto = None
     extract_comet_tables = None
+    extract_comet_with_table_detection = None
     extract_ocr_with_coordinates = None
     generate_comet_overlay_html = None
     generate_comet_full_html = None
@@ -367,7 +369,7 @@ if uploaded_file is not None:
         # AI 테이블 추출 옵션 (스캔 PDF용)
         st.subheader("🤖 AI 테이블 추출 옵션")
 
-        col_opt1, col_opt2, col_opt3, col_opt4 = st.columns(4)
+        col_opt1, col_opt2, col_opt3, col_opt4, col_opt5 = st.columns(5)
 
         with col_opt1:
             # Comet 방식 최우선 (가장 정확)
@@ -384,6 +386,19 @@ if uploaded_file is not None:
                 st.warning("⚠️ PaddleOCR 미설치")
 
         with col_opt2:
+            # 하이브리드: Comet + Table Detection
+            if COMET_AVAILABLE and TABLE_TRANSFORMER_AVAILABLE:
+                use_hybrid = st.checkbox(
+                    "📊 테이블 구분 추출",
+                    value=False,
+                    help="Table Transformer로 테이블 영역 감지 + Comet OCR. 여러 테이블을 개별적으로 추출"
+                )
+                if use_hybrid:
+                    ai_method = "hybrid"
+            else:
+                st.info("💡 테이블 구분: Table Transformer 필요")
+
+        with col_opt3:
             if VLM_AVAILABLE and ai_method == "none":
                 use_vlm = st.checkbox(
                     "🧠 VLM 추출",
@@ -395,10 +410,10 @@ if uploaded_file is not None:
             elif not VLM_AVAILABLE and ai_method == "none":
                 st.info("💡 VLM: `ollama pull granite3.2-vision`")
 
-        with col_opt3:
+        with col_opt4:
             if AI_TABLE_AVAILABLE and ai_method == "none":
                 use_table_transformer = st.checkbox(
-                    "📊 Table Transformer",
+                    "🔧 Table Transformer",
                     value=False,
                     help="Table Transformer + PaddleOCR (테이블 구조 감지)"
                 )
@@ -407,7 +422,7 @@ if uploaded_file is not None:
             elif not AI_TABLE_AVAILABLE and ai_method == "none":
                 st.info("Table Transformer 미설치")
 
-        with col_opt4:
+        with col_opt5:
             use_ocr = st.checkbox(
                 "🔍 기본 OCR",
                 value=False,
@@ -448,6 +463,42 @@ if uploaded_file is not None:
                     "row_count": table.get("row_count", 0),
                     "col_count": table.get("col_count", 0),
                     "extraction_method": "comet_ocr"
+                })
+
+        elif ai_method == "hybrid" and COMET_AVAILABLE and TABLE_TRANSFORMER_AVAILABLE:
+            # 하이브리드 모드: Table Transformer + Comet OCR
+            progress_placeholder = st.empty()
+
+            def progress_callback(page, total, msg):
+                progress_placeholder.progress(page / total, text=f"📊 테이블 구분 추출 중... {msg}")
+
+            with st.spinner("📊 테이블 구분 추출 중... (Table Transformer + Comet OCR)"):
+                ai_result = extract_comet_with_table_detection(pdf_bytes, progress_callback=progress_callback)
+
+            progress_placeholder.empty()
+
+            # 하이브리드 결과를 ERP 데이터 형식으로 변환
+            erp_data = {
+                "tables": [],
+                "ocr_text": [],
+                "is_scanned": True,
+                "is_ai_extracted": True,
+                "is_hybrid": True,  # 하이브리드 방식 표시
+                "ocr_engine": f"Hybrid ({ai_result.get('ocr_engine', 'PaddleOCR')} + Table Transformer)",
+                "pages": ai_result.get("pages", [])
+            }
+
+            for table in ai_result.get("tables", []):
+                erp_data["tables"].append({
+                    "page": table["page"],
+                    "table_index": table["table_index"],
+                    "table_name": table.get("table_name", f"테이블 {table['table_index']}"),
+                    "data": table["data"],
+                    "confidence": table.get("confidence", 0.95),
+                    "row_count": table.get("row_count", 0),
+                    "col_count": table.get("col_count", 0),
+                    "bbox": table.get("bbox", []),
+                    "extraction_method": "hybrid_table_detection"
                 })
 
         elif ai_method == "vlm" and VLM_AVAILABLE:
@@ -591,6 +642,12 @@ if uploaded_file is not None:
 
                 st.divider()
 
+            # 하이브리드 모드 결과 표시
+            is_hybrid = erp_data.get("is_hybrid", False)
+            if is_hybrid:
+                st.success("📊 테이블 구분 추출 완료 - 개별 테이블이 분리되었습니다!")
+                st.caption("💡 각 테이블은 Table Transformer로 감지된 영역에서 Comet OCR로 추출되었습니다.")
+
             # VLM 필드 정보 표시
             fields = erp_data.get("fields", {})
             if fields:
@@ -626,13 +683,17 @@ if uploaded_file is not None:
                 for table_info in tables:
                     page_num = table_info["page"]
                     table_idx = table_info["table_index"]
+                    table_name = table_info.get("table_name", "")
                     data = table_info["data"]
                     confidence = table_info.get("confidence", 0)
                     row_count = table_info.get("row_count", len(data) if data else 0)
                     col_count = table_info.get("col_count", max(len(row) for row in data) if data else 0)
 
                     # 헤더 표시
-                    header_text = f"### 📄 페이지 {page_num} - 테이블 {table_idx}"
+                    if table_name:
+                        header_text = f"### 📄 페이지 {page_num} - {table_name}"
+                    else:
+                        header_text = f"### 📄 페이지 {page_num} - 테이블 {table_idx}"
                     if is_ai_extracted and confidence:
                         header_text += f" (신뢰도: {confidence:.1%})"
                     st.markdown(header_text)
