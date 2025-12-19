@@ -284,11 +284,12 @@ def ocr_full_image_paddle(image: Image.Image) -> list:
                         if len(poly) >= 4:
                             x_coords = [p[0] for p in poly]
                             y_coords = [p[1] for p in poly]
-                            box = [min(x_coords), min(y_coords), max(x_coords), max(y_coords)]
+                            # numpy int16 → Python int 변환 (JSON 직렬화 호환)
+                            box = [int(min(x_coords)), int(min(y_coords)), int(max(x_coords)), int(max(y_coords))]
                             ocr_results.append({
                                 "text": text,
                                 "box": box,
-                                "score": score
+                                "score": float(score) if hasattr(score, 'item') else score
                             })
             return ocr_results
     except Exception as e:
@@ -733,6 +734,383 @@ def extract_vlm_tables(pdf_bytes: bytes, progress_callback=None, model: str = "g
 # 통합 추출 함수
 # ============================================================
 
+# ============================================================
+# Comet 방식 OCR 오버레이 시스템
+# PDF 원본 이미지 + 투명 OCR 텍스트 레이어 = 선택 가능한 텍스트
+# ============================================================
+
+import base64
+
+
+def extract_ocr_with_coordinates(pdf_bytes: bytes, progress_callback=None, zoom: float = 2.0) -> dict:
+    """
+    Comet 방식: PDF 페이지별로 원본 이미지 + OCR 텍스트 좌표 추출
+
+    Args:
+        pdf_bytes: PDF 파일 바이트
+        progress_callback: 진행상황 콜백 함수 (page, total, message)
+        zoom: 이미지 확대 배율 (기본 2.0)
+
+    Returns:
+        {
+            "pages": [
+                {
+                    "page": 1,
+                    "image_base64": "...",  # PNG 이미지 base64
+                    "width": 1200,
+                    "height": 1600,
+                    "ocr_results": [
+                        {"text": "텍스트", "box": [x1, y1, x2, y2], "score": 0.99},
+                        ...
+                    ]
+                },
+                ...
+            ],
+            "total_pages": 6,
+            "extraction_method": "comet"
+        }
+    """
+    if not PADDLEOCR_AVAILABLE:
+        return {
+            "pages": [],
+            "error": "PaddleOCR가 설치되지 않았습니다.",
+            "extraction_method": "comet"
+        }
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    total_pages = len(doc)
+
+    result = {
+        "pages": [],
+        "total_pages": total_pages,
+        "extraction_method": "comet",
+        "ocr_engine": "PaddleOCR PP-OCRv5"
+    }
+
+    for page_num in range(total_pages):
+        if progress_callback:
+            progress_callback(page_num + 1, total_pages, f"페이지 {page_num + 1}/{total_pages} OCR 처리 중...")
+
+        # PDF 페이지를 이미지로 변환
+        page = doc[page_num]
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat)
+        img_bytes = pix.tobytes("png")
+
+        # 이미지를 PIL Image로 변환
+        img = Image.open(io.BytesIO(img_bytes))
+
+        # PaddleOCR로 텍스트 + 좌표 추출
+        ocr_results = ocr_full_image_paddle(img)
+
+        # 이미지를 base64로 인코딩
+        img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+
+        page_data = {
+            "page": page_num + 1,
+            "image_base64": img_base64,
+            "width": img.width,
+            "height": img.height,
+            "ocr_results": ocr_results
+        }
+
+        result["pages"].append(page_data)
+
+    doc.close()
+    return result
+
+
+def generate_comet_overlay_html(page_data: dict, scale: float = 1.0) -> str:
+    """
+    Comet 방식 HTML 오버레이 생성
+    원본 이미지 위에 투명한 선택 가능 텍스트 레이어 배치
+
+    Args:
+        page_data: extract_ocr_with_coordinates의 페이지 데이터
+        scale: 표시 스케일 (기본 1.0)
+
+    Returns:
+        HTML 문자열 (이미지 + 투명 텍스트 오버레이)
+    """
+    img_base64 = page_data["image_base64"]
+    width = page_data["width"]
+    height = page_data["height"]
+    ocr_results = page_data["ocr_results"]
+    page_num = page_data["page"]
+
+    # 스케일 적용
+    display_width = int(width * scale)
+    display_height = int(height * scale)
+
+    # 텍스트 오버레이 요소 생성
+    text_elements = []
+    for item in ocr_results:
+        text = item["text"]
+        box = item["box"]  # [x1, y1, x2, y2]
+
+        # 좌표 스케일 적용
+        x1 = int(box[0] * scale)
+        y1 = int(box[1] * scale)
+        x2 = int(box[2] * scale)
+        y2 = int(box[3] * scale)
+
+        box_width = x2 - x1
+        box_height = y2 - y1
+
+        # 폰트 크기 계산 (박스 높이 기준)
+        font_size = max(8, int(box_height * 0.8))
+
+        # HTML 특수문자 이스케이프
+        escaped_text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+        text_elements.append(f'''
+            <span style="
+                position: absolute;
+                left: {x1}px;
+                top: {y1}px;
+                width: {box_width}px;
+                height: {box_height}px;
+                font-size: {font_size}px;
+                line-height: {box_height}px;
+                color: transparent;
+                background: transparent;
+                cursor: text;
+                user-select: text;
+                -webkit-user-select: text;
+                overflow: hidden;
+                white-space: nowrap;
+            " data-text="{escaped_text}">{escaped_text}</span>
+        ''')
+
+    # 전체 HTML 생성
+    html = f'''
+    <div class="comet-page-container" style="
+        position: relative;
+        width: {display_width}px;
+        height: {display_height}px;
+        margin: 10px auto;
+        border: 1px solid #ddd;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    ">
+        <!-- 원본 이미지 (배경) -->
+        <img src="data:image/png;base64,{img_base64}"
+             style="
+                 position: absolute;
+                 top: 0;
+                 left: 0;
+                 width: {display_width}px;
+                 height: {display_height}px;
+                 pointer-events: none;
+             "
+             alt="페이지 {page_num}"
+        />
+
+        <!-- OCR 텍스트 오버레이 (투명, 선택 가능) -->
+        <div class="comet-text-layer" style="
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: {display_width}px;
+            height: {display_height}px;
+            z-index: 10;
+        ">
+            {''.join(text_elements)}
+        </div>
+    </div>
+    '''
+
+    return html
+
+
+def generate_comet_full_html(comet_data: dict, scale: float = 0.8) -> str:
+    """
+    전체 PDF에 대한 Comet HTML 생성 (모든 페이지)
+
+    Args:
+        comet_data: extract_ocr_with_coordinates의 전체 결과
+        scale: 표시 스케일 (기본 0.8 = 80%)
+
+    Returns:
+        전체 HTML 문자열
+    """
+    pages = comet_data.get("pages", [])
+    total_pages = comet_data.get("total_pages", len(pages))
+
+    page_htmls = []
+    for page_data in pages:
+        page_html = generate_comet_overlay_html(page_data, scale)
+        page_num = page_data["page"]
+
+        page_htmls.append(f'''
+            <div class="comet-page-wrapper" style="margin-bottom: 20px;">
+                <h3 style="text-align: center; color: #333; margin: 10px 0;">
+                    페이지 {page_num} / {total_pages}
+                </h3>
+                {page_html}
+            </div>
+        ''')
+
+    # 전체 HTML 문서
+    full_html = f'''
+    <!DOCTYPE html>
+    <html lang="ko">
+    <head>
+        <meta charset="UTF-8">
+        <title>Comet OCR 오버레이</title>
+        <style>
+            body {{
+                font-family: 'Malgun Gothic', sans-serif;
+                background-color: #f5f5f5;
+                padding: 20px;
+                margin: 0;
+            }}
+            .comet-header {{
+                text-align: center;
+                padding: 20px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border-radius: 8px;
+                margin-bottom: 20px;
+            }}
+            .comet-info {{
+                text-align: center;
+                color: #666;
+                margin-bottom: 20px;
+            }}
+            .comet-page-wrapper {{
+                background: white;
+                border-radius: 8px;
+                padding: 15px;
+                margin-bottom: 20px;
+            }}
+            /* 텍스트 선택 시 하이라이트 */
+            .comet-text-layer span::selection {{
+                background: rgba(0, 120, 215, 0.3);
+                color: transparent;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="comet-header">
+            <h1>📄 Comet OCR 오버레이 뷰어</h1>
+            <p>텍스트를 드래그하여 선택 → Ctrl+C로 복사</p>
+        </div>
+
+        <div class="comet-info">
+            <p>총 {total_pages} 페이지 | OCR 엔진: PaddleOCR PP-OCRv5</p>
+        </div>
+
+        <div class="comet-pages">
+            {''.join(page_htmls)}
+        </div>
+    </body>
+    </html>
+    '''
+
+    return full_html
+
+
+def extract_comet_tables(pdf_bytes: bytes, progress_callback=None) -> dict:
+    """
+    Comet 방식으로 PDF에서 테이블 데이터 추출
+    OCR 결과를 구조화하여 테이블 형태로 반환
+
+    Args:
+        pdf_bytes: PDF 파일 바이트
+        progress_callback: 진행상황 콜백
+
+    Returns:
+        테이블 추출 결과 (기존 형식과 호환)
+    """
+    # OCR 좌표 추출
+    comet_data = extract_ocr_with_coordinates(pdf_bytes, progress_callback)
+
+    if "error" in comet_data:
+        return {
+            "tables": [],
+            "error": comet_data["error"],
+            "is_ai_extracted": True,
+            "extraction_method": "comet"
+        }
+
+    result = {
+        "tables": [],
+        "pages": [],
+        "comet_html": [],  # Comet HTML 오버레이
+        "is_ai_extracted": True,
+        "total_pages": comet_data["total_pages"],
+        "extraction_method": "comet",
+        "ocr_engine": comet_data.get("ocr_engine", "PaddleOCR")
+    }
+
+    for page_data in comet_data["pages"]:
+        page_num = page_data["page"]
+        ocr_results = page_data["ocr_results"]
+
+        # Comet HTML 오버레이 생성
+        page_html = generate_comet_overlay_html(page_data, scale=0.8)
+        result["comet_html"].append({
+            "page": page_num,
+            "html": page_html
+        })
+
+        # OCR 결과를 행/열 구조로 정리 (기존 호환)
+        if ocr_results:
+            # Y 좌표로 행 그룹화
+            sorted_items = sorted(ocr_results, key=lambda x: (x["box"][1], x["box"][0]))
+
+            rows = []
+            current_row = []
+            current_y = None
+            y_tolerance = 15  # 같은 행으로 간주할 Y 오차
+
+            for item in sorted_items:
+                y = item["box"][1]
+
+                if current_y is None:
+                    current_y = y
+                    current_row = [item]
+                elif abs(y - current_y) <= y_tolerance:
+                    current_row.append(item)
+                else:
+                    # 새 행 시작
+                    rows.append(sorted(current_row, key=lambda x: x["box"][0]))
+                    current_row = [item]
+                    current_y = y
+
+            if current_row:
+                rows.append(sorted(current_row, key=lambda x: x["box"][0]))
+
+            # 테이블 데이터 생성
+            table_data = []
+            for row in rows:
+                row_texts = [item["text"] for item in row]
+                if any(row_texts):  # 빈 행 제외
+                    table_data.append(row_texts)
+
+            if table_data:
+                result["tables"].append({
+                    "page": page_num,
+                    "table_index": 1,
+                    "confidence": 0.99,  # OCR 기반이므로 높은 신뢰도
+                    "data": table_data,
+                    "row_count": len(table_data),
+                    "col_count": max(len(row) for row in table_data) if table_data else 0,
+                    "extraction_method": "comet_ocr"
+                })
+
+        # 페이지별 원본 데이터 저장
+        result["pages"].append({
+            "page": page_num,
+            "ocr_results": ocr_results,
+            "image_base64": page_data["image_base64"],
+            "width": page_data["width"],
+            "height": page_data["height"]
+        })
+
+    return result
+
+
 def extract_tables_auto(pdf_bytes: bytes, progress_callback=None, method: str = "auto") -> dict:
     """
     자동으로 최적의 방법으로 테이블 추출
@@ -741,7 +1119,8 @@ def extract_tables_auto(pdf_bytes: bytes, progress_callback=None, method: str = 
         pdf_bytes: PDF 파일 바이트
         progress_callback: 진행상황 콜백
         method: 추출 방법
-            - "auto": 자동 선택 (VLM > Table Transformer)
+            - "auto": 자동 선택 (Comet > Table Transformer)
+            - "comet": Comet 방식 (OCR 오버레이) - 권장
             - "vlm": VLM(Granite3.2-vision) 사용
             - "table_transformer": Table Transformer + OCR 사용
 
@@ -749,19 +1128,23 @@ def extract_tables_auto(pdf_bytes: bytes, progress_callback=None, method: str = 
         추출 결과 딕셔너리
     """
     if method == "auto":
-        # VLM 사용 가능하면 VLM 우선
-        if OLLAMA_AVAILABLE and check_ollama_model("granite3.2-vision"):
+        # Comet 방식 우선 (가장 정확)
+        if PADDLEOCR_AVAILABLE:
+            method = "comet"
+        elif OLLAMA_AVAILABLE and check_ollama_model("granite3.2-vision"):
             method = "vlm"
         elif TABLE_TRANSFORMER_AVAILABLE:
             method = "table_transformer"
         else:
             return {
                 "tables": [],
-                "error": "사용 가능한 추출 방법이 없습니다. Ollama 또는 Table Transformer를 설치해주세요.",
+                "error": "사용 가능한 추출 방법이 없습니다. PaddleOCR, Ollama 또는 Table Transformer를 설치해주세요.",
                 "is_ai_extracted": False
             }
 
-    if method == "vlm":
+    if method == "comet":
+        return extract_comet_tables(pdf_bytes, progress_callback)
+    elif method == "vlm":
         return extract_vlm_tables(pdf_bytes, progress_callback)
     else:
         return extract_smart_tables(pdf_bytes, progress_callback)

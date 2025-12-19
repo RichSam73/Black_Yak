@@ -31,11 +31,16 @@ except ImportError:
 # AI 테이블 추출 (smart_table_extractor) 설정
 AI_TABLE_AVAILABLE = False
 VLM_AVAILABLE = False
+COMET_AVAILABLE = False
 try:
     from smart_table_extractor import (
         extract_smart_tables,
         extract_vlm_tables,
         extract_tables_auto,
+        extract_comet_tables,
+        extract_ocr_with_coordinates,
+        generate_comet_overlay_html,
+        generate_comet_full_html,
         is_scanned_pdf,
         check_ollama_model,
         PADDLEOCR_AVAILABLE,
@@ -44,10 +49,15 @@ try:
     )
     AI_TABLE_AVAILABLE = TABLE_TRANSFORMER_AVAILABLE and (PADDLEOCR_AVAILABLE or OCR_AVAILABLE)
     VLM_AVAILABLE = OLLAMA_AVAILABLE and check_ollama_model("granite3.2-vision")
+    COMET_AVAILABLE = PADDLEOCR_AVAILABLE
 except ImportError:
     extract_smart_tables = None
     extract_vlm_tables = None
     extract_tables_auto = None
+    extract_comet_tables = None
+    extract_ocr_with_coordinates = None
+    generate_comet_overlay_html = None
+    generate_comet_full_html = None
     is_scanned_pdf = None
     check_ollama_model = None
     PADDLEOCR_AVAILABLE = False
@@ -357,23 +367,35 @@ if uploaded_file is not None:
         # AI 테이블 추출 옵션 (스캔 PDF용)
         st.subheader("🤖 AI 테이블 추출 옵션")
 
-        col_opt1, col_opt2, col_opt3 = st.columns(3)
+        col_opt1, col_opt2, col_opt3, col_opt4 = st.columns(4)
 
         with col_opt1:
-            # VLM 우선, 그 다음 Table Transformer
+            # Comet 방식 최우선 (가장 정확)
             ai_method = "none"
-            if VLM_AVAILABLE:
-                use_vlm = st.checkbox(
-                    "🧠 VLM 추출 (권장)",
+            if COMET_AVAILABLE:
+                use_comet = st.checkbox(
+                    "☄️ Comet 추출 (권장)",
                     value=True,
-                    help="Granite3.2-vision VLM으로 문서를 이해하여 추출 (Perplexity Comet 방식)"
+                    help="OCR 오버레이 방식 - 100% 정확한 텍스트 추출. 원본 이미지 위에 선택 가능한 텍스트 레이어 배치"
+                )
+                if use_comet:
+                    ai_method = "comet"
+            else:
+                st.warning("⚠️ PaddleOCR 미설치")
+
+        with col_opt2:
+            if VLM_AVAILABLE and ai_method == "none":
+                use_vlm = st.checkbox(
+                    "🧠 VLM 추출",
+                    value=False,
+                    help="Granite3.2-vision VLM으로 문서를 이해하여 추출 (AI 추론 기반)"
                 )
                 if use_vlm:
                     ai_method = "vlm"
-            else:
-                st.info("💡 VLM 사용하려면: `ollama pull granite3.2-vision`")
+            elif not VLM_AVAILABLE and ai_method == "none":
+                st.info("💡 VLM: `ollama pull granite3.2-vision`")
 
-        with col_opt2:
+        with col_opt3:
             if AI_TABLE_AVAILABLE and ai_method == "none":
                 use_table_transformer = st.checkbox(
                     "📊 Table Transformer",
@@ -382,10 +404,10 @@ if uploaded_file is not None:
                 )
                 if use_table_transformer:
                     ai_method = "table_transformer"
-            elif not AI_TABLE_AVAILABLE:
+            elif not AI_TABLE_AVAILABLE and ai_method == "none":
                 st.info("Table Transformer 미설치")
 
-        with col_opt3:
+        with col_opt4:
             use_ocr = st.checkbox(
                 "🔍 기본 OCR",
                 value=False,
@@ -393,8 +415,43 @@ if uploaded_file is not None:
             ) if OCR_AVAILABLE and ai_method == "none" else False
 
         # ERP 데이터 추출
-        if ai_method == "vlm" and VLM_AVAILABLE:
-            # VLM 추출 모드 (Comet 방식)
+        if ai_method == "comet" and COMET_AVAILABLE:
+            # Comet 추출 모드 (OCR 오버레이 - 100% 정확)
+            progress_placeholder = st.empty()
+
+            def progress_callback(page, total, msg):
+                progress_placeholder.progress(page / total, text=f"☄️ Comet OCR 처리 중... {msg}")
+
+            with st.spinner("☄️ Comet 추출 중... (PaddleOCR로 정확한 텍스트 추출)"):
+                ai_result = extract_comet_tables(pdf_bytes, progress_callback=progress_callback)
+
+            progress_placeholder.empty()
+
+            # AI 결과를 ERP 데이터 형식으로 변환
+            erp_data = {
+                "tables": [],
+                "ocr_text": [],
+                "is_scanned": True,
+                "is_ai_extracted": True,
+                "is_comet": True,  # Comet 방식 표시
+                "ocr_engine": f"Comet ({ai_result.get('ocr_engine', 'PaddleOCR')})",
+                "comet_html": ai_result.get("comet_html", []),  # HTML 오버레이
+                "pages": ai_result.get("pages", [])  # 원본 페이지 데이터
+            }
+
+            for table in ai_result.get("tables", []):
+                erp_data["tables"].append({
+                    "page": table["page"],
+                    "table_index": table["table_index"],
+                    "data": table["data"],
+                    "confidence": table.get("confidence", 0.99),
+                    "row_count": table.get("row_count", 0),
+                    "col_count": table.get("col_count", 0),
+                    "extraction_method": "comet_ocr"
+                })
+
+        elif ai_method == "vlm" and VLM_AVAILABLE:
+            # VLM 추출 모드
             progress_placeholder = st.empty()
 
             def progress_callback(page, total, msg):
@@ -478,6 +535,61 @@ if uploaded_file is not None:
             is_scanned = erp_data.get("is_scanned", False)
             is_ai_extracted = erp_data.get("is_ai_extracted", False)
             ocr_engine = erp_data.get("ocr_engine", "")
+
+            # Comet 오버레이 뷰어 표시
+            is_comet = erp_data.get("is_comet", False)
+            if is_comet:
+                st.success("☄️ Comet OCR 오버레이 완료 - 텍스트를 드래그하여 선택/복사 가능!")
+
+                # Comet HTML 다운로드 버튼
+                comet_pages = erp_data.get("pages", [])
+                if comet_pages:
+                    # 전체 HTML 생성
+                    comet_data = {
+                        "pages": comet_pages,
+                        "total_pages": len(comet_pages)
+                    }
+                    full_html = generate_comet_full_html(comet_data, scale=0.7)
+
+                    st.download_button(
+                        "📥 Comet HTML 다운로드 (선택 가능 텍스트)",
+                        data=full_html,
+                        file_name=f"{pdf_name}_comet_overlay.html",
+                        mime="text/html",
+                        help="HTML 파일을 브라우저에서 열면 텍스트를 선택/복사할 수 있습니다"
+                    )
+
+                # 각 페이지 오버레이 미리보기
+                st.markdown("### 📄 Comet 오버레이 미리보기")
+                st.caption("💡 아래는 미리보기입니다. HTML 다운로드 후 브라우저에서 열면 텍스트 선택이 가능합니다.")
+
+                for page_data in comet_pages[:3]:  # 처음 3페이지만 미리보기
+                    page_num = page_data["page"]
+                    img_base64 = page_data["image_base64"]
+
+                    with st.expander(f"페이지 {page_num} 미리보기", expanded=(page_num == 1)):
+                        # 이미지만 표시 (Streamlit에서는 HTML 오버레이 직접 불가)
+                        st.image(
+                            f"data:image/png;base64,{img_base64}",
+                            caption=f"페이지 {page_num}",
+                            use_container_width=True
+                        )
+
+                        # OCR 결과 텍스트도 표시
+                        ocr_results = page_data.get("ocr_results", [])
+                        if ocr_results:
+                            all_text = " ".join([item["text"] for item in ocr_results])
+                            st.text_area(
+                                f"OCR 추출 텍스트 (페이지 {page_num})",
+                                value=all_text,
+                                height=100,
+                                key=f"comet_text_{page_num}"
+                            )
+
+                if len(comet_pages) > 3:
+                    st.info(f"... 외 {len(comet_pages) - 3}페이지 더 있음. HTML 다운로드로 전체 확인")
+
+                st.divider()
 
             # VLM 필드 정보 표시
             fields = erp_data.get("fields", {})
