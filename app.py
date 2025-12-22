@@ -44,6 +44,8 @@ try:
         generate_comet_full_html,
         is_scanned_pdf,
         check_ollama_model,
+        extract_smart_unified,  # 통합 스마트 추출 함수
+        extract_text_with_coordinates,  # 텍스트 PDF 직접 추출
         PADDLEOCR_AVAILABLE,
         TABLE_TRANSFORMER_AVAILABLE,
         OLLAMA_AVAILABLE
@@ -51,6 +53,7 @@ try:
     AI_TABLE_AVAILABLE = TABLE_TRANSFORMER_AVAILABLE and (PADDLEOCR_AVAILABLE or OCR_AVAILABLE)
     VLM_AVAILABLE = OLLAMA_AVAILABLE and check_ollama_model("granite3.2-vision")
     COMET_AVAILABLE = PADDLEOCR_AVAILABLE
+    SMART_UNIFIED_AVAILABLE = PADDLEOCR_AVAILABLE or True  # PyMuPDF는 항상 사용 가능
 except ImportError:
     extract_smart_tables = None
     extract_vlm_tables = None
@@ -62,9 +65,12 @@ except ImportError:
     generate_comet_full_html = None
     is_scanned_pdf = None
     check_ollama_model = None
+    extract_smart_unified = None
+    extract_text_with_coordinates = None
     PADDLEOCR_AVAILABLE = False
     TABLE_TRANSFORMER_AVAILABLE = False
     OLLAMA_AVAILABLE = False
+    SMART_UNIFIED_AVAILABLE = False
 
 st.set_page_config(
     page_title="PDF 요소별 추출기",
@@ -366,37 +372,37 @@ if uploaded_file is not None:
 
         st.divider()
 
-        # AI 테이블 추출 옵션 (스캔 PDF용)
-        st.subheader("🤖 AI 테이블 추출 옵션")
+        # AI 테이블 추출 옵션 (통합)
+        st.subheader("🤖 스마트 테이블 추출")
 
-        col_opt1, col_opt2, col_opt3, col_opt4, col_opt5 = st.columns(5)
+        col_opt1, col_opt2, col_opt3 = st.columns(3)
 
         with col_opt1:
-            # Comet 방식 최우선 (가장 정확)
+            # 통합 스마트 추출 (권장)
             ai_method = "none"
-            if COMET_AVAILABLE:
-                use_comet = st.checkbox(
-                    "☄️ Comet 추출 (권장)",
+            if SMART_UNIFIED_AVAILABLE:
+                use_smart = st.checkbox(
+                    "✨ 스마트 추출 (권장)",
                     value=True,
-                    help="OCR 오버레이 방식 - 100% 정확한 텍스트 추출. 원본 이미지 위에 선택 가능한 텍스트 레이어 배치"
+                    help="자동 PDF 타입 감지: 텍스트 PDF→직접 추출(100% 정확), 스캔 PDF→OCR"
                 )
-                if use_comet:
-                    ai_method = "comet"
+                if use_smart:
+                    ai_method = "smart_unified"
             else:
-                st.warning("⚠️ PaddleOCR 미설치")
+                st.warning("⚠️ 스마트 추출 불가")
 
         with col_opt2:
-            # 하이브리드: Comet + Table Detection
-            if COMET_AVAILABLE and TABLE_TRANSFORMER_AVAILABLE:
-                use_hybrid = st.checkbox(
-                    "📊 테이블 구분 추출",
-                    value=False,
-                    help="Table Transformer로 테이블 영역 감지 + Comet OCR. 여러 테이블을 개별적으로 추출"
+            # 테이블 분리 옵션 (smart_unified 선택 시)
+            if ai_method == "smart_unified" and TABLE_TRANSFORMER_AVAILABLE:
+                separate_tables = st.checkbox(
+                    "📊 테이블 개별 분리",
+                    value=True,
+                    help="Table Transformer + 격자선 감지로 여러 테이블을 개별 추출"
                 )
-                if use_hybrid:
-                    ai_method = "hybrid"
             else:
-                st.info("💡 테이블 구분: Table Transformer 필요")
+                separate_tables = True
+                if ai_method == "smart_unified":
+                    st.info("💡 테이블 분리: Table Transformer 필요")
 
         with col_opt3:
             if VLM_AVAILABLE and ai_method == "none":
@@ -410,81 +416,41 @@ if uploaded_file is not None:
             elif not VLM_AVAILABLE and ai_method == "none":
                 st.info("💡 VLM: `ollama pull granite3.2-vision`")
 
-        with col_opt4:
-            if AI_TABLE_AVAILABLE and ai_method == "none":
-                use_table_transformer = st.checkbox(
-                    "🔧 Table Transformer",
-                    value=False,
-                    help="Table Transformer + PaddleOCR (테이블 구조 감지)"
-                )
-                if use_table_transformer:
-                    ai_method = "table_transformer"
-            elif not AI_TABLE_AVAILABLE and ai_method == "none":
-                st.info("Table Transformer 미설치")
-
-        with col_opt5:
+        # 추가 옵션 (필요 시)
+        use_ocr = False
+        if ai_method == "none" and OCR_AVAILABLE:
             use_ocr = st.checkbox(
                 "🔍 기본 OCR",
                 value=False,
                 help="테이블이 감지되지 않는 경우 OCR로 텍스트만 추출합니다."
-            ) if OCR_AVAILABLE and ai_method == "none" else False
+            )
 
         # ERP 데이터 추출
-        if ai_method == "comet" and COMET_AVAILABLE:
-            # Comet 추출 모드 (OCR 오버레이 - 100% 정확)
+        if ai_method == "smart_unified" and SMART_UNIFIED_AVAILABLE:
+            # 통합 스마트 추출 모드 (자동 PDF 타입 감지)
             progress_placeholder = st.empty()
 
             def progress_callback(page, total, msg):
-                progress_placeholder.progress(page / total, text=f"☄️ Comet OCR 처리 중... {msg}")
+                progress_placeholder.progress(page / total if total > 0 else 0, text=f"✨ 스마트 추출 중... {msg}")
 
-            with st.spinner("☄️ Comet 추출 중... (PaddleOCR로 정확한 텍스트 추출)"):
-                ai_result = extract_comet_tables(pdf_bytes, progress_callback=progress_callback)
-
-            progress_placeholder.empty()
-
-            # AI 결과를 ERP 데이터 형식으로 변환
-            erp_data = {
-                "tables": [],
-                "ocr_text": [],
-                "is_scanned": True,
-                "is_ai_extracted": True,
-                "is_comet": True,  # Comet 방식 표시
-                "ocr_engine": f"Comet ({ai_result.get('ocr_engine', 'PaddleOCR')})",
-                "comet_html": ai_result.get("comet_html", []),  # HTML 오버레이
-                "pages": ai_result.get("pages", [])  # 원본 페이지 데이터
-            }
-
-            for table in ai_result.get("tables", []):
-                erp_data["tables"].append({
-                    "page": table["page"],
-                    "table_index": table["table_index"],
-                    "data": table["data"],
-                    "confidence": table.get("confidence", 0.99),
-                    "row_count": table.get("row_count", 0),
-                    "col_count": table.get("col_count", 0),
-                    "extraction_method": "comet_ocr"
-                })
-
-        elif ai_method == "hybrid" and COMET_AVAILABLE and TABLE_TRANSFORMER_AVAILABLE:
-            # 하이브리드 모드: Table Transformer + Comet OCR
-            progress_placeholder = st.empty()
-
-            def progress_callback(page, total, msg):
-                progress_placeholder.progress(page / total, text=f"📊 테이블 구분 추출 중... {msg}")
-
-            with st.spinner("📊 테이블 구분 추출 중... (Table Transformer + Comet OCR)"):
-                ai_result = extract_comet_with_table_detection(pdf_bytes, progress_callback=progress_callback)
+            with st.spinner("✨ 스마트 추출 중... (PDF 타입 자동 감지)"):
+                ai_result = extract_smart_unified(pdf_bytes,
+                                                   progress_callback=progress_callback,
+                                                   separate_tables=separate_tables)
 
             progress_placeholder.empty()
 
-            # 하이브리드 결과를 ERP 데이터 형식으로 변환
+            # 결과를 ERP 데이터 형식으로 변환
+            is_scanned = ai_result.get("is_scanned", True)
             erp_data = {
                 "tables": [],
                 "ocr_text": [],
-                "is_scanned": True,
+                "is_scanned": is_scanned,
                 "is_ai_extracted": True,
-                "is_hybrid": True,  # 하이브리드 방식 표시
-                "ocr_engine": f"Hybrid ({ai_result.get('ocr_engine', 'PaddleOCR')} + Table Transformer)",
+                "is_smart_unified": True,
+                "is_hybrid": ai_result.get("is_hybrid", False),
+                "ocr_engine": ai_result.get("ocr_engine", "Unknown"),
+                "comet_html": ai_result.get("comet_html", []),
                 "pages": ai_result.get("pages", [])
             }
 
@@ -494,11 +460,11 @@ if uploaded_file is not None:
                     "table_index": table["table_index"],
                     "table_name": table.get("table_name", f"테이블 {table['table_index']}"),
                     "data": table["data"],
-                    "confidence": table.get("confidence", 0.95),
+                    "confidence": table.get("confidence", 0.99 if not is_scanned else 0.95),
                     "row_count": table.get("row_count", 0),
                     "col_count": table.get("col_count", 0),
                     "bbox": table.get("bbox", []),
-                    "extraction_method": "hybrid_table_detection"
+                    "extraction_method": table.get("extraction_method", ai_result.get("extraction_method", "smart_unified"))
                 })
 
         elif ai_method == "vlm" and VLM_AVAILABLE:
@@ -587,12 +553,21 @@ if uploaded_file is not None:
             is_ai_extracted = erp_data.get("is_ai_extracted", False)
             ocr_engine = erp_data.get("ocr_engine", "")
 
-            # Comet 오버레이 뷰어 표시
-            is_comet = erp_data.get("is_comet", False)
-            if is_comet:
-                st.success("☄️ Comet OCR 오버레이 완료 - 텍스트를 드래그하여 선택/복사 가능!")
+            # 스마트 추출 결과 표시
+            is_smart_unified = erp_data.get("is_smart_unified", False)
+            is_hybrid = erp_data.get("is_hybrid", False)
 
-                # Comet HTML 다운로드 버튼
+            if is_smart_unified:
+                # PDF 타입에 따른 메시지
+                if is_scanned:
+                    st.success(f"✨ 스마트 추출 완료 - 스캔 PDF → OCR 사용 (엔진: {ocr_engine})")
+                else:
+                    st.success(f"✨ 스마트 추출 완료 - 텍스트 PDF → 직접 추출 (100% 정확도)")
+
+                if is_hybrid:
+                    st.caption("📊 Table Transformer + 격자선 감지로 테이블이 개별 분리되었습니다.")
+
+                # 페이지 오버레이 다운로드/미리보기
                 comet_pages = erp_data.get("pages", [])
                 if comet_pages:
                     # 전체 HTML 생성
@@ -603,50 +578,30 @@ if uploaded_file is not None:
                     full_html = generate_comet_full_html(comet_data, scale=0.7)
 
                     st.download_button(
-                        "📥 Comet HTML 다운로드 (선택 가능 텍스트)",
+                        "📥 HTML 다운로드 (선택 가능 텍스트)",
                         data=full_html,
-                        file_name=f"{pdf_name}_comet_overlay.html",
+                        file_name=f"{pdf_name}_smart_overlay.html",
                         mime="text/html",
                         help="HTML 파일을 브라우저에서 열면 텍스트를 선택/복사할 수 있습니다"
                     )
 
-                # 각 페이지 오버레이 미리보기
-                st.markdown("### 📄 Comet 오버레이 미리보기")
-                st.caption("💡 아래는 미리보기입니다. HTML 다운로드 후 브라우저에서 열면 텍스트 선택이 가능합니다.")
+                    # 미리보기
+                    with st.expander("📄 페이지 미리보기", expanded=False):
+                        for page_data in comet_pages[:3]:
+                            page_num = page_data["page"]
+                            img_base64 = page_data.get("image_base64", "")
 
-                for page_data in comet_pages[:3]:  # 처음 3페이지만 미리보기
-                    page_num = page_data["page"]
-                    img_base64 = page_data["image_base64"]
+                            if img_base64:
+                                st.image(
+                                    f"data:image/png;base64,{img_base64}",
+                                    caption=f"페이지 {page_num}",
+                                    use_container_width=True
+                                )
 
-                    with st.expander(f"페이지 {page_num} 미리보기", expanded=(page_num == 1)):
-                        # 이미지만 표시 (Streamlit에서는 HTML 오버레이 직접 불가)
-                        st.image(
-                            f"data:image/png;base64,{img_base64}",
-                            caption=f"페이지 {page_num}",
-                            use_container_width=True
-                        )
-
-                        # OCR 결과 텍스트도 표시
-                        ocr_results = page_data.get("ocr_results", [])
-                        if ocr_results:
-                            all_text = " ".join([item["text"] for item in ocr_results])
-                            st.text_area(
-                                f"OCR 추출 텍스트 (페이지 {page_num})",
-                                value=all_text,
-                                height=100,
-                                key=f"comet_text_{page_num}"
-                            )
-
-                if len(comet_pages) > 3:
-                    st.info(f"... 외 {len(comet_pages) - 3}페이지 더 있음. HTML 다운로드로 전체 확인")
+                        if len(comet_pages) > 3:
+                            st.info(f"... 외 {len(comet_pages) - 3}페이지 더 있음")
 
                 st.divider()
-
-            # 하이브리드 모드 결과 표시
-            is_hybrid = erp_data.get("is_hybrid", False)
-            if is_hybrid:
-                st.success("📊 테이블 구분 추출 완료 - 개별 테이블이 분리되었습니다!")
-                st.caption("💡 각 테이블은 Table Transformer로 감지된 영역에서 Comet OCR로 추출되었습니다.")
 
             # VLM 필드 정보 표시
             fields = erp_data.get("fields", {})

@@ -463,6 +463,98 @@ def is_scanned_pdf(pdf_bytes: bytes) -> bool:
     return True
 
 
+def extract_text_with_coordinates(pdf_bytes: bytes, progress_callback=None) -> dict:
+    """
+    텍스트 PDF에서 PyMuPDF로 직접 텍스트+좌표 추출 (OCR 스킵)
+    OCR 대신 PDF 내장 텍스트를 사용하므로 100% 정확도
+
+    Args:
+        pdf_bytes: PDF 파일 바이트
+        progress_callback: 진행상황 콜백 함수
+
+    Returns:
+        OCR 결과와 동일한 형식의 딕셔너리
+        {
+            "pages": [
+                {
+                    "page": 1,
+                    "ocr_results": [{"text": "...", "box": [x1,y1,x2,y2], "score": 1.0}, ...],
+                    "image_base64": "...",
+                    "width": 1000,
+                    "height": 1400
+                },
+                ...
+            ],
+            "total_pages": 5,
+            "extraction_method": "text_direct",
+            "ocr_engine": "PyMuPDF (Direct Text)"
+        }
+    """
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    total_pages = len(doc)
+
+    result = {
+        "pages": [],
+        "total_pages": total_pages,
+        "extraction_method": "text_direct",
+        "ocr_engine": "PyMuPDF (Direct Text)"
+    }
+
+    zoom = 2.0  # 이미지 렌더링 배율
+
+    for page_num in range(total_pages):
+        if progress_callback:
+            progress_callback(page_num + 1, total_pages, f"페이지 {page_num + 1}/{total_pages} 텍스트 추출 중...")
+
+        page = doc[page_num]
+
+        # 페이지를 이미지로 렌더링 (Comet 오버레이용)
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat)
+        img_bytes = pix.tobytes("png")
+
+        import base64
+        img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+
+        # 텍스트 블록 추출 (좌표 포함)
+        # get_text("dict")는 블록/라인/스팬 단위로 상세 정보 제공
+        text_dict = page.get_text("dict")
+
+        ocr_results = []
+
+        for block in text_dict.get("blocks", []):
+            if block.get("type") == 0:  # 텍스트 블록만
+                for line in block.get("lines", []):
+                    for span in line.get("spans", []):
+                        text = span.get("text", "").strip()
+                        if text:
+                            # bbox: (x0, y0, x1, y1) - PDF 좌표
+                            bbox = span.get("bbox", [0, 0, 0, 0])
+                            # zoom 배율 적용 (이미지 좌표와 맞추기)
+                            scaled_box = [
+                                int(bbox[0] * zoom),
+                                int(bbox[1] * zoom),
+                                int(bbox[2] * zoom),
+                                int(bbox[3] * zoom)
+                            ]
+                            ocr_results.append({
+                                "text": text,
+                                "box": scaled_box,
+                                "score": 1.0  # 직접 추출이므로 100% 정확
+                            })
+
+        result["pages"].append({
+            "page": page_num + 1,
+            "ocr_results": ocr_results,
+            "image_base64": img_base64,
+            "width": pix.width,
+            "height": pix.height
+        })
+
+    doc.close()
+    return result
+
+
 # ============================================================
 # VLM (Vision Language Model) 기반 테이블 추출 - Comet 방식
 # ============================================================
@@ -1115,6 +1207,273 @@ def detect_table_regions_by_lines(img: Image.Image, min_area_ratio: float = 0.02
     return regions
 
 
+def detect_grid_lines(img: Image.Image, min_line_length_ratio: float = 0.1,
+                       min_h_ratio: float = None, min_v_ratio: float = None) -> dict:
+    """
+    테이블 이미지에서 수평선과 수직선 추출
+    순수 Morphological 연산 방식 - 내부 격자선까지 감지
+
+    Args:
+        img: PIL Image (테이블 영역 또는 전체 페이지)
+        min_line_length_ratio: 최소 선 길이 비율 (이미지 크기 대비, 기본값)
+        min_h_ratio: 수평선 최소 길이 비율 (None이면 min_line_length_ratio 사용)
+        min_v_ratio: 수직선 최소 길이 비율 (None이면 min_line_length_ratio 사용)
+
+    Returns:
+        {
+            "horizontal_lines": [(y1, x_start, x_end), ...],  # Y 좌표별 수평선
+            "vertical_lines": [(x1, y_start, y_end), ...],    # X 좌표별 수직선
+            "row_boundaries": [y1, y2, y3, ...],  # 행 경계 Y 좌표
+            "col_boundaries": [x1, x2, x3, ...],  # 열 경계 X 좌표
+            "cells": [(row_idx, col_idx, x1, y1, x2, y2), ...],  # 셀 영역
+        }
+    """
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return {"horizontal_lines": [], "vertical_lines": [],
+                "row_boundaries": [], "col_boundaries": [], "cells": []}
+
+    # PIL → OpenCV
+    img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+
+    # === 전처리: 선 감지를 위한 이진화 ===
+    # 고정 임계값 이진화 (선은 일반적으로 어두움)
+    _, binary = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+
+    # 최소 선 길이 계산 - 내부 격자선 감지를 위해 작은 값 사용
+    h_ratio = min_h_ratio if min_h_ratio is not None else min_line_length_ratio
+    v_ratio = min_v_ratio if min_v_ratio is not None else min_line_length_ratio
+
+    # 수평선 최소 길이: 테이블 너비의 5% 이상 (내부 격자선도 감지)
+    min_h_length = max(int(w * max(h_ratio, 0.05)), 30)
+    # 수직선 최소 길이: 테이블 높이의 5% 이상
+    min_v_length = max(int(h * max(v_ratio, 0.05)), 20)
+
+    # === 수평선 감지 ===
+    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (min_h_length, 1))
+    horizontal_lines_img = cv2.morphologyEx(binary, cv2.MORPH_OPEN, horizontal_kernel)
+
+    # 수평선 연결 강화 (끊어진 선 연결)
+    connect_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 1))
+    horizontal_lines_img = cv2.dilate(horizontal_lines_img, connect_kernel, iterations=1)
+    horizontal_lines_img = cv2.erode(horizontal_lines_img, connect_kernel, iterations=1)
+
+    # === 수직선 감지 ===
+    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, min_v_length))
+    vertical_lines_img = cv2.morphologyEx(binary, cv2.MORPH_OPEN, vertical_kernel)
+
+    # 수직선 연결 강화
+    connect_kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 10))
+    vertical_lines_img = cv2.dilate(vertical_lines_img, connect_kernel_v, iterations=1)
+    vertical_lines_img = cv2.erode(vertical_lines_img, connect_kernel_v, iterations=1)
+
+    # === 수평선 Y 좌표 추출 ===
+    horizontal_lines = []
+    row_sums = np.sum(horizontal_lines_img, axis=1)
+    # 임계값: 커널 길이의 절반 정도만 채워져도 감지
+    line_threshold = min_h_length * 128
+
+    in_line = False
+    line_start_y = 0
+
+    for y in range(h):
+        if row_sums[y] > line_threshold:
+            if not in_line:
+                line_start_y = y
+                in_line = True
+        else:
+            if in_line:
+                line_center_y = (line_start_y + y) // 2
+                # 수평선의 X 범위 찾기
+                row_pixels = horizontal_lines_img[line_center_y]
+                x_indices = np.where(row_pixels > 0)[0]
+                if len(x_indices) > 0:
+                    x_start = x_indices[0]
+                    x_end = x_indices[-1]
+                    # 최소 길이 이상이면 유효
+                    if (x_end - x_start) >= min_h_length:
+                        horizontal_lines.append((line_center_y, int(x_start), int(x_end)))
+                in_line = False
+
+    # 마지막 선 처리
+    if in_line:
+        line_center_y = (line_start_y + h) // 2
+        if line_center_y < h:
+            row_pixels = horizontal_lines_img[min(line_center_y, h-1)]
+            x_indices = np.where(row_pixels > 0)[0]
+            if len(x_indices) > 0:
+                x_start = x_indices[0]
+                x_end = x_indices[-1]
+                if (x_end - x_start) >= min_h_length:
+                    horizontal_lines.append((line_center_y, int(x_start), int(x_end)))
+
+    # === 수직선 X 좌표 추출 ===
+    vertical_lines = []
+    col_sums = np.sum(vertical_lines_img, axis=0)
+    # 임계값: 커널 길이의 절반 정도만 채워져도 감지
+    line_threshold_v = min_v_length * 128
+
+    in_line = False
+    line_start_x = 0
+
+    for x in range(w):
+        if col_sums[x] > line_threshold_v:
+            if not in_line:
+                line_start_x = x
+                in_line = True
+        else:
+            if in_line:
+                line_center_x = (line_start_x + x) // 2
+                # 수직선의 Y 범위 찾기
+                col_pixels = vertical_lines_img[:, line_center_x]
+                y_indices = np.where(col_pixels > 0)[0]
+                if len(y_indices) > 0:
+                    y_start = y_indices[0]
+                    y_end = y_indices[-1]
+                    # 최소 길이 이상이면 유효
+                    if (y_end - y_start) >= min_v_length:
+                        vertical_lines.append((line_center_x, int(y_start), int(y_end)))
+                in_line = False
+
+    # 마지막 선 처리
+    if in_line:
+        line_center_x = (line_start_x + w) // 2
+        if line_center_x < w:
+            col_pixels = vertical_lines_img[:, min(line_center_x, w-1)]
+            y_indices = np.where(col_pixels > 0)[0]
+            if len(y_indices) > 0:
+                y_start = y_indices[0]
+                y_end = y_indices[-1]
+                if (y_end - y_start) >= min_v_length:
+                    vertical_lines.append((line_center_x, int(y_start), int(y_end)))
+
+    # === 인접한 선 병합 ===
+    def merge_adjacent_values(values, min_gap=15):
+        """인접한 값들을 병합"""
+        if not values:
+            return []
+        values = sorted(set(values))
+        merged = [values[0]]
+        for v in values[1:]:
+            if v - merged[-1] > min_gap:
+                merged.append(v)
+        return merged
+
+    # 행 경계 (수평선 Y 좌표)
+    row_y_values = [line[0] for line in horizontal_lines]
+    row_boundaries = merge_adjacent_values(row_y_values, min_gap=15)
+
+    # 열 경계 (수직선 X 좌표)
+    col_x_values = [line[0] for line in vertical_lines]
+    col_boundaries = merge_adjacent_values(col_x_values, min_gap=15)
+
+    # 경계 추가 (시작/끝)
+    if row_boundaries and row_boundaries[0] > 20:
+        row_boundaries.insert(0, 0)
+    if row_boundaries and row_boundaries[-1] < h - 20:
+        row_boundaries.append(h)
+
+    if col_boundaries and col_boundaries[0] > 20:
+        col_boundaries.insert(0, 0)
+    if col_boundaries and col_boundaries[-1] < w - 20:
+        col_boundaries.append(w)
+
+    # === 셀 영역 계산 ===
+    cells = []
+    for row_idx in range(len(row_boundaries) - 1):
+        for col_idx in range(len(col_boundaries) - 1):
+            y1 = row_boundaries[row_idx]
+            y2 = row_boundaries[row_idx + 1]
+            x1 = col_boundaries[col_idx]
+            x2 = col_boundaries[col_idx + 1]
+
+            if (x2 - x1) > 10 and (y2 - y1) > 10:
+                cells.append((row_idx, col_idx, int(x1), int(y1), int(x2), int(y2)))
+
+    return {
+        "horizontal_lines": horizontal_lines,
+        "vertical_lines": vertical_lines,
+        "row_boundaries": row_boundaries,
+        "col_boundaries": col_boundaries,
+        "cells": cells,
+        "row_count": len(row_boundaries) - 1 if len(row_boundaries) > 1 else 0,
+        "col_count": len(col_boundaries) - 1 if len(col_boundaries) > 1 else 0
+    }
+
+
+def map_ocr_to_grid_cells(ocr_results: list, grid_info: dict, use_ocr_columns: bool = True) -> list:
+    """
+    OCR 결과를 격자 셀에 정확하게 매핑
+    하이브리드 방식: 수평선(행)은 격자선에서, 수직선(열)은 OCR X좌표에서 추출
+
+    Args:
+        ocr_results: OCR 결과 리스트 [{"text": "...", "box": [x1,y1,x2,y2]}, ...]
+        grid_info: detect_grid_lines()의 반환값
+        use_ocr_columns: True면 OCR X좌표로 열 경계 추정 (셀 병합 테이블용)
+
+    Returns:
+        2D 테이블 데이터 [[row1_col1, row1_col2, ...], ...]
+    """
+    row_boundaries = grid_info.get("row_boundaries", [])
+    col_boundaries = grid_info.get("col_boundaries", [])
+
+    # 하이브리드 방식: 격자선 열이 부족하면 OCR X좌표로 열 경계 추정
+    if use_ocr_columns and len(col_boundaries) < 3 and ocr_results:
+        col_boundaries = estimate_column_boundaries_from_ocr(ocr_results)
+        if col_boundaries:
+            col_boundaries = [0] + col_boundaries + [max(item["box"][2] for item in ocr_results) + 20]
+
+    if len(row_boundaries) < 2 or len(col_boundaries) < 2:
+        # 격자 정보가 부족하면 기존 방식으로 폴백
+        return None
+
+    num_rows = len(row_boundaries) - 1
+    num_cols = len(col_boundaries) - 1
+
+    # 2D 배열 초기화
+    table_data = [["" for _ in range(num_cols)] for _ in range(num_rows)]
+
+    for item in ocr_results:
+        text = item["text"].strip()
+        if not text:
+            continue
+
+        box = item["box"]
+        # OCR 박스의 중심점 계산
+        center_x = (box[0] + box[2]) / 2
+        center_y = (box[1] + box[3]) / 2
+
+        # 중심점이 속하는 셀 찾기
+        row_idx = -1
+        col_idx = -1
+
+        for i in range(num_rows):
+            if row_boundaries[i] <= center_y < row_boundaries[i + 1]:
+                row_idx = i
+                break
+
+        for j in range(num_cols):
+            if col_boundaries[j] <= center_x < col_boundaries[j + 1]:
+                col_idx = j
+                break
+
+        # 유효한 셀에 텍스트 할당
+        if row_idx >= 0 and col_idx >= 0:
+            if table_data[row_idx][col_idx]:
+                table_data[row_idx][col_idx] += " " + text
+            else:
+                table_data[row_idx][col_idx] = text
+
+    # 빈 행 제거 (모든 셀이 빈 행)
+    table_data = [row for row in table_data if any(cell.strip() for cell in row)]
+
+    return table_data
+
+
 def detect_table_regions_by_thick_lines(img: Image.Image) -> list:
     """
     두꺼운 검은 박스 테두리로 구분된 영역 감지
@@ -1351,8 +1710,31 @@ def extract_comet_with_table_detection(pdf_bytes: bytes, progress_callback=None,
             # 테이블 제목 추정 (테이블 영역 위쪽 텍스트)
             table_name = estimate_table_name(page_ocr_results, table_box)
 
-            # OCR 결과를 행/열 구조로 변환
-            table_data = ocr_to_table_structure(table_ocr, table_box)
+            # ★ 격자선 기반 셀 감지 (새로운 방식)
+            if progress_callback:
+                progress_callback(page_num + 1, total_pages,
+                    f"페이지 {page_num + 1} - 테이블 {table_idx + 1} 격자선 분석 중...")
+
+            # 테이블 영역 크롭
+            x1, y1, x2, y2 = table_box
+            table_img = img.crop((x1, y1, x2, y2))
+
+            # 격자선 감지 (수평선 + 수직선) - 모든 선 감지
+            # 테이블 영역 안의 모든 선을 감지 (인위적 필터링 없음)
+            grid_info = detect_grid_lines(table_img, min_h_ratio=0.02, min_v_ratio=0.02)
+
+            # 격자선이 충분히 감지되었으면 격자 기반 매핑 사용
+            table_data = None
+            extraction_mode = "grid_lines"  # 추출 방식 기록
+
+            if grid_info["row_count"] >= 2 and grid_info["col_count"] >= 2:
+                # 격자선 기반으로 OCR 결과 매핑
+                table_data = map_ocr_to_grid_cells(table_ocr, grid_info)
+
+            # 격자선 감지 실패 또는 매핑 실패 시 기존 방식으로 폴백
+            if table_data is None:
+                table_data = ocr_to_table_structure(table_ocr, table_box)
+                extraction_mode = "header_based"
 
             if table_data:
                 result["tables"].append({
@@ -1366,7 +1748,14 @@ def extract_comet_with_table_detection(pdf_bytes: bytes, progress_callback=None,
                     "row_count": len(table_data),
                     "col_count": max(len(row) for row in table_data) if table_data else 0,
                     "ocr_results": table_ocr,
-                    "extraction_method": "comet_hybrid"
+                    "extraction_method": "comet_hybrid",
+                    "grid_detection": extraction_mode,
+                    "grid_info": {
+                        "rows_detected": grid_info.get("row_count", 0),
+                        "cols_detected": grid_info.get("col_count", 0),
+                        "horizontal_lines": len(grid_info.get("horizontal_lines", [])),
+                        "vertical_lines": len(grid_info.get("vertical_lines", []))
+                    }
                 })
 
     doc.close()
@@ -1518,10 +1907,58 @@ def estimate_table_regions_from_ocr(ocr_results: list, page_width: int, page_hei
     return tables
 
 
+def estimate_column_boundaries_from_ocr(ocr_results: list, gap_threshold: int = 25) -> list:
+    """
+    OCR 결과의 X좌표를 분석하여 열 경계 추정
+    셀 병합이 있는 테이블에서 유용
+
+    Args:
+        ocr_results: OCR 결과 리스트
+        gap_threshold: 열 구분을 위한 최소 X 갭 (픽셀)
+
+    Returns:
+        열 경계 X좌표 리스트 [x1, x2, x3, ...]
+    """
+    if not ocr_results:
+        return []
+
+    # 모든 OCR 항목의 X 시작 좌표 수집
+    x_starts = []
+    for item in ocr_results:
+        x_starts.append(item["box"][0])
+
+    if not x_starts:
+        return []
+
+    # X 좌표 정렬
+    x_starts = sorted(x_starts)
+
+    # 클러스터링: 인접한 X 좌표 그룹화
+    clusters = []
+    current_cluster = [x_starts[0]]
+
+    for i in range(1, len(x_starts)):
+        if x_starts[i] - x_starts[i-1] <= gap_threshold:
+            current_cluster.append(x_starts[i])
+        else:
+            # 새 클러스터 시작
+            clusters.append(current_cluster)
+            current_cluster = [x_starts[i]]
+
+    if current_cluster:
+        clusters.append(current_cluster)
+
+    # 각 클러스터의 대표값 (최소값) 반환
+    boundaries = [min(cluster) for cluster in clusters]
+
+    return boundaries
+
+
 def ocr_to_table_structure(ocr_results: list, table_bbox: list,
                             y_tolerance: int = 15, x_gap_threshold: int = 30) -> list:
     """
     OCR 결과를 테이블 행/열 구조로 변환
+    개선: 헤더 행(첫 번째 행)의 열 위치를 기준으로 열 경계 설정
 
     Args:
         ocr_results: 필터링된 OCR 결과 (상대 좌표)
@@ -1559,26 +1996,108 @@ def ocr_to_table_structure(ocr_results: list, table_bbox: list,
     if current_row:
         rows.append(sorted(current_row, key=lambda x: x["box"][0]))
 
-    # 열 위치 추정 (X 좌표 클러스터링)
-    all_x_positions = []
-    for row in rows:
-        for item in row:
-            all_x_positions.append(item["box"][0])
-
-    if not all_x_positions:
+    if not rows:
         return []
 
-    # X 좌표 클러스터링으로 열 경계 찾기
-    column_boundaries = estimate_column_boundaries(all_x_positions, x_gap_threshold)
+    # 개선: 헤더 행(첫 번째 행 또는 가장 많은 열을 가진 행)을 기준으로 열 경계 설정
+    # 가장 많은 항목을 가진 행을 헤더로 간주 (보통 헤더가 가장 많은 열을 가짐)
+    header_row_idx = 0
+    max_items = len(rows[0])
+    for i, row in enumerate(rows):
+        if len(row) > max_items:
+            max_items = len(row)
+            header_row_idx = i
 
-    # 각 행을 열에 맞춰 정렬
+    header_row = rows[header_row_idx]
+
+    # 헤더 행의 각 항목 위치를 열 기준으로 사용
+    column_positions = []
+    for item in header_row:
+        x1 = item["box"][0]
+        x2 = item["box"][2]
+        center_x = (x1 + x2) / 2
+        column_positions.append({
+            "x1": x1,
+            "x2": x2,
+            "center": center_x,
+            "text": item["text"]
+        })
+
+    # 열 경계 설정 (헤더 기반)
+    column_boundaries = []
+    for i, col in enumerate(column_positions):
+        # 이전 열의 끝과 현재 열의 시작 사이의 중간점을 경계로
+        if i == 0:
+            start = 0
+        else:
+            prev_end = column_positions[i-1]["x2"]
+            curr_start = col["x1"]
+            start = (prev_end + curr_start) / 2
+
+        if i == len(column_positions) - 1:
+            end = table_bbox[2] - table_bbox[0] + 100  # 테이블 너비 + 여유
+        else:
+            curr_end = col["x2"]
+            next_start = column_positions[i+1]["x1"]
+            end = (curr_end + next_start) / 2
+
+        column_boundaries.append((start, end, col["center"]))
+
+    # 각 행을 열에 맞춰 정렬 (헤더 기준 열 경계 사용)
     table_data = []
     for row in rows:
-        row_data = assign_to_columns(row, column_boundaries)
+        row_data = assign_to_columns_by_header(row, column_boundaries)
         if any(cell.strip() for cell in row_data):  # 빈 행 제외
             table_data.append(row_data)
 
     return table_data
+
+
+def assign_to_columns_by_header(row_items: list, column_boundaries: list) -> list:
+    """
+    헤더 기반 열 경계를 사용하여 행의 항목들을 열에 할당
+
+    Args:
+        row_items: 행의 OCR 항목들
+        column_boundaries: 열 경계 리스트 [(start, end, center), ...]
+
+    Returns:
+        열에 맞춰 정렬된 텍스트 리스트
+    """
+    if not column_boundaries:
+        return [item["text"] for item in row_items]
+
+    row_data = [""] * len(column_boundaries)
+
+    for item in row_items:
+        x1 = item["box"][0]
+        x2 = item["box"][2]
+        item_center = (x1 + x2) / 2
+        text = item["text"]
+
+        # 항목의 중심이 어느 열 범위에 속하는지 확인
+        best_col = -1
+        for col_idx, (start, end, center) in enumerate(column_boundaries):
+            if start <= item_center <= end:
+                best_col = col_idx
+                break
+
+        # 범위 내에 없으면 가장 가까운 열 찾기
+        if best_col == -1:
+            min_dist = float('inf')
+            for col_idx, (start, end, center) in enumerate(column_boundaries):
+                dist = abs(item_center - center)
+                if dist < min_dist:
+                    min_dist = dist
+                    best_col = col_idx
+
+        if best_col >= 0:
+            if row_data[best_col]:
+                row_data[best_col] += " " + text
+            else:
+                row_data[best_col] = text
+
+    return row_data
 
 
 def estimate_column_boundaries(x_positions: list, gap_threshold: int = 30) -> list:
@@ -1800,6 +2319,327 @@ def extract_tables_auto(pdf_bytes: bytes, progress_callback=None, method: str = 
         return extract_vlm_tables(pdf_bytes, progress_callback)
     else:
         return extract_smart_tables(pdf_bytes, progress_callback)
+
+
+def extract_smart_unified(pdf_bytes: bytes, progress_callback=None,
+                          separate_tables: bool = True) -> dict:
+    """
+    통합 스마트 테이블 추출 (메뉴 통합용)
+
+    자동으로 PDF 타입을 감지하고 최적의 방법으로 추출:
+    - 텍스트 PDF → PyMuPDF 직접 텍스트 추출 (100% 정확도, OCR 스킵)
+    - 스캔 PDF → PaddleOCR
+    - separate_tables=True → Table Transformer + 격자선 감지로 테이블 분리
+
+    Args:
+        pdf_bytes: PDF 파일 바이트
+        progress_callback: 진행상황 콜백 함수
+        separate_tables: True면 테이블 영역을 개별 분리 (기본값: True)
+
+    Returns:
+        통합 결과 딕셔너리
+        {
+            "tables": [...],
+            "pages": [...],
+            "is_scanned": True/False,
+            "extraction_method": "text_direct" / "comet_ocr" / "hybrid",
+            "ocr_engine": "PyMuPDF (Direct Text)" / "PaddleOCR",
+            ...
+        }
+    """
+    # 1. PDF 타입 감지
+    scanned = is_scanned_pdf(pdf_bytes)
+
+    if progress_callback:
+        pdf_type = "스캔 PDF" if scanned else "텍스트 PDF"
+        progress_callback(0, 1, f"📄 {pdf_type} 감지됨...")
+
+    # 2. 텍스트/좌표 추출 (PDF 타입에 따라)
+    if scanned:
+        # 스캔 PDF → PaddleOCR
+        if not PADDLEOCR_AVAILABLE:
+            return {
+                "tables": [],
+                "error": "스캔 PDF 처리를 위해 PaddleOCR이 필요합니다.",
+                "is_scanned": True,
+                "is_ai_extracted": False
+            }
+        text_data = extract_ocr_with_coordinates(pdf_bytes, progress_callback)
+        text_data["is_scanned"] = True
+    else:
+        # 텍스트 PDF → PyMuPDF 직접 추출
+        text_data = extract_text_with_coordinates(pdf_bytes, progress_callback)
+        text_data["is_scanned"] = False
+
+    if "error" in text_data:
+        return text_data
+
+    # 3. 테이블 분리 여부에 따른 처리
+    if separate_tables and TABLE_TRANSFORMER_AVAILABLE:
+        # Table Transformer + 격자선 감지로 테이블 분리
+        return _extract_with_table_separation(pdf_bytes, text_data, progress_callback)
+    else:
+        # 단순 페이지별 추출 (기존 Comet 방식)
+        return _extract_page_tables(text_data, progress_callback)
+
+
+def _extract_page_tables(text_data: dict, progress_callback=None) -> dict:
+    """
+    페이지별 테이블 추출 (테이블 분리 없이)
+    기존 Comet 방식과 동일
+    """
+    result = {
+        "tables": [],
+        "pages": [],
+        "comet_html": [],
+        "is_ai_extracted": True,
+        "is_scanned": text_data.get("is_scanned", True),
+        "total_pages": text_data.get("total_pages", 0),
+        "extraction_method": text_data.get("extraction_method", "comet"),
+        "ocr_engine": text_data.get("ocr_engine", "Unknown")
+    }
+
+    for page_data in text_data.get("pages", []):
+        page_num = page_data["page"]
+        ocr_results = page_data.get("ocr_results", [])
+
+        # Comet HTML 오버레이 생성
+        page_html = generate_comet_overlay_html(page_data, scale=0.8)
+        result["comet_html"].append({
+            "page": page_num,
+            "html": page_html
+        })
+
+        # OCR 결과를 행/열 구조로 정리
+        if ocr_results:
+            sorted_items = sorted(ocr_results, key=lambda x: (x["box"][1], x["box"][0]))
+
+            rows = []
+            current_row = []
+            current_y = None
+            y_tolerance = 15
+
+            for item in sorted_items:
+                y = item["box"][1]
+                if current_y is None:
+                    current_y = y
+                    current_row = [item]
+                elif abs(y - current_y) <= y_tolerance:
+                    current_row.append(item)
+                else:
+                    rows.append(sorted(current_row, key=lambda x: x["box"][0]))
+                    current_row = [item]
+                    current_y = y
+
+            if current_row:
+                rows.append(sorted(current_row, key=lambda x: x["box"][0]))
+
+            table_data = []
+            for row in rows:
+                row_texts = [item["text"] for item in row]
+                if any(row_texts):
+                    table_data.append(row_texts)
+
+            if table_data:
+                result["tables"].append({
+                    "page": page_num,
+                    "table_index": 1,
+                    "confidence": 0.99 if not result["is_scanned"] else 0.95,
+                    "data": table_data,
+                    "row_count": len(table_data),
+                    "col_count": max(len(row) for row in table_data) if table_data else 0,
+                    "extraction_method": result["extraction_method"]
+                })
+
+        result["pages"].append({
+            "page": page_num,
+            "ocr_results": ocr_results,
+            "image_base64": page_data.get("image_base64", ""),
+            "width": page_data.get("width", 0),
+            "height": page_data.get("height", 0)
+        })
+
+    return result
+
+
+def _extract_with_table_separation(pdf_bytes: bytes, text_data: dict,
+                                    progress_callback=None) -> dict:
+    """
+    Table Transformer + 격자선 감지로 테이블 개별 분리 추출
+    기존 extract_comet_with_table_detection 로직 활용
+    """
+    # extract_comet_with_table_detection 함수 활용
+    # 단, text_data가 이미 있으므로 OCR은 재사용
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    total_pages = len(doc)
+
+    result = {
+        "tables": [],
+        "pages": [],
+        "comet_html": [],
+        "total_pages": total_pages,
+        "total_tables": 0,
+        "is_ai_extracted": True,
+        "is_scanned": text_data.get("is_scanned", True),
+        "is_hybrid": True,
+        "extraction_method": "hybrid",
+        "ocr_engine": text_data.get("ocr_engine", "PaddleOCR") + " + Table Transformer"
+    }
+
+    zoom = 2.0
+    table_count = 0
+
+    for page_num in range(total_pages):
+        if progress_callback:
+            progress_callback(page_num + 1, total_pages,
+                              f"페이지 {page_num + 1}/{total_pages} 테이블 분리 중...")
+
+        # 페이지 이미지 생성
+        page = doc[page_num]
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat)
+        img_bytes = pix.tobytes("png")
+        page_image = Image.open(io.BytesIO(img_bytes))
+
+        # 해당 페이지의 텍스트 데이터 가져오기
+        page_text_data = None
+        for pd in text_data.get("pages", []):
+            if pd["page"] == page_num + 1:
+                page_text_data = pd
+                break
+
+        # Table Transformer로 테이블 영역 감지
+        detected_tables = detect_tables(page_image, threshold=0.5)
+
+        if detected_tables and page_text_data:
+            # 감지된 테이블별로 처리
+            for table_idx, table_info in enumerate(detected_tables):
+                table_count += 1
+                bbox = table_info["box"]
+                confidence = table_info["score"]
+
+                # bbox 영역 내의 OCR 결과만 필터링
+                ocr_results = page_text_data.get("ocr_results", [])
+                filtered_ocr = []
+                for item in ocr_results:
+                    item_box = item["box"]
+                    # 중심점이 테이블 bbox 안에 있는지 확인
+                    cx = (item_box[0] + item_box[2]) / 2
+                    cy = (item_box[1] + item_box[3]) / 2
+                    if bbox[0] <= cx <= bbox[2] and bbox[1] <= cy <= bbox[3]:
+                        filtered_ocr.append(item)
+
+                # 테이블 영역 크롭
+                table_image = page_image.crop(tuple(bbox))
+
+                # 격자선 감지
+                grid_lines = detect_grid_lines(table_image,
+                                               min_h_ratio=0.05, min_v_ratio=0.05)
+
+                # 격자선 기반 셀 생성 (detect_grid_lines가 cells를 반환)
+                cells = grid_lines.get("cells", [])
+
+                # 셀에 OCR 텍스트 매핑
+                if cells and filtered_ocr:
+                    # bbox 좌상단 기준으로 좌표 변환
+                    offset_x, offset_y = bbox[0], bbox[1]
+                    for item in filtered_ocr:
+                        item["box"] = [
+                            item["box"][0] - offset_x,
+                            item["box"][1] - offset_y,
+                            item["box"][2] - offset_x,
+                            item["box"][3] - offset_y
+                        ]
+
+                    table_data = map_ocr_to_grid_cells(filtered_ocr, grid_lines)
+                    # None 반환 시 폴백 (Codex 권장)
+                    if table_data is None:
+                        table_data = _group_ocr_to_rows(filtered_ocr, bbox)
+                else:
+                    # 격자선 없으면 Y 좌표 기반 그룹화
+                    table_data = _group_ocr_to_rows(filtered_ocr, bbox)
+
+                if table_data:
+                    result["tables"].append({
+                        "page": page_num + 1,
+                        "table_index": table_idx + 1,
+                        "table_name": f"테이블 {table_idx + 1}",
+                        "bbox": bbox,
+                        "confidence": confidence,
+                        "data": table_data,
+                        "row_count": len(table_data),
+                        "col_count": max(len(row) for row in table_data) if table_data else 0,
+                        "extraction_method": "hybrid_table_detection"
+                    })
+
+        elif page_text_data:
+            # 테이블이 감지되지 않으면 페이지 전체를 하나의 테이블로
+            ocr_results = page_text_data.get("ocr_results", [])
+            if ocr_results:
+                table_data = _group_ocr_to_rows(ocr_results, None)
+                if table_data:
+                    table_count += 1
+                    result["tables"].append({
+                        "page": page_num + 1,
+                        "table_index": 1,
+                        "table_name": "전체 페이지",
+                        "confidence": 0.8,
+                        "data": table_data,
+                        "row_count": len(table_data),
+                        "col_count": max(len(row) for row in table_data) if table_data else 0,
+                        "extraction_method": "page_ocr"
+                    })
+
+        # 페이지 데이터 저장
+        if page_text_data:
+            result["pages"].append({
+                "page": page_num + 1,
+                "ocr_results": page_text_data.get("ocr_results", []),
+                "image_base64": page_text_data.get("image_base64", ""),
+                "width": page_text_data.get("width", 0),
+                "height": page_text_data.get("height", 0)
+            })
+
+    doc.close()
+    result["total_tables"] = table_count
+    return result
+
+
+def _group_ocr_to_rows(ocr_results: list, bbox: list = None) -> list:
+    """OCR 결과를 Y 좌표 기준으로 행으로 그룹화"""
+    if not ocr_results:
+        return []
+
+    sorted_items = sorted(ocr_results, key=lambda x: (x["box"][1], x["box"][0]))
+
+    rows = []
+    current_row = []
+    current_y = None
+    y_tolerance = 15
+
+    for item in sorted_items:
+        y = item["box"][1]
+        if current_y is None:
+            current_y = y
+            current_row = [item]
+        elif abs(y - current_y) <= y_tolerance:
+            current_row.append(item)
+        else:
+            rows.append(sorted(current_row, key=lambda x: x["box"][0]))
+            current_row = [item]
+            current_y = y
+
+    if current_row:
+        rows.append(sorted(current_row, key=lambda x: x["box"][0]))
+
+    table_data = []
+    for row in rows:
+        row_texts = [item["text"] for item in row]
+        if any(row_texts):
+            table_data.append(row_texts)
+
+    return table_data
 
 
 # 테스트 코드
