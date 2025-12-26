@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>COLOR/SIZE QTY</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #fff;
+        }
+        table {
+            border-collapse: collapse;
+            font-size: 12px;
+            border: 2px solid #000;
+        }
+        th, td {
+            border: 1px solid #000;
+            padding: 4px 8px;
+            text-align: center;
+            height: 22px;
+        }
+        .header-main {
+            background: #000;
+            color: white;
+            font-weight: bold;
+            font-size: 13px;
+        }
+        .header-sub {
+            background: #fff;
+            font-weight: bold;
+            border-bottom: 2px solid #000;
+        }
+        .color-code {
+            background: #d9d9d9;
+            font-weight: bold;
+            width: 40px;
+        }
+        .color-name {
+            background: #d9d9d9;
+            font-weight: bold;
+            width: 100px;
+        }
+        .data-cell {
+            background: #fff;
+            width: 50px;
+        }
+        .empty-cell {
+            background: #fff;
+            width: 30px;
+        }
+        .total-cell {
+            background: #fff;
+            font-weight: bold;
+            width: 60px;
+        }
+        .total-row td {
+            background: #bfbfbf;
+            font-weight: bold;
+            border-top: 2px solid #000;
+        }
+        .empty-row td {
+            height: 22px;
+            background: #fff;
+        }
+        .right {
+            text-align: right;
+        }
+        .thick-right {
+            border-right: 2px solid #000;
+        }
+        .thick-bottom {
+            border-bottom: 2px solid #000;
+        }
+    </style>
+</head>
+<body>
+    <table>
+        <!-- Header: COLOR/SIZE QTY -->
+        <tr>
+            <td class="header-main thick-right" colspan="2"></td>
+            <td class="header-main" colspan="8">COLOR/SIZE QTY</td>
+            <td class="header-main" style="background:#808080;"></td>
+            <td class="header-main" style="background:#808080;"></td>
+        </tr>
+        <!-- Sub Header -->
+        <tr class="header-sub">
+            <td colspan="2" class="thick-right thick-bottom">COLOR / SIZE</td>
+            <td class="thick-bottom">095</td>
+            <td class="thick-bottom">100</td>
+            <td class="thick-bottom">105</td>
+            <td class="thick-bottom">110</td>
+            <td class="thick-bottom">115</td>
+            <td class="thick-bottom">120</td>
+            <td class="thick-bottom">125</td>
+            <td class="thick-bottom">130</td>
+            <td class="thick-bottom"></td>
+            <td class="thick-bottom">TOTAL</td>
+        </tr>
+        <!-- BK - BLACK -->
+        <tr>
+            <td class="color-code">BK</td>
+            <td class="color-name thick-right">BLACK</td>
+            <td class="data-cell right">2,200</td>
+            <td class="data-cell right">5,000</td>
+            <td class="data-cell right">5,000</td>
+            <td class="data-cell right">2,200</td>
+            <td class="data-cell right">800</td>
+            <td class="data-cell right">500</td>
+            <td class="data-cell right">150</td>
+            <td class="data-cell right">150</td>
+            <td class="empty-cell"></td>
+            <td class="total-cell right">16,000</td>
+        </tr>
+        <!-- NA - NAVY -->
+        <tr>
+            <td class="color-code">NA</td>
+            <td class="color-name thick-right">NAVY</td>
+            <td class="data-cell right">1,100</td>
+            <td class="data-cell right">2,300</td>
+            <td class="data-cell right">1,650</td>
+            <td class="data-cell right">500</td>
+            <td class="data-cell right">200</td>
+            <td class="data-cell right">150</td>
+            <td class="data-cell right">50</td>
+            <td class="data-cell right">50</td>
+            <td class="empty-cell"></td>
+            <td class="total-cell right">6,000</td>
+        </tr>
+        <!-- D3 - D/TAUPE GRAY -->
+        <tr>
+            <td class="color-code">D3</td>
+            <td class="color-name thick-right">D/TAUPE GRAY</td>
+            <td class="data-cell right">650</td>
+            <td class="data-cell right">1,200</td>
+            <td class="data-cell right">800</td>
+            <td class="data-cell right">400</td>
+            <td class="data-cell right">150</td>
+            <td class="data-cell right">100</td>
+            <td class="data-cell right">50</td>
+            <td class="data-cell right">50</td>
+            <td class="empty-cell"></td>
+            <td class="total-cell right">3,400</td>
+        </tr>
+        <!-- SV - SILVER BEIGE -->
+        <tr>
+            <td class="color-code">SV</td>
+            <td class="color-name thick-right">SILVER BEIGE</td>
+            <td class="data-cell right">900</td>
+            <td class="data-cell right">1,550</td>
+            <td class="data-cell right">950</td>
+            <td class="data-cell right">300</td>
+            <td class="data-cell right">150</td>
+            <td class="data-cell right">50</td>
+            <td class="data-cell right">50</td>
+            <td class="data-cell right">50</td>
+            <td class="empty-cell"></td>
+            <td class="total-cell right">4,000</td>
+        </tr>
+        <!-- Empty Row -->
+        <tr class="empty-row">
+            <td></td>
+            <td class="thick-right"></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+        </tr>
+        <!-- TOTAL Row -->
+        <tr class="total-row">
+            <td colspan="2" class="thick-right">TOTAL</td>
+            <td class="right">4,850</td>
+            <td class="right">10,050</td>
+            <td class="right">8,400</td>
+            <td class="right">3,400</td>
+            <td class="right">1,300</td>
+            <td class="right">800</td>
+            <td class="right">300</td>
+            <td class="right">300</td>
+            <td></td>
+            <td class="right">29,400</td>
+        </tr>
+    </table>
+</body>
+</html>

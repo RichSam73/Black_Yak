@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>COLOR/SIZE QTY</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #fff;
+        }
+        table {
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        td, th {
+            border: 1px solid #000;
+            padding: 6px 12px;
+            text-align: center;
+            height: 28px;
+        }
+        /* 1행: COLOR/SIZE QTY 헤더 */
+        .header-black {
+            background: #000;
+            color: white;
+            font-weight: bold;
+            font-size: 13px;
+        }
+        .header-gray-dark {
+            background: #666;
+            border: 1px solid #000;
+        }
+        .header-gray-light {
+            background: #999;
+            border: 1px solid #000;
+        }
+        /* 2행: 서브 헤더 */
+        .sub-header {
+            background: #fff;
+            font-weight: bold;
+        }
+        /* 컬러 코드/이름 (회색 배경) */
+        .color-code {
+            background: #e0e0e0;
+            font-weight: bold;
+        }
+        .color-name {
+            background: #e0e0e0;
+            font-weight: bold;
+        }
+        /* 데이터 셀 */
+        .data-cell {
+            background: #fff;
+            text-align: right;
+        }
+        /* 빈 열 - 테두리 없음 */
+        .empty-col {
+            background: #fff;
+            border-left: none;
+            border-right: none;
+            width: 40px;
+        }
+        .empty-col-header {
+            background: #fff;
+            border-left: none;
+            border-right: none;
+            width: 40px;
+        }
+        /* TOTAL 열 */
+        .total-col {
+            background: #fff;
+            font-weight: bold;
+            text-align: right;
+        }
+        /* 빈 행 */
+        .empty-row td {
+            background: #fff;
+            height: 28px;
+        }
+        /* TOTAL 행 */
+        .total-row td {
+            background: #c0c0c0;
+            font-weight: bold;
+        }
+        .total-row .data-cell {
+            background: #c0c0c0;
+            text-align: right;
+        }
+        .total-row .empty-col {
+            background: #c0c0c0;
+        }
+        .total-row .total-col {
+            background: #c0c0c0;
+        }
+        /* 두꺼운 테두리 */
+        .border-top-thick {
+            border-top: 2px solid #000;
+        }
+        .border-bottom-thick {
+            border-bottom: 2px solid #000;
+        }
+        .border-left-thick {
+            border-left: 2px solid #000;
+        }
+        .border-right-thick {
+            border-right: 2px solid #000;
+        }
+    </style>
+</head>
+<body>
+    <table>
+        <!-- 1행: COLOR/SIZE QTY 헤더 -->
+        <tr>
+            <td class="header-black border-left-thick border-top-thick" colspan="2"></td>
+            <td class="header-black border-top-thick" colspan="8">COLOR/SIZE QTY</td>
+            <td class="header-gray-dark border-top-thick"></td>
+            <td class="header-gray-light border-top-thick border-right-thick"></td>
+        </tr>
+        <!-- 2행: 서브 헤더 (COLOR / SIZE, 095~130, 빈열, TOTAL) -->
+        <tr>
+            <td class="sub-header border-left-thick border-bottom-thick" colspan="2">COLOR / SIZE</td>
+            <td class="sub-header border-bottom-thick">095</td>
+            <td class="sub-header border-bottom-thick">100</td>
+            <td class="sub-header border-bottom-thick">105</td>
+            <td class="sub-header border-bottom-thick">110</td>
+            <td class="sub-header border-bottom-thick">115</td>
+            <td class="sub-header border-bottom-thick">120</td>
+            <td class="sub-header border-bottom-thick">125</td>
+            <td class="sub-header border-bottom-thick">130</td>
+            <td class="empty-col-header border-bottom-thick"></td>
+            <td class="sub-header border-bottom-thick border-right-thick">TOTAL</td>
+        </tr>
+        <tr>
+            <td class="color-code border-left-thick">BK</td>
+            <td class="color-name">BLACK</td>
+            <td class="data-cell">2,200</td>
+            <td class="data-cell">5,000</td>
+            <td class="data-cell">5,000</td>
+            <td class="data-cell">2,200</td>
+            <td class="data-cell">800</td>
+            <td class="data-cell">500</td>
+            <td class="data-cell">150</td>
+            <td class="data-cell">150</td>
+            <td class="empty-col"></td>
+            <td class="total-col border-right-thick">16,000</td>
+        </tr>
+        <tr>
+            <td class="color-code border-left-thick">NA</td>
+            <td class="color-name">NAVY</td>
+            <td class="data-cell">1,100</td>
+            <td class="data-cell">2,300</td>
+            <td class="data-cell">1,650</td>
+            <td class="data-cell">500</td>
+            <td class="data-cell">200</td>
+            <td class="data-cell">150</td>
+            <td class="data-cell">50</td>
+            <td class="data-cell">50</td>
+            <td class="empty-col"></td>
+            <td class="total-col border-right-thick">6,000</td>
+        </tr>
+        <tr>
+            <td class="color-code border-left-thick">D3</td>
+            <td class="color-name">D/TAUPE GRAY</td>
+            <td class="data-cell">650</td>
+            <td class="data-cell">1,200</td>
+            <td class="data-cell">800</td>
+            <td class="data-cell">400</td>
+            <td class="data-cell">150</td>
+            <td class="data-cell">100</td>
+            <td class="data-cell">50</td>
+            <td class="data-cell">50</td>
+            <td class="empty-col"></td>
+            <td class="total-col border-right-thick">3,400</td>
+        </tr>
+        <tr>
+            <td class="color-code border-left-thick">SV</td>
+            <td class="color-name">SILVER BEIGE</td>
+            <td class="data-cell">900</td>
+            <td class="data-cell">1,550</td>
+            <td class="data-cell">950</td>
+            <td class="data-cell">300</td>
+            <td class="data-cell">150</td>
+            <td class="data-cell">50</td>
+            <td class="data-cell">50</td>
+            <td class="data-cell">50</td>
+            <td class="empty-col"></td>
+            <td class="total-col border-right-thick">4,000</td>
+        </tr>
+        <tr class="empty-row">
+            <td class="border-left-thick"></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td class="empty-col"></td>
+            <td class="border-right-thick"></td>
+        </tr>
+        <tr class="total-row">
+            <td class="border-left-thick border-top-thick border-bottom-thick" colspan="2">TOTAL</td>
+            <td class="data-cell border-top-thick border-bottom-thick">4,850</td>
+            <td class="data-cell border-top-thick border-bottom-thick">10,050</td>
+            <td class="data-cell border-top-thick border-bottom-thick">8,400</td>
+            <td class="data-cell border-top-thick border-bottom-thick">3,400</td>
+            <td class="data-cell border-top-thick border-bottom-thick">1,300</td>
+            <td class="data-cell border-top-thick border-bottom-thick">800</td>
+            <td class="data-cell border-top-thick border-bottom-thick">300</td>
+            <td class="data-cell border-top-thick border-bottom-thick">300</td>
+            <td class="empty-col border-top-thick border-bottom-thick"></td>
+            <td class="total-col border-right-thick border-top-thick border-bottom-thick">29,400</td>
+        </tr>
+    </table>
+</body>
+</html>

@@ -2,8 +2,6 @@
 PDF 요소별 추출기
 PDF 파일에서 이미지, 도면, 테이블 등을 요소별로 구분하여 추출
 ERP 연동용 데이터 추출 기능 포함
-
-v2: AI 테이블 추출 기능 추가 (Table Transformer + PaddleOCR)
 """
 
 import streamlit as st
@@ -27,54 +25,6 @@ try:
     OCR_AVAILABLE = True
 except ImportError:
     OCR_AVAILABLE = False
-
-# AI 테이블 추출 (smart_table_extractor) 설정
-AI_TABLE_AVAILABLE = False
-VLM_AVAILABLE = False
-COMET_AVAILABLE = False
-try:
-    from smart_table_extractor import (
-        extract_smart_tables,
-        extract_vlm_tables,
-        extract_tables_auto,
-        extract_comet_tables,
-        extract_comet_with_table_detection,
-        extract_ocr_with_coordinates,
-        generate_comet_overlay_html,
-        generate_comet_full_html,
-        is_scanned_pdf,
-        check_ollama_model,
-        extract_smart_unified,  # 통합 스마트 추출 함수
-        extract_text_with_coordinates,  # 텍스트 PDF 직접 추출
-        extract_tables_grid_first,  # Grid-First 테이블 추출
-        PADDLEOCR_AVAILABLE,
-        TABLE_TRANSFORMER_AVAILABLE,
-        OLLAMA_AVAILABLE
-    )
-    AI_TABLE_AVAILABLE = TABLE_TRANSFORMER_AVAILABLE and (PADDLEOCR_AVAILABLE or OCR_AVAILABLE)
-    VLM_AVAILABLE = OLLAMA_AVAILABLE and check_ollama_model("granite3.2-vision")
-    COMET_AVAILABLE = PADDLEOCR_AVAILABLE
-    SMART_UNIFIED_AVAILABLE = PADDLEOCR_AVAILABLE or True  # PyMuPDF는 항상 사용 가능
-    GRID_FIRST_AVAILABLE = PADDLEOCR_AVAILABLE  # Grid-First는 PaddleOCR 필요
-except ImportError:
-    extract_smart_tables = None
-    extract_vlm_tables = None
-    extract_tables_auto = None
-    extract_comet_tables = None
-    extract_comet_with_table_detection = None
-    extract_ocr_with_coordinates = None
-    generate_comet_overlay_html = None
-    generate_comet_full_html = None
-    is_scanned_pdf = None
-    check_ollama_model = None
-    extract_smart_unified = None
-    extract_text_with_coordinates = None
-    extract_tables_grid_first = None
-    PADDLEOCR_AVAILABLE = False
-    TABLE_TRANSFORMER_AVAILABLE = False
-    OLLAMA_AVAILABLE = False
-    SMART_UNIFIED_AVAILABLE = False
-    GRID_FIRST_AVAILABLE = False
 
 st.set_page_config(
     page_title="PDF 요소별 추출기",
@@ -376,219 +326,16 @@ if uploaded_file is not None:
 
         st.divider()
 
-        # AI 테이블 추출 옵션 (통합)
-        st.subheader("🤖 스마트 테이블 추출")
-
-        col_opt1, col_opt2, col_opt3 = st.columns(3)
-
-        with col_opt1:
-            # 통합 스마트 추출 (권장)
-            ai_method = "none"
-            if SMART_UNIFIED_AVAILABLE:
-                use_smart = st.checkbox(
-                    "✨ 스마트 추출 (권장)",
-                    value=True,
-                    help="자동 PDF 타입 감지: 텍스트 PDF→직접 추출(100% 정확), 스캔 PDF→OCR"
-                )
-                if use_smart:
-                    ai_method = "smart_unified"
-            else:
-                st.warning("⚠️ 스마트 추출 불가")
-
-        with col_opt2:
-            # Grid-First 옵션 (격자선 기반 추출)
-            use_grid_first = False
-            if GRID_FIRST_AVAILABLE:
-                use_grid_first = st.checkbox(
-                    "📐 Grid-First 추출",
-                    value=False,
-                    help="격자선 구조 먼저 감지 후 OCR 매핑 (COLOR/SIZE 테이블에 최적)"
-                )
-                if use_grid_first:
-                    ai_method = "grid_first"
-
-            # 테이블 분리 옵션 (smart_unified 선택 시)
-            separate_tables = True
-            if ai_method == "smart_unified" and TABLE_TRANSFORMER_AVAILABLE:
-                separate_tables = st.checkbox(
-                    "📊 테이블 개별 분리",
-                    value=True,
-                    help="Table Transformer + 격자선 감지로 여러 테이블을 개별 추출"
-                )
-
-        with col_opt3:
-            if VLM_AVAILABLE and ai_method == "none":
-                use_vlm = st.checkbox(
-                    "🧠 VLM 추출",
-                    value=False,
-                    help="Granite3.2-vision VLM으로 문서를 이해하여 추출 (AI 추론 기반)"
-                )
-                if use_vlm:
-                    ai_method = "vlm"
-            elif not VLM_AVAILABLE and ai_method == "none":
-                st.info("💡 VLM: `ollama pull granite3.2-vision`")
-
-        # 추가 옵션 (필요 시)
-        use_ocr = False
-        if ai_method == "none" and OCR_AVAILABLE:
-            use_ocr = st.checkbox(
-                "🔍 기본 OCR",
-                value=False,
-                help="테이블이 감지되지 않는 경우 OCR로 텍스트만 추출합니다."
-            )
+        # OCR 옵션 (스캔 PDF용)
+        use_ocr = st.checkbox(
+            "🔍 OCR 사용 (스캔 PDF용)",
+            value=False,
+            help="테이블이 감지되지 않는 스캔된 PDF의 경우 OCR로 텍스트를 추출합니다."
+        ) if OCR_AVAILABLE else False
 
         # ERP 데이터 추출
-        if ai_method == "smart_unified" and SMART_UNIFIED_AVAILABLE:
-            # 통합 스마트 추출 모드 (자동 PDF 타입 감지)
-            progress_placeholder = st.empty()
-
-            def progress_callback(page, total, msg):
-                progress_placeholder.progress(page / total if total > 0 else 0, text=f"✨ 스마트 추출 중... {msg}")
-
-            with st.spinner("✨ 스마트 추출 중... (PDF 타입 자동 감지)"):
-                ai_result = extract_smart_unified(pdf_bytes,
-                                                   progress_callback=progress_callback,
-                                                   separate_tables=separate_tables)
-
-            progress_placeholder.empty()
-
-            # 결과를 ERP 데이터 형식으로 변환
-            is_scanned = ai_result.get("is_scanned", True)
-            erp_data = {
-                "tables": [],
-                "ocr_text": [],
-                "is_scanned": is_scanned,
-                "is_ai_extracted": True,
-                "is_smart_unified": True,
-                "is_hybrid": ai_result.get("is_hybrid", False),
-                "ocr_engine": ai_result.get("ocr_engine", "Unknown"),
-                "comet_html": ai_result.get("comet_html", []),
-                "pages": ai_result.get("pages", [])
-            }
-
-            for table in ai_result.get("tables", []):
-                erp_data["tables"].append({
-                    "page": table["page"],
-                    "table_index": table["table_index"],
-                    "table_name": table.get("table_name", f"테이블 {table['table_index']}"),
-                    "data": table["data"],
-                    "confidence": table.get("confidence", 0.99 if not is_scanned else 0.95),
-                    "row_count": table.get("row_count", 0),
-                    "col_count": table.get("col_count", 0),
-                    "bbox": table.get("bbox", []),
-                    "extraction_method": table.get("extraction_method", ai_result.get("extraction_method", "smart_unified"))
-                })
-
-        elif ai_method == "vlm" and VLM_AVAILABLE:
-            # VLM 추출 모드
-            progress_placeholder = st.empty()
-
-            def progress_callback(page, total, msg):
-                progress_placeholder.progress(page / total, text=f"🧠 VLM 분석 중... {msg}")
-
-            with st.spinner("🧠 VLM 테이블 추출 중... (Granite3.2-vision으로 문서 분석)"):
-                ai_result = extract_vlm_tables(pdf_bytes, progress_callback=progress_callback)
-
-            progress_placeholder.empty()
-
-            # AI 결과를 ERP 데이터 형식으로 변환
-            erp_data = {
-                "tables": [],
-                "ocr_text": [],
-                "is_scanned": True,
-                "is_ai_extracted": True,
-                "ocr_engine": f"VLM ({ai_result.get('model', 'granite3.2-vision')})"
-            }
-
-            for table in ai_result.get("tables", []):
-                erp_data["tables"].append({
-                    "page": table["page"],
-                    "table_index": table["table_index"],
-                    "data": table["data"],
-                    "confidence": table.get("confidence", 0.95),
-                    "row_count": table.get("row_count", 0),
-                    "col_count": table.get("col_count", 0),
-                    "title": table.get("title", "")
-                })
-
-            # 페이지별 필드 정보도 추가
-            for page_data in ai_result.get("pages", []):
-                fields = page_data.get("fields", {})
-                if fields:
-                    erp_data["fields"] = fields
-
-        elif ai_method == "grid_first" and GRID_FIRST_AVAILABLE:
-            # Grid-First 추출 모드 (격자선 구조 먼저 감지)
-            progress_placeholder = st.empty()
-
-            def progress_callback(page, total, msg):
-                progress_placeholder.progress(page / total if total > 0 else 0, text=f"📐 Grid-First 분석 중... {msg}")
-
-            with st.spinner("📐 Grid-First 추출 중... (격자선 감지 + PaddleOCR)"):
-                ai_result = extract_tables_grid_first(pdf_bytes, progress_callback=progress_callback, min_cells=10)
-
-            progress_placeholder.empty()
-
-            # 결과를 ERP 데이터 형식으로 변환
-            erp_data = {
-                "tables": [],
-                "ocr_text": [],
-                "is_scanned": True,
-                "is_ai_extracted": True,
-                "is_grid_first": True,
-                "ocr_engine": ai_result.get("ocr_engine", "PaddleOCR")
-            }
-
-            for table in ai_result.get("tables", []):
-                erp_data["tables"].append({
-                    "page": table["page"],
-                    "table_index": table["table_index"],
-                    "table_name": f"Grid Table {table['table_index']}",
-                    "data": table["data"],
-                    "confidence": table.get("confidence", 1.0),
-                    "row_count": table.get("row_count", 0),
-                    "col_count": table.get("col_count", 0),
-                    "bbox": table.get("box", []),
-                    "extraction_method": "grid_first"
-                })
-
-            if ai_result.get("tables"):
-                st.success(f"📐 Grid-First 추출 완료 - {len(ai_result['tables'])}개 테이블 발견")
-
-        elif ai_method == "table_transformer" and AI_TABLE_AVAILABLE:
-            # Table Transformer 추출 모드
-            progress_placeholder = st.empty()
-
-            def progress_callback(page, total, msg):
-                progress_placeholder.progress(page / total, text=f"📊 AI 분석 중... {msg}")
-
-            with st.spinner("📊 AI 테이블 추출 중... (Table Transformer + PaddleOCR)"):
-                ai_result = extract_smart_tables(pdf_bytes, progress_callback=progress_callback, use_paddle=PADDLEOCR_AVAILABLE)
-
-            progress_placeholder.empty()
-
-            # AI 결과를 ERP 데이터 형식으로 변환
-            erp_data = {
-                "tables": [],
-                "ocr_text": [],
-                "is_scanned": True,
-                "is_ai_extracted": True,
-                "ocr_engine": ai_result.get("ocr_engine", "Unknown")
-            }
-
-            for table in ai_result.get("tables", []):
-                erp_data["tables"].append({
-                    "page": table["page"],
-                    "table_index": table["table_index"],
-                    "data": table["data"],
-                    "confidence": table.get("confidence", 0),
-                    "row_count": table.get("row_count", 0),
-                    "col_count": table.get("col_count", 0)
-                })
-        else:
-            # 기존 방식
-            with st.spinner("데이터 추출 중..." + (" (OCR 처리 시 시간이 걸릴 수 있습니다)" if use_ocr else "")):
-                erp_data = extract_erp_data(pdf_bytes, use_ocr=use_ocr)
+        with st.spinner("데이터 추출 중..." + (" (OCR 처리 시 시간이 걸릴 수 있습니다)" if use_ocr else "")):
+            erp_data = extract_erp_data(pdf_bytes, use_ocr=use_ocr)
 
         # 탭으로 요소별 표시
         tabs = st.tabs(["📦 ERP 데이터", "📄 페이지 렌더링", "📊 차트/도면", "🖼️ 사진/이미지", "🏷️ 로고/아이콘", "📝 텍스트"])
@@ -600,111 +347,17 @@ if uploaded_file is not None:
             tables = erp_data.get("tables", [])
             ocr_texts = erp_data.get("ocr_text", [])
             is_scanned = erp_data.get("is_scanned", False)
-            is_ai_extracted = erp_data.get("is_ai_extracted", False)
-            ocr_engine = erp_data.get("ocr_engine", "")
-
-            # 스마트 추출 결과 표시
-            is_smart_unified = erp_data.get("is_smart_unified", False)
-            is_hybrid = erp_data.get("is_hybrid", False)
-
-            if is_smart_unified:
-                # PDF 타입에 따른 메시지
-                if is_scanned:
-                    st.success(f"✨ 스마트 추출 완료 - 스캔 PDF → OCR 사용 (엔진: {ocr_engine})")
-                else:
-                    st.success(f"✨ 스마트 추출 완료 - 텍스트 PDF → 직접 추출 (100% 정확도)")
-
-                if is_hybrid:
-                    st.caption("📊 Table Transformer + 격자선 감지로 테이블이 개별 분리되었습니다.")
-
-                # 페이지 오버레이 다운로드/미리보기
-                comet_pages = erp_data.get("pages", [])
-                if comet_pages:
-                    # 전체 HTML 생성
-                    comet_data = {
-                        "pages": comet_pages,
-                        "total_pages": len(comet_pages)
-                    }
-                    full_html = generate_comet_full_html(comet_data, scale=0.7)
-
-                    st.download_button(
-                        "📥 HTML 다운로드 (선택 가능 텍스트)",
-                        data=full_html,
-                        file_name=f"{pdf_name}_smart_overlay.html",
-                        mime="text/html",
-                        help="HTML 파일을 브라우저에서 열면 텍스트를 선택/복사할 수 있습니다"
-                    )
-
-                    # 미리보기
-                    with st.expander("📄 페이지 미리보기", expanded=False):
-                        for page_data in comet_pages[:3]:
-                            page_num = page_data["page"]
-                            img_base64 = page_data.get("image_base64", "")
-
-                            if img_base64:
-                                st.image(
-                                    f"data:image/png;base64,{img_base64}",
-                                    caption=f"페이지 {page_num}",
-                                    use_container_width=True
-                                )
-
-                        if len(comet_pages) > 3:
-                            st.info(f"... 외 {len(comet_pages) - 3}페이지 더 있음")
-
-                st.divider()
-
-            # VLM 필드 정보 표시
-            fields = erp_data.get("fields", {})
-            if fields:
-                st.success("🧠 VLM 문서 필드 추출 완료")
-                st.markdown("### 📋 추출된 필드 정보")
-
-                field_cols = st.columns(2)
-                field_items = list(fields.items())
-
-                for i, (key, value) in enumerate(field_items):
-                    col = field_cols[i % 2]
-                    with col:
-                        if isinstance(value, list):
-                            # COLOR_WAY 등 리스트 형태
-                            st.markdown(f"**{key}:**")
-                            for item in value:
-                                if isinstance(item, dict):
-                                    st.write(f"  - {item.get('code', '')} : {item.get('name', '')}")
-                                else:
-                                    st.write(f"  - {item}")
-                        else:
-                            st.markdown(f"**{key}:** {value}")
-
-                st.divider()
 
             if tables:
-                if is_ai_extracted:
-                    st.success(f"🤖 AI 테이블 추출 완료: {len(tables)}개 테이블 (엔진: {ocr_engine})")
-                else:
-                    st.success(f"총 {len(tables)}개 테이블 추출됨")
+                st.success(f"총 {len(tables)}개 테이블 추출됨")
 
                 # 각 테이블을 그대로 표시
                 for table_info in tables:
                     page_num = table_info["page"]
                     table_idx = table_info["table_index"]
-                    table_name = table_info.get("table_name", "")
                     data = table_info["data"]
-                    confidence = table_info.get("confidence", 0)
-                    row_count = table_info.get("row_count", len(data) if data else 0)
-                    col_count = table_info.get("col_count", max(len(row) for row in data) if data else 0)
 
-                    # 헤더 표시
-                    if table_name:
-                        header_text = f"### 📄 페이지 {page_num} - {table_name}"
-                    else:
-                        header_text = f"### 📄 페이지 {page_num} - 테이블 {table_idx}"
-                    if is_ai_extracted and confidence:
-                        header_text += f" (신뢰도: {confidence:.1%})"
-                    st.markdown(header_text)
-
-                    if is_ai_extracted:
-                        st.caption(f"크기: {row_count}행 × {col_count}열")
+                    st.markdown(f"### 📄 페이지 {page_num} - 테이블 {table_idx}")
 
                     if data:
                         df = pd.DataFrame(data)
@@ -733,9 +386,7 @@ if uploaded_file is not None:
 
             else:
                 st.warning("추출된 테이블이 없습니다.")
-                if AI_TABLE_AVAILABLE:
-                    st.info("💡 스캔 PDF인 경우 위의 '🤖 AI 테이블 추출' 체크박스를 활성화해보세요.")
-                elif not use_ocr and OCR_AVAILABLE:
+                if not use_ocr and OCR_AVAILABLE:
                     st.info("💡 스캔 PDF인 경우 위의 'OCR 사용' 체크박스를 활성화해보세요.")
 
             # 다운로드 버튼

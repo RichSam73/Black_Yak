@@ -339,6 +339,304 @@ def organize_cells_to_table(cells: list, table_width: int, table_height: int) ->
     return table_data
 
 
+# =============================================================================
+# Grid-First 테이블 추출 (Top-Down 방식)
+# - 큰 박스 안에 셀 10개 이상 = 테이블
+# - 격자 구조 먼저 감지 후 OCR 텍스트 매핑
+# =============================================================================
+
+import cv2
+import numpy as np
+
+
+def grid_find_boxes(img: Image.Image, min_area: int = 5000, max_area_ratio: float = 0.8) -> list:
+    """
+    닫힌 사각형들 찾기 (내부 박스 포함)
+    - min_area: 최소 면적
+    - max_area_ratio: 이미지 대비 최대 면적 비율 (전체 페이지 외곽선 제외용)
+    """
+    img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    _, binary = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+
+    # RETR_TREE로 내부 contour도 찾기
+    contours, _ = cv2.findContours(binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    img_area = img.width * img.height
+    max_area = img_area * max_area_ratio
+
+    boxes = []
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        # 너무 작거나 너무 큰 contour 제외
+        if area < min_area or area > max_area:
+            continue
+
+        x, y, w, h = cv2.boundingRect(contour)
+
+        # 가로세로 비율 체크 - 너무 길쭉한건 제외
+        aspect = max(w, h) / (min(w, h) + 1)
+        if aspect > 20:
+            continue
+
+        boxes.append({"box": [x, y, x+w, y+h], "area": area, "w": w, "h": h})
+
+    # 면적 기준 내림차순
+    boxes.sort(key=lambda b: b["area"], reverse=True)
+
+    # 중복 박스 제거 (거의 같은 위치의 박스)
+    filtered = []
+    for box in boxes:
+        is_dup = False
+        for existing in filtered:
+            # IoU 기반 중복 체크
+            if grid_box_iou(box["box"], existing["box"]) > 0.9:
+                is_dup = True
+                break
+        if not is_dup:
+            filtered.append(box)
+
+    return filtered
+
+
+def grid_box_iou(box1: list, box2: list) -> float:
+    """두 박스의 IoU 계산"""
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+
+    if x2 <= x1 or y2 <= y1:
+        return 0.0
+
+    inter = (x2 - x1) * (y2 - y1)
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+
+    return inter / (area1 + area2 - inter)
+
+
+def grid_count_cells_in_region(img: Image.Image, box: list, min_line_len: int = 30) -> tuple:
+    """
+    영역 내 가로선/세로선 수 -> 셀 수 계산
+    Returns: (num_rows, num_cols, row_bounds, col_bounds)
+    """
+    x1, y1, x2, y2 = box
+    cropped = img.crop((x1, y1, x2, y2))
+
+    img_cv = cv2.cvtColor(np.array(cropped), cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    _, binary = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+
+    h, w = binary.shape
+
+    # 가로선 찾기
+    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (min_line_len, 1))
+    h_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, h_kernel)
+    h_proj = np.sum(h_lines, axis=1)
+    h_coords = np.where(h_proj > min_line_len)[0]
+    row_bounds = grid_group_coords(h_coords)
+
+    # 세로선 찾기
+    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, min_line_len))
+    v_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, v_kernel)
+    v_proj = np.sum(v_lines, axis=0)
+    v_coords = np.where(v_proj > min_line_len)[0]
+    col_bounds = grid_group_coords(v_coords)
+
+    num_rows = max(0, len(row_bounds) - 1)
+    num_cols = max(0, len(col_bounds) - 1)
+
+    return num_rows, num_cols, row_bounds, col_bounds
+
+
+def grid_group_coords(coords: np.ndarray, gap: int = 5) -> list:
+    """연속 좌표 그룹화"""
+    if len(coords) == 0:
+        return []
+
+    groups = []
+    current = [coords[0]]
+
+    for c in coords[1:]:
+        if c - current[-1] <= gap:
+            current.append(c)
+        else:
+            groups.append(int(np.mean(current)))
+            current = [c]
+
+    groups.append(int(np.mean(current)))
+    return groups
+
+
+def grid_find_tables(img: Image.Image, min_cells: int = 10) -> list:
+    """
+    테이블 영역 자동 감지
+    - 큰 박스 안에 셀 min_cells개 이상이면 테이블
+    """
+    boxes = grid_find_boxes(img)
+
+    tables = []
+    for i, box_info in enumerate(boxes):
+        box = box_info["box"]
+        num_rows, num_cols, row_bounds, col_bounds = grid_count_cells_in_region(img, box)
+        num_cells = num_rows * num_cols
+
+        if num_cells >= min_cells:
+            tables.append({
+                "box": box,
+                "rows": num_rows,
+                "cols": num_cols,
+                "row_bounds": row_bounds,
+                "col_bounds": col_bounds
+            })
+
+    return tables
+
+
+def grid_find_index(value: float, bounds: list) -> int:
+    """bounds 리스트에서 value가 속하는 인덱스 찾기"""
+    for i in range(len(bounds) - 1):
+        if bounds[i] <= value < bounds[i + 1]:
+            return i
+    return -1
+
+
+def grid_extract_table_from_region(img: Image.Image, table_info: dict) -> dict:
+    """테이블 영역에서 데이터 추출 (OCR + 격자 매핑)"""
+    box = table_info["box"]
+    x1, y1, x2, y2 = box
+
+    # 크롭
+    cropped = img.crop((x1, y1, x2, y2))
+
+    row_bounds = table_info["row_bounds"]
+    col_bounds = table_info["col_bounds"]
+    num_rows = len(row_bounds) - 1
+    num_cols = len(col_bounds) - 1
+
+    # 빈 테이블 생성
+    table = [["" for _ in range(num_cols)] for _ in range(num_rows)]
+
+    # OCR
+    ocr_results = ocr_full_image_paddle(cropped)
+
+    # 매핑
+    for ocr in ocr_results:
+        ocr_box = ocr.get("box", [])
+        text = ocr.get("text", "").strip()
+
+        if not text or len(ocr_box) < 4:
+            continue
+
+        cx = (ocr_box[0] + ocr_box[2]) / 2
+        cy = (ocr_box[1] + ocr_box[3]) / 2
+
+        row_idx = grid_find_index(cy, row_bounds)
+        col_idx = grid_find_index(cx, col_bounds)
+
+        if 0 <= row_idx < num_rows and 0 <= col_idx < num_cols:
+            if table[row_idx][col_idx]:
+                table[row_idx][col_idx] += " " + text
+            else:
+                table[row_idx][col_idx] = text
+
+    return {
+        "data": table,
+        "box": box,
+        "rows": num_rows,
+        "cols": num_cols,
+        "row_bounds": row_bounds,
+        "col_bounds": col_bounds
+    }
+
+
+def extract_tables_grid_first(pdf_bytes: bytes, progress_callback=None, min_cells: int = 10, page_numbers: list = None) -> dict:
+    """
+    Grid-First 방식 테이블 추출
+    1. PDF를 이미지로 변환
+    2. OpenCV로 닫힌 사각형(박스) 감지
+    3. 박스 내 격자선 분석으로 테이블 판별 (셀 수 >= min_cells)
+    4. 격자 구조 기반으로 셀 영역 확정
+    5. PaddleOCR로 텍스트 추출 후 셀에 매핑
+
+    Args:
+        pdf_bytes: PDF 파일 바이트
+        progress_callback: 진행상황 콜백 함수 (page, total, message)
+        min_cells: 테이블로 인정할 최소 셀 수
+        page_numbers: 추출할 페이지 번호 리스트 (None이면 전체)
+
+    Returns:
+        dict: {
+            "tables": [...],
+            "extraction_method": "grid_first",
+            "is_ai_extracted": True
+        }
+    """
+    if not PADDLEOCR_AVAILABLE:
+        return {
+            "tables": [],
+            "error": "PaddleOCR가 설치되지 않았습니다.",
+            "is_ai_extracted": False
+        }
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    total_pages = len(doc)
+    all_tables = []
+
+    # 처리할 페이지 결정
+    if page_numbers is None:
+        pages_to_process = range(total_pages)
+    else:
+        pages_to_process = [p - 1 for p in page_numbers if 1 <= p <= total_pages]
+
+    for page_idx in pages_to_process:
+        page = doc[page_idx]
+        page_num = page_idx + 1
+
+        if progress_callback:
+            progress_callback(page_num, total_pages, f"Grid-First 분석 중...")
+
+        # PDF -> 이미지 (2x 스케일)
+        mat = fitz.Matrix(2.0, 2.0)
+        pix = page.get_pixmap(matrix=mat)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+        # 테이블 자동 감지
+        tables = grid_find_tables(img, min_cells=min_cells)
+
+        if progress_callback:
+            progress_callback(page_num, total_pages, f"{len(tables)}개 테이블 발견")
+
+        # 각 테이블에서 데이터 추출
+        for table_idx, table_info in enumerate(tables):
+            result = grid_extract_table_from_region(img, table_info)
+
+            # 스케일 보정 (2x -> 원본)
+            box = table_info["box"]
+            original_box = [int(c / 2) for c in box]
+
+            all_tables.append({
+                "page": page_num,
+                "table_index": table_idx + 1,
+                "data": result["data"],
+                "row_count": result["rows"],
+                "col_count": result["cols"],
+                "confidence": 1.0,  # Grid-First는 구조 기반이므로 높은 신뢰도
+                "box": original_box,
+                "extraction_method": "grid_first"
+            })
+
+    doc.close()
+
+    return {
+        "tables": all_tables,
+        "extraction_method": "grid_first",
+        "is_ai_extracted": True,
+        "ocr_engine": "PaddleOCR"
+    }
+
+
 def extract_smart_tables(pdf_bytes: bytes, progress_callback=None, use_paddle=True) -> dict:
     """
     스마트 테이블 추출 (Comet 방식)
@@ -1405,6 +1703,255 @@ def detect_grid_lines(img: Image.Image, min_line_length_ratio: float = 0.1,
     }
 
 
+# ============================================================
+# Canonical Cell Model - 병합 셀 처리 (Round 7 합의)
+# ============================================================
+
+def build_canonical_cells(grid_info: dict, ocr_results: list = None) -> list:
+    """
+    선분(line segment) 기반 병합 셀 감지
+    수직선 유무로 가로 병합(colspan), 수평선 유무로 세로 병합(rowspan) 판단
+
+    Args:
+        grid_info: detect_grid_lines()의 반환값
+            - horizontal_lines: [(y, x_start, x_end), ...]
+            - vertical_lines: [(x, y_start, y_end), ...]
+            - row_boundaries: [y1, y2, y3, ...]
+            - col_boundaries: [x1, x2, x3, ...]
+        ocr_results: OCR 결과 (선택, 텍스트 매핑용)
+
+    Returns:
+        Canonical cell 리스트:
+        [
+            {
+                "row": 0, "col": 0,
+                "rowspan": 1, "colspan": 2,
+                "box": [x1, y1, x2, y2],
+                "text": "merged cell text"
+            },
+            ...
+        ]
+    """
+    row_boundaries = grid_info.get("row_boundaries", [])
+    col_boundaries = grid_info.get("col_boundaries", [])
+    vertical_lines = grid_info.get("vertical_lines", [])
+    horizontal_lines = grid_info.get("horizontal_lines", [])
+
+    if len(row_boundaries) < 2 or len(col_boundaries) < 2:
+        return []
+
+    num_rows = len(row_boundaries) - 1
+    num_cols = len(col_boundaries) - 1
+
+    # 셀 병합 상태 추적 (True = 이미 다른 셀에 병합됨)
+    merged_mask = [[False for _ in range(num_cols)] for _ in range(num_rows)]
+
+    canonical_cells = []
+
+    for row_idx in range(num_rows):
+        for col_idx in range(num_cols):
+            if merged_mask[row_idx][col_idx]:
+                continue  # 이미 병합된 셀
+
+            y1 = row_boundaries[row_idx]
+            y2 = row_boundaries[row_idx + 1]
+            x1 = col_boundaries[col_idx]
+            x2 = col_boundaries[col_idx + 1]
+
+            # colspan 계산: 오른쪽 경계에 수직선이 없으면 병합
+            colspan = 1
+            for next_col in range(col_idx + 1, num_cols):
+                boundary_x = col_boundaries[next_col]
+                # 이 경계에 수직선이 있는지 확인
+                has_vertical_line = _has_line_at_position(
+                    vertical_lines, boundary_x, y1, y2, axis='x', tolerance=5
+                )
+                if has_vertical_line:
+                    break
+                colspan += 1
+                x2 = col_boundaries[next_col + 1]
+
+            # rowspan 계산: 아래 경계에 수평선이 없으면 병합
+            rowspan = 1
+            for next_row in range(row_idx + 1, num_rows):
+                boundary_y = row_boundaries[next_row]
+                # 이 경계에 수평선이 있는지 확인
+                has_horizontal_line = _has_line_at_position(
+                    horizontal_lines, boundary_y, x1, x2, axis='y', tolerance=5
+                )
+                if has_horizontal_line:
+                    break
+                rowspan += 1
+                y2 = row_boundaries[next_row + 1]
+
+            # 병합 마스크 업데이트
+            for r in range(row_idx, row_idx + rowspan):
+                for c in range(col_idx, col_idx + colspan):
+                    if r < num_rows and c < num_cols:
+                        merged_mask[r][c] = True
+
+            # 셀 텍스트 매핑 (OCR 결과가 있으면)
+            cell_text = ""
+            if ocr_results:
+                cell_text = _get_text_in_box(ocr_results, [x1, y1, x2, y2])
+
+            canonical_cells.append({
+                "row": row_idx,
+                "col": col_idx,
+                "rowspan": rowspan,
+                "colspan": colspan,
+                "box": [x1, y1, x2, y2],
+                "text": cell_text
+            })
+
+    return canonical_cells
+
+
+def _has_line_at_position(lines: list, position: int, start: int, end: int,
+                           axis: str = 'x', tolerance: int = 5) -> bool:
+    """
+    특정 위치에 선이 존재하는지 확인
+
+    Args:
+        lines: 선 리스트 [(pos, start, end), ...]
+        position: 확인할 위치 (x 또는 y)
+        start, end: 선이 커버해야 할 범위
+        axis: 'x'면 수직선 확인, 'y'면 수평선 확인
+        tolerance: 위치 허용 오차
+
+    Returns:
+        bool: 해당 위치에 선이 있으면 True
+    """
+    for line in lines:
+        line_pos = line[0]  # x 또는 y 좌표
+        line_start = line[1]
+        line_end = line[2]
+
+        # 위치가 tolerance 내에 있고, 범위를 충분히 커버하는지 확인
+        if abs(line_pos - position) <= tolerance:
+            # 선이 범위의 절반 이상을 커버하면 존재한다고 판단
+            overlap_start = max(line_start, start)
+            overlap_end = min(line_end, end)
+            overlap_length = overlap_end - overlap_start
+            range_length = end - start
+
+            if range_length > 0 and overlap_length >= range_length * 0.5:
+                return True
+
+    return False
+
+
+def _get_text_in_box(ocr_results: list, box: list) -> str:
+    """
+    박스 영역 내의 OCR 텍스트 추출
+
+    Args:
+        ocr_results: OCR 결과 리스트
+        box: [x1, y1, x2, y2]
+
+    Returns:
+        영역 내 텍스트 (공백으로 연결)
+    """
+    x1, y1, x2, y2 = box
+    texts = []
+
+    for item in ocr_results:
+        text = item.get("text", "").strip()
+        if not text:
+            continue
+
+        ocr_box = item.get("box", [])
+        if len(ocr_box) < 4:
+            continue
+
+        # OCR 박스 중심점
+        cx = (ocr_box[0] + ocr_box[2]) / 2
+        cy = (ocr_box[1] + ocr_box[3]) / 2
+
+        # 중심점이 셀 내부에 있으면 포함
+        if x1 <= cx <= x2 and y1 <= cy <= y2:
+            texts.append((ocr_box[0], ocr_box[1], text))  # x, y, text
+
+    # Y좌표 → X좌표 순으로 정렬
+    texts.sort(key=lambda t: (t[1], t[0]))
+
+    return " ".join(t[2] for t in texts)
+
+
+def canonical_to_flat_table(canonical_cells: list, num_rows: int, num_cols: int,
+                             fill_merged: bool = True) -> list:
+    """
+    Canonical cells를 2D 평면 테이블로 변환
+    병합된 셀은 모든 위치에 동일한 값 복사 (선택적)
+
+    Args:
+        canonical_cells: build_canonical_cells()의 반환값
+        num_rows: 테이블 행 수
+        num_cols: 테이블 열 수
+        fill_merged: True면 병합 영역 모든 셀에 동일 값 복사
+
+    Returns:
+        2D 테이블 데이터 [[row1_col1, row1_col2, ...], ...]
+    """
+    # 빈 테이블 생성
+    table = [["" for _ in range(num_cols)] for _ in range(num_rows)]
+
+    for cell in canonical_cells:
+        row = cell["row"]
+        col = cell["col"]
+        rowspan = cell.get("rowspan", 1)
+        colspan = cell.get("colspan", 1)
+        text = cell.get("text", "")
+
+        if fill_merged:
+            # 병합된 모든 셀에 동일 값 복사
+            for r in range(row, min(row + rowspan, num_rows)):
+                for c in range(col, min(col + colspan, num_cols)):
+                    if not table[r][c]:  # 비어있으면 채움
+                        table[r][c] = text
+        else:
+            # 시작 셀에만 값 저장
+            if row < num_rows and col < num_cols:
+                table[row][col] = text
+
+    return table
+
+
+def remove_empty_columns(table_data: list) -> list:
+    """
+    모든 행에서 완전히 비어있는 열 제거
+
+    Args:
+        table_data: 2D 테이블 데이터
+
+    Returns:
+        빈 열이 제거된 테이블
+    """
+    if not table_data or not table_data[0]:
+        return table_data
+
+    num_cols = len(table_data[0])
+
+    # 각 열이 비어있는지 확인
+    cols_to_keep = []
+    for col_idx in range(num_cols):
+        has_data = any(
+            row[col_idx].strip() if col_idx < len(row) else False
+            for row in table_data
+        )
+        if has_data:
+            cols_to_keep.append(col_idx)
+
+    # 데이터 있는 열만 유지
+    if len(cols_to_keep) < num_cols:
+        table_data = [
+            [row[i] for i in cols_to_keep if i < len(row)]
+            for row in table_data
+        ]
+
+    return table_data
+
+
 def map_ocr_to_grid_cells(ocr_results: list, grid_info: dict, use_ocr_columns: bool = True) -> list:
     """
     OCR 결과를 격자 셀에 정확하게 매핑
@@ -1425,7 +1972,17 @@ def map_ocr_to_grid_cells(ocr_results: list, grid_info: dict, use_ocr_columns: b
     if use_ocr_columns and len(col_boundaries) < 3 and ocr_results:
         col_boundaries = estimate_column_boundaries_from_ocr(ocr_results)
         if col_boundaries:
-            col_boundaries = [0] + col_boundaries + [max(item["box"][2] for item in ocr_results) + 20]
+            # Round 7 수정: [0] + 제거, 실제 텍스트 위치 기반 경계 설정
+            min_x = min(item["box"][0] for item in ocr_results)
+            max_x = max(item["box"][2] for item in ocr_results)
+
+            # 첫 번째 경계가 실제 텍스트 시작보다 오른쪽이면 텍스트 시작점 추가
+            if col_boundaries[0] > min_x + 10:
+                col_boundaries.insert(0, min_x)
+
+            # 마지막 경계가 실제 텍스트 끝보다 왼쪽이면 텍스트 끝점 추가
+            if col_boundaries[-1] < max_x - 10:
+                col_boundaries.append(max_x + 20)
 
     if len(row_boundaries) < 2 or len(col_boundaries) < 2:
         # 격자 정보가 부족하면 기존 방식으로 폴백
@@ -1470,6 +2027,9 @@ def map_ocr_to_grid_cells(ocr_results: list, grid_info: dict, use_ocr_columns: b
 
     # 빈 행 제거 (모든 셀이 빈 행)
     table_data = [row for row in table_data if any(cell.strip() for cell in row)]
+
+    # Round 7 수정: 빈 열 제거
+    table_data = remove_empty_columns(table_data)
 
     return table_data
 
@@ -2355,6 +2915,8 @@ def extract_smart_unified(pdf_bytes: bytes, progress_callback=None,
         progress_callback(0, 1, f"📄 {pdf_type} 감지됨...")
 
     # 2. 텍스트/좌표 추출 (PDF 타입에 따라)
+    use_grid_first_fallback = False
+
     if scanned:
         # 스캔 PDF → PaddleOCR
         if not PADDLEOCR_AVAILABLE:
@@ -2371,16 +2933,133 @@ def extract_smart_unified(pdf_bytes: bytes, progress_callback=None,
         text_data = extract_text_with_coordinates(pdf_bytes, progress_callback)
         text_data["is_scanned"] = False
 
+        # 텍스트 추출 품질 검증 - 빈 셀 비율이 높으면 Grid-First 폴백
+        if PADDLEOCR_AVAILABLE:
+            quality_score = _check_text_extraction_quality(text_data)
+            if quality_score < 0.3:  # 품질 점수가 30% 미만이면 폴백
+                if progress_callback:
+                    progress_callback(0, 1, f"⚠️ 텍스트 추출 품질 낮음 ({quality_score:.0%}) → Grid-First로 전환...")
+                use_grid_first_fallback = True
+
     if "error" in text_data:
         return text_data
+
+    # 2-1. Grid-First 폴백 (텍스트 추출 품질이 낮은 경우)
+    if use_grid_first_fallback:
+        if progress_callback:
+            progress_callback(0, 1, "📐 Grid-First 추출 시작...")
+        grid_result = extract_tables_grid_first(pdf_bytes, progress_callback=progress_callback, min_cells=6)
+        grid_result["fallback_reason"] = "low_text_quality"
+        grid_result["original_quality_score"] = quality_score
+        return grid_result
 
     # 3. 테이블 분리 여부에 따른 처리
     if separate_tables and TABLE_TRANSFORMER_AVAILABLE:
         # Table Transformer + 격자선 감지로 테이블 분리
-        return _extract_with_table_separation(pdf_bytes, text_data, progress_callback)
+        result = _extract_with_table_separation(pdf_bytes, text_data, progress_callback)
+
+        # 결과 품질 재검증 - 테이블이 너무 적거나 빈 셀이 많으면 Grid-First 폴백
+        if PADDLEOCR_AVAILABLE and _should_fallback_to_grid_first(result):
+            if progress_callback:
+                progress_callback(0, 1, "⚠️ 테이블 추출 결과 부족 → Grid-First로 재시도...")
+            grid_result = extract_tables_grid_first(pdf_bytes, progress_callback=progress_callback, min_cells=6)
+            grid_result["fallback_reason"] = "insufficient_tables"
+            return grid_result
+
+        return result
     else:
         # 단순 페이지별 추출 (기존 Comet 방식)
         return _extract_page_tables(text_data, progress_callback)
+
+
+def _check_text_extraction_quality(text_data: dict) -> float:
+    """
+    텍스트 추출 품질 점수 계산 (0.0 ~ 1.0)
+
+    품질 기준:
+    - 페이지당 추출된 텍스트 블록 수
+    - 텍스트 블록의 평균 길이
+    - 빈 텍스트 블록 비율
+
+    Returns:
+        0.0 ~ 1.0 사이의 품질 점수
+    """
+    pages = text_data.get("pages", [])
+    if not pages:
+        return 0.0
+
+    total_blocks = 0
+    non_empty_blocks = 0
+    total_text_length = 0
+
+    for page_data in pages:
+        ocr_results = page_data.get("ocr_results", [])
+        for item in ocr_results:
+            total_blocks += 1
+            text = item.get("text", "").strip()
+            if text and len(text) > 1:  # 의미 있는 텍스트 (2자 이상)
+                non_empty_blocks += 1
+                total_text_length += len(text)
+
+    if total_blocks == 0:
+        return 0.0
+
+    # 품질 점수 계산
+    non_empty_ratio = non_empty_blocks / total_blocks
+    avg_text_length = total_text_length / max(non_empty_blocks, 1)
+
+    # 평균 텍스트 길이 점수 (5자 이상이면 만점)
+    length_score = min(avg_text_length / 5.0, 1.0)
+
+    # 최종 점수 = 비어있지 않은 비율 * 0.7 + 길이 점수 * 0.3
+    quality_score = non_empty_ratio * 0.7 + length_score * 0.3
+
+    return quality_score
+
+
+def _should_fallback_to_grid_first(result: dict) -> bool:
+    """
+    추출 결과를 검사해서 Grid-First로 폴백해야 하는지 판단
+
+    폴백 조건:
+    - 테이블이 하나도 없음
+    - 테이블의 빈 셀 비율이 너무 높음 (70% 이상)
+    - 테이블 행/열 수가 너무 적음
+    """
+    tables = result.get("tables", [])
+
+    if not tables:
+        return True
+
+    # 테이블별 품질 검사
+    low_quality_count = 0
+    for table in tables:
+        data = table.get("data", [])
+        if not data:
+            low_quality_count += 1
+            continue
+
+        # 빈 셀 비율 계산
+        total_cells = sum(len(row) for row in data)
+        empty_cells = sum(1 for row in data for cell in row if not str(cell).strip())
+
+        if total_cells > 0:
+            empty_ratio = empty_cells / total_cells
+            if empty_ratio > 0.7:  # 빈 셀이 70% 이상
+                low_quality_count += 1
+
+        # 행/열 수 검사
+        row_count = len(data)
+        col_count = max(len(row) for row in data) if data else 0
+
+        if row_count < 2 or col_count < 2:  # 너무 작은 테이블
+            low_quality_count += 1
+
+    # 모든 테이블이 품질이 낮으면 폴백
+    if low_quality_count == len(tables):
+        return True
+
+    return False
 
 
 def _extract_page_tables(text_data: dict, progress_callback=None) -> dict:

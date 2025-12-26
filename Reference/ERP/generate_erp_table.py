@@ -225,189 +225,59 @@ def grid_extract_table(img: Image.Image, table_info: dict) -> list:
 # 테이블 파싱 및 HTML 생성
 # =============================================================================
 
-def parse_table_data(table: list) -> dict:
-    """Grid-First로 추출된 2D 테이블을 구조화된 데이터로 파싱
+def generate_generic_erp_table_html(table_2d: list) -> str:
+    """Grid-First 2D 테이블을 그대로 ERP용 HTML 테이블로 변환
 
-    테이블 구조:
-    - 타이틀 행: 'COLOR/SIZE QTY' 포함
-    - 헤더 행: 'COLOR', 'SIZE' 또는 숫자(095, 100 등) 포함
-    - 데이터 행: 2글자 대문자 코드로 시작
-    - TOTAL 행: 'TOTAL' 포함
+    양식에 관계없이 Grid-First 결과를 그대로 HTML로 출력
+    - COLOR/SIZE QTY, SUB MATERIAL INFORMATION 등 모든 양식 지원
     """
 
-    if not table or len(table) < 3:
-        return None
+    if not table_2d or len(table_2d) == 0:
+        return '<p>테이블 데이터가 없습니다.</p>'
 
-    result = {
-        'title': '',
-        'headers': [],
-        'data': [],
-        'totals': [],
-        'grand_total': ''
-    }
+    num_cols = max(len(row) for row in table_2d)
 
-    title_found = False
-    header_found = False
-
-    for i, row in enumerate(table):
-        row_texts = [cell.strip() for cell in row if cell.strip()]
-        print(f"Row {i}: {row_texts}")
-
-        # 빈 행 건너뛰기
-        if not row_texts:
-            continue
-
-        # 타이틀 행 찾기 (COLOR/SIZE QTY 포함)
-        row_joined = ' '.join(row_texts).upper()
-        if not title_found and ('COLOR' in row_joined and 'QTY' in row_joined):
-            result['title'] = ' '.join(row_texts)
-            title_found = True
-            continue
-
-        # 헤더 행 찾기 (숫자 사이즈 3자리 포함)
-        if not header_found and title_found:
-            for text in row_texts:
-                if text.isdigit() and len(text) == 3:
-                    result['headers'].append(text)
-            if result['headers']:
-                header_found = True
-                continue
-
-        # TOTAL 행
-        if 'TOTAL' in row_texts:
-            values = []
-            for text in row_texts:
-                if text != 'TOTAL':
-                    text_clean = text.replace(',', '')
-                    if text_clean.isdigit():
-                        values.append(text)
-            if values:
-                result['grand_total'] = values[-1]
-                result['totals'] = values[:-1]
-            continue
-
-        # 데이터 행 (2글자 대문자 코드로 시작)
-        if len(row_texts) >= 2 and len(row_texts[0]) == 2 and row_texts[0].isupper():
-            color_code = row_texts[0]
-            color_name = row_texts[1]
-            values = []
-            total = ''
-
-            for text in row_texts[2:]:
-                text_clean = text.replace(',', '')
-                if text_clean.isdigit():
-                    values.append(text)
-
-            if values:
-                total = values[-1]
-                values = values[:-1]
-
-            result['data'].append({
-                'code': color_code,
-                'name': color_name,
-                'values': values,
-                'total': total
-            })
-
-    # Grand Total 검증
-    if result['data'] and result['grand_total']:
-        data_total_sum = 0
-        for d in result['data']:
-            total_clean = d['total'].replace(',', '')
-            if total_clean.isdigit():
-                data_total_sum += int(total_clean)
-
-        grand_clean = result['grand_total'].replace(',', '')
-        if grand_clean.isdigit() and data_total_sum > 0:
-            if data_total_sum != int(grand_clean):
-                print(f"  [검증] Grand Total 수정: '{result['grand_total']}' -> {data_total_sum:,}")
-                result['grand_total'] = f"{data_total_sum:,}"
-
-    return result
-
-
-def generate_erp_table_html(table_data: dict, empty_cols: int = 4, empty_rows: int = 3) -> str:
-    """ERP용 구조화 HTML 테이블 생성 (table2.html 형식)"""
-
-    headers = table_data.get('headers', [])
-    data = table_data.get('data', [])
-    totals = table_data.get('totals', [])
-    grand_total = table_data.get('grand_total', '')
-    title = table_data.get('title', 'COLOR/SIZE QTY')
-
-    # 헤더가 없으면 기본값 사용
-    if not headers:
-        headers = ['095', '100', '105', '110', '115', '120']
-
-    total_cols = 2 + len(headers) + empty_cols + 1  # CODE, NAME, sizes, empty, TOTAL
-
-    html = f"""
+    html = '''
     <table class="erp-table">
-        <!-- 1행: 헤더 (전체 병합) -->
-        <tr>
-            <td colspan="{total_cols}" class="header">{title}</td>
-        </tr>
-        <!-- 2행: 서브 헤더 -->
-        <tr>
-            <td class="sub-header" colspan="2">COLOR / SIZE</td>
-"""
+'''
 
-    # 사이즈 헤더
-    for h in headers:
-        html += f'            <td class="sub-header">{h}</td>\n'
-
-    # 빈 열
-    for _ in range(empty_cols):
-        html += '            <td class="empty-cell"></td>\n'
-
-    html += '            <td class="sub-header">TOTAL</td>\n'
-    html += '        </tr>\n'
-
-    # 데이터 행
-    for row in data:
+    for row_idx, row in enumerate(table_2d):
         html += '        <tr>\n'
-        html += f'            <td class="color-code">{row["code"]}</td>\n'
-        html += f'            <td class="color-name">{row["name"]}</td>\n'
 
-        for val in row["values"]:
-            if val:
-                html += f'            <td class="data-cell">{val}</td>\n'
+        for col_idx in range(num_cols):
+            cell = row[col_idx] if col_idx < len(row) else ''
+            cell = cell.strip() if cell else ''
+
+            # 첫 행은 헤더 스타일
+            if row_idx == 0:
+                css_class = 'header'
+            # 두 번째 행도 서브헤더로 처리 (보통 컬럼명)
+            elif row_idx == 1:
+                css_class = 'sub-header'
+            # 빈 셀
+            elif not cell:
+                css_class = 'empty-cell'
+            # TOTAL 포함 행
+            elif 'TOTAL' in ' '.join([c for c in row if c]).upper():
+                css_class = 'total-row-cell'
+            # 숫자 데이터 (콤마 포함)
+            elif cell.replace(',', '').replace('.', '').isdigit():
+                css_class = 'data-cell'
             else:
-                html += '            <td class="empty-cell"></td>\n'
+                css_class = ''
 
-        # 빈 열
-        empty_data_cols = len(headers) - len(row["values"]) + empty_cols
-        for _ in range(empty_data_cols):
-            html += '            <td class="empty-cell"></td>\n'
+            if css_class:
+                html += f'            <td class="{css_class}">{cell}</td>\n'
+            else:
+                html += f'            <td>{cell}</td>\n'
 
-        html += f'            <td class="total-col">{row["total"]}</td>\n'
         html += '        </tr>\n'
 
-    # 빈 행
-    for i in range(empty_rows):
-        html += f'        <!-- 빈 행 {i+1} -->\n'
-        html += '        <tr>\n'
-        for _ in range(total_cols):
-            html += '            <td class="empty-cell"></td>\n'
-        html += '        </tr>\n'
-
-    # TOTAL 행
-    html += '        <!-- TOTAL 행 -->\n'
-    html += '        <tr class="total-row">\n'
-    html += '            <td colspan="2">TOTAL</td>\n'
-
-    for val in totals:
-        html += f'            <td>{val}</td>\n'
-
-    remaining_cols = len(headers) - len(totals)
-    for _ in range(remaining_cols + empty_cols):
-        html += '            <td></td>\n'
-
-    html += f'            <td class="total-col">{grand_total}</td>\n'
-    html += '        </tr>\n'
     html += '    </table>\n'
 
     return html
+
+
 
 
 def generate_comet_overlay_section(image_path: str, ocr_results: list) -> str:
@@ -464,11 +334,14 @@ def generate_comet_overlay_section(image_path: str, ocr_results: list) -> str:
     return section
 
 
-def generate_combined_html(image_path: str, ocr_results: list, table_data: dict) -> str:
-    """Comet 오버레이 + ERP 테이블 통합 HTML 생성"""
+def generate_combined_html(image_path: str, ocr_results: list, table_2d: list) -> str:
+    """Comet 오버레이 + ERP 테이블 통합 HTML 생성
+
+    table_2d: Grid-First로 추출한 2D 배열 (양식 무관)
+    """
 
     comet_section = generate_comet_overlay_section(image_path, ocr_results)
-    erp_table = generate_erp_table_html(table_data)
+    erp_table = generate_generic_erp_table_html(table_2d)
 
     html = f'''<!DOCTYPE html>
 <html lang="ko">
@@ -586,6 +459,10 @@ def generate_combined_html(image_path: str, ocr_results: list, table_data: dict)
         .erp-table .empty-cell {{
             background: #fff;
         }}
+        .erp-table .total-row-cell {{
+            font-weight: bold;
+            background: #f0f0f0;
+        }}
 
         /* 복사 버튼 */
         .copy-btn {{
@@ -696,22 +573,16 @@ def main(image_path: str, output_path: str = None):
     print(f"\n[3단계] Grid 기반 셀 매핑...")
     table_2d = grid_extract_table(img, table_info)
 
-    # 4. 테이블 데이터 파싱
-    print(f"\n[4단계] 테이블 데이터 파싱...")
-    table_data = parse_table_data(table_2d)
+    # 4. 테이블 구조 확인
+    print(f"\n[4단계] Grid-First 테이블 구조 확인...")
+    non_empty_rows = sum(1 for row in table_2d if any(cell.strip() for cell in row))
+    print(f"  총 행: {len(table_2d)}, 데이터 있는 행: {non_empty_rows}")
 
-    if not table_data:
-        print("테이블 데이터 파싱 실패")
-        return
-
-    print(f"\n파싱 결과:")
-    print(f"  Title: {table_data['title']}")
-    print(f"  Headers: {table_data['headers']}")
-    print(f"  Data rows: {len(table_data['data'])}")
-    for d in table_data['data']:
-        print(f"    {d['code']} {d['name']}: {d['values']} -> {d['total']}")
-    print(f"  Totals: {table_data['totals']}")
-    print(f"  Grand Total: {table_data['grand_total']}")
+    # 처음 5개 행 미리보기
+    print(f"\n테이블 미리보기 (처음 5행):")
+    for i, row in enumerate(table_2d[:5]):
+        row_texts = [cell.strip() for cell in row if cell.strip()]
+        print(f"  Row {i}: {row_texts[:6]}{'...' if len(row_texts) > 6 else ''}")
 
     # 파일 경로 설정
     if output_path is None:
@@ -721,7 +592,7 @@ def main(image_path: str, output_path: str = None):
 
     # 5. 통합 HTML 생성
     print(f"\n[5단계] 통합 HTML 생성...")
-    html = generate_combined_html(image_path, all_ocr_results, table_data)
+    html = generate_combined_html(image_path, all_ocr_results, table_2d)
 
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html)
@@ -739,6 +610,6 @@ def main(image_path: str, output_path: str = None):
 
 
 if __name__ == "__main__":
-    # 테스트: BY_Original_Table.png
-    image_path = r"E:\Antigravity\Black_Yak\Reference\BY_Original_Table.png"
+    # 테스트: Submaterial_information.png
+    image_path = r"E:\Antigravity\Black_Yak\Reference\Submaterial_information.png"
     main(image_path)
