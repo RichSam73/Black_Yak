@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title></title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #fff;
+        }
+        table {
+            border-collapse: collapse;
+            font-size: 12px;
+            border: 2px solid #000;
+        }
+        td {
+            border: 1px solid #000;
+            padding: 5px 10px;
+            text-align: center;
+            height: 24px;
+            background: #fff;
+            color: #000;
+        }
+        .header {
+            font-weight: bold;
+        }
+        .sub-header {
+            font-weight: bold;
+        }
+        .color-code {
+            font-weight: bold;
+        }
+        .color-name {
+            font-weight: bold;
+        }
+        .data-cell {
+            text-align: right;
+        }
+        .total-row td {
+            font-weight: bold;
+        }
+        .total-col {
+            font-weight: bold;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+    <table>
+        <!-- 1행: 헤더 (전체 병합) -->
+        <tr>
+            <td colspan="7" class="header"></td>
+        </tr>
+        <!-- 2행: 서브 헤더 -->
+        <tr>
+            <td class="sub-header" colspan="2">COLOR / SIZE</td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="sub-header">TOTAL</td>
+        </tr>
+        <tr>
+            <td class="color-code">BK</td>
+            <td class="color-name">BLACK</td>
+            <td class="data-cell">2,200</td>
+            <td class="data-cell">5,000</td>
+            <td class="data-cell">5,000</td>
+            <td class="data-cell">2,200</td>
+            <td class="data-cell">800</td>
+            <td class="data-cell">500</td>
+            <td class="data-cell">150</td>
+            <td class="data-cell">150</td>
+            <td class="total-col">16,000</td>
+        </tr>
+        <tr>
+            <td class="color-code">NA</td>
+            <td class="color-name">NAVY</td>
+            <td class="data-cell">1,100</td>
+            <td class="data-cell">2,300</td>
+            <td class="data-cell">1,650</td>
+            <td class="data-cell">500</td>
+            <td class="data-cell">200</td>
+            <td class="data-cell">150</td>
+            <td class="data-cell">50</td>
+            <td class="data-cell">50</td>
+            <td class="total-col">6,000</td>
+        </tr>
+        <tr>
+            <td class="color-code">D3</td>
+            <td class="color-name">DITAUPE GRAY</td>
+            <td class="data-cell">650</td>
+            <td class="data-cell">1,200</td>
+            <td class="data-cell">800</td>
+            <td class="data-cell">400</td>
+            <td class="data-cell">150</td>
+            <td class="data-cell">100</td>
+            <td class="data-cell">50</td>
+            <td class="data-cell">50</td>
+            <td class="total-col">3,400</td>
+        </tr>
+        <tr>
+            <td class="color-code">SV</td>
+            <td class="color-name">SILVER BEIGE</td>
+            <td class="data-cell">900</td>
+            <td class="data-cell">1,550</td>
+            <td class="data-cell">950</td>
+            <td class="data-cell">300</td>
+            <td class="data-cell">150</td>
+            <td class="data-cell">50</td>
+            <td class="data-cell">50</td>
+            <td class="data-cell">50</td>
+            <td class="total-col">4,000</td>
+        </tr>
+        <!-- 빈 행 1 -->
+        <tr>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+        </tr>
+        <!-- 빈 행 2 -->
+        <tr>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+        </tr>
+        <!-- 빈 행 3 -->
+        <tr>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+            <td class="empty-cell"></td>
+        </tr>
+        <!-- TOTAL 행 -->
+        <tr class="total-row">
+            <td colspan="2">TOTAL</td>
+            <td>4,850</td>
+            <td>10,050</td>
+            <td>8,400</td>
+            <td>3,400</td>
+            <td>1,300</td>
+            <td>800</td>
+            <td>300</td>
+            <td>300</td>
+            <td class="total-col">29,400</td>
+        </tr>
+    </table>
+</body>
+</html>
