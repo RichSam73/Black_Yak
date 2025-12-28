@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>SUB MATERIAL INFORMATION - ERP</title>
+    <style>
+        body {
+            margin: 20px;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #333;
+            padding-bottom: 10px;
+        }
+        .section {
+            background: #fff;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        table {
+            border-collapse: collapse;
+            font-size: 12px;
+            border: 2px solid #000;
+            width: 100%;
+        }
+        td, th {
+            border: 1px solid #000;
+            padding: 6px 10px;
+            text-align: center;
+            height: 26px;
+            background: #fff;
+            color: #000;
+        }
+        th {
+            font-weight: bold;
+            background: #e8f4e8;
+        }
+        .title-row {
+            font-weight: bold;
+            background: #d4e8d4;
+            font-size: 14px;
+        }
+        .header-row th {
+            background: #e8f4e8;
+            font-weight: bold;
+        }
+        .empty-row td {
+            height: 26px;
+        }
+        .copy-btn {
+            margin-top: 15px;
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .copy-btn:hover {
+            background: #0056b3;
+        }
+        .copy-success {
+            color: #28a745;
+            margin-left: 10px;
+            display: none;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>SUB MATERIAL INFORMATION - ERP 테이블</h1>
+
+    <div class="section">
+        <table id="erpTable">
+            <!-- 타이틀 행 -->
+            <tr class="title-row">
+                <td colspan="13">SUB MATERIAL INFORMATION</td>
+            </tr>
+            <!-- 헤더 행 -->
+            <tr class="header-row">
+                <th>DIV</th>
+                <th>CODE</th>
+                <th>NAME</th>
+                <th>KIND</th>
+                <th>STD</th>
+                <th>DEMAND</th>
+                <th>SUP CD</th>
+                <th>SUP NM</th>
+                <th>PART USED</th>
+                <th>BLACK</th>
+                <th>CREAM</th>
+                <th>TEAL</th>
+                <th>NOTICE</th>
+            </tr>
+            <!-- 데이터 행 1: 메인로고 -->
+            <tr>
+                <td>메인로고</td>
+                <td></td>
+                <td>22LP-08</td>
+                <td>실리콘 매트</td>
+                <td>5cm</td>
+                <td>1</td>
+                <td></td>
+                <td>숨프린트</td>
+                <td>앞 가슴</td>
+                <td>D/SILVER</td>
+                <td>BK/SILVER</td>
+                <td>D/SILVER</td>
+                <td></td>
+            </tr>
+            <!-- 데이터 행 2: 행거루프 -->
+            <tr>
+                <td>행거루프</td>
+                <td></td>
+                <td>23SS-행거루프</td>
+                <td></td>
+                <td></td>
+                <td>요척</td>
+                <td></td>
+                <td>성원</td>
+                <td>에리안</td>
+                <td>BLACK</td>
+                <td>BLACK</td>
+                <td>BLACK</td>
+                <td></td>
+            </tr>
+            <!-- 빈 행 -->
+            <tr class="empty-row">
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+            <!-- 데이터 행 3: F/ZIP -->
+            <tr>
+                <td>F/ZIP</td>
+                <td></td>
+                <td>N/#5 REV.(O/E)</td>
+                <td></td>
+                <td>#5</td>
+                <td>요척</td>
+                <td></td>
+                <td>천신지퍼</td>
+                <td>앞지퍼</td>
+                <td>A매칭</td>
+                <td>A매칭</td>
+                <td>A매칭</td>
+                <td></td>
+            </tr>
+            <!-- 데이터 행 4: F/ZIP -->
+            <tr>
+                <td>F/ZIP</td>
+                <td></td>
+                <td>DABLH</td>
+                <td></td>
+                <td>#5</td>
+                <td>1</td>
+                <td></td>
+                <td>천신지퍼</td>
+                <td>앞 지퍼</td>
+                <td>X6</td>
+                <td>H3</td>
+                <td>H3</td>
+                <td></td>
+            </tr>
+            <!-- 데이터 행 5: F/ZIP -->
+            <tr>
+                <td>F/ZIP</td>
+                <td></td>
+                <td>23FW-B10</td>
+                <td></td>
+                <td>SIDE</td>
+                <td>1</td>
+                <td></td>
+                <td>성원</td>
+                <td>앞 지퍼</td>
+                <td>BLACK</td>
+                <td>G매칭</td>
+                <td>G매칭</td>
+                <td></td>
+            </tr>
+            <!-- 데이터 행 6: S/ZIP PKT. -->
+            <tr>
+                <td>S/ZIP PKT.</td>
+                <td></td>
+                <td>N/#3 REV.(C/E)</td>
+                <td></td>
+                <td>#3</td>
+                <td>요척</td>
+                <td></td>
+                <td>천신지퍼</td>
+                <td>사이드 포켓</td>
+                <td>A매칭</td>
+                <td>A매칭</td>
+                <td>A매칭</td>
+                <td></td>
+            </tr>
+            <!-- 데이터 행 7: S/ZIP PKT. -->
+            <tr>
+                <td>S/ZIP PKT.</td>
+                <td></td>
+                <td>DFBW</td>
+                <td></td>
+                <td>#3</td>
+                <td>1</td>
+                <td></td>
+                <td>천신지퍼</td>
+                <td>사이드 포켓</td>
+                <td>X6</td>
+                <td>H3</td>
+                <td>H3</td>
+                <td></td>
+            </tr>
+            <!-- 데이터 행 8: S/ZIP PKT. -->
+            <tr>
+                <td>S/ZIP PKT.</td>
+                <td></td>
+                <td>23FW-B10</td>
+                <td></td>
+                <td>SIDE</td>
+                <td>2</td>
+                <td></td>
+                <td>성원</td>
+                <td>사이드 포켓</td>
+                <td>BLACK</td>
+                <td>G매칭</td>
+                <td>G매칭</td>
+                <td></td>
+            </tr>
+            <!-- 빈 행 -->
+            <tr class="empty-row">
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+            <!-- 데이터 행 9: 스토퍼 -->
+            <tr>
+                <td>스토퍼</td>
+                <td></td>
+                <td>DPA-225</td>
+                <td></td>
+                <td></td>
+                <td>4</td>
+                <td></td>
+                <td>동아금형</td>
+                <td>후드/밑단</td>
+                <td>G매칭/A매칭</td>
+                <td>G매칭/A매칭</td>
+                <td>BLACK</td>
+                <td></td>
+            </tr>
+            <!-- 데이터 행 10: 비드 -->
+            <tr>
+                <td>비드</td>
+                <td></td>
+                <td>DPA-2108</td>
+                <td></td>
+                <td></td>
+                <td>4</td>
+                <td></td>
+                <td>동아금형</td>
+                <td>후드/밑단</td>
+                <td>G매칭/A매칭</td>
+                <td>G매칭/A매칭</td>
+                <td>BLACK</td>
+                <td></td>
+            </tr>
+            <!-- 데이터 행 11: 스트링 -->
+            <tr>
+                <td>스트링</td>
+                <td></td>
+                <td>12본 스트링(SOLID)</td>
+                <td></td>
+                <td>12본</td>
+                <td>요척</td>
+                <td></td>
+                <td>대일</td>
+                <td>후드/밑단</td>
+                <td>G매칭/A매칭</td>
+                <td>G매칭/A매칭</td>
+                <td>G매칭</td>
+                <td></td>
+            </tr>
+            <!-- 데이터 행 12: 아일렛 -->
+            <tr>
+                <td>아일렛</td>
+                <td></td>
+                <td>로고아일렛</td>
+                <td></td>
+                <td>1호</td>
+                <td>8</td>
+                <td></td>
+                <td>대일</td>
+                <td>후드/밑단</td>
+                <td>G매칭/A매칭</td>
+                <td>G매칭/A매칭</td>
+                <td>A매칭</td>
+                <td></td>
+            </tr>
+            <!-- 데이터 행 13: 이밴드 -->
+            <tr>
+                <td>이밴드</td>
+                <td></td>
+                <td>내장 이밴드</td>
+                <td></td>
+                <td>1.8cm</td>
+                <td>요척</td>
+                <td></td>
+                <td>업체핸들링</td>
+                <td>소맷단</td>
+                <td>BLACK</td>
+                <td>WHITE</td>
+                <td>G매칭</td>
+                <td></td>
+            </tr>
+            <!-- 빈 행들 -->
+            <tr class="empty-row">
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+            <tr class="empty-row">
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </table>
+
+        <button class="copy-btn" onclick="copyTable()">테이블 복사 (Excel/ERP용)</button>
+        <span class="copy-success" id="copySuccess">✓ 복사 완료!</span>
+    </div>
+
+    <script>
+        function copyTable() {
+            const table = document.getElementById('erpTable');
+            const range = document.createRange();
+            range.selectNode(table);
+            window.getSelection().removeAllRanges();
+            window.getSelection().addRange(range);
+            document.execCommand('copy');
+            window.getSelection().removeAllRanges();
+
+            const successMsg = document.getElementById('copySuccess');
+            successMsg.style.display = 'inline';
+            setTimeout(() => {
+                successMsg.style.display = 'none';
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

@@ -20,11 +20,11 @@ import easyocr
 _easyocr_reader = None
 
 def get_easyocr():
-    """EasyOCR 인스턴스 싱글톤"""
+    """EasyOCR 인스턴스 싱글톤 (한글+영어)"""
     global _easyocr_reader
     if _easyocr_reader is None:
-        print("  [EasyOCR 초기화 중...]")
-        _easyocr_reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+        print("  [EasyOCR 초기화 중... (한글+영어)]")
+        _easyocr_reader = easyocr.Reader(['ko', 'en'], gpu=False, verbose=False)
     return _easyocr_reader
 
 

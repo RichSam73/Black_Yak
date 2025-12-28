@@ -1,153 +1,161 @@
 """
-Comet + ERP 통합 웹 앱
-- PaddleOCR 사용 (한글 인식 정확도 향상)
-- Comet 오버레이 + ERP 테이블 동시 제공
-- Grid 감지 방식으로 셀 매핑
+ERP 테이블 추출 웹 앱
+- 이미지 업로드 → OCR → Comet 오버레이 + ERP 테이블 생성
 """
 from flask import Flask, render_template_string, request, jsonify
 from PIL import Image
 import cv2
 import numpy as np
+import os
 import base64
 import io
-from paddleocr import PaddleOCR
+import easyocr
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
 
 # 전역 OCR 인스턴스
-_paddle_ocr = None
+_easyocr_reader = None
 
-def get_paddleocr():
-    """PaddleOCR 인스턴스 싱글톤 (한글)"""
-    global _paddle_ocr
-    if _paddle_ocr is None:
-        print("  [PaddleOCR 초기화 중... (한글)]")
-        _paddle_ocr = PaddleOCR(lang='korean')
-    return _paddle_ocr
-
-
-def ocr_image_paddle(image: Image.Image) -> list:
-    """PaddleOCR로 이미지 OCR"""
-    ocr = get_paddleocr()
-    img_array = np.array(image)
-
-    try:
-        # 새로운 predict API 사용
-        results = ocr.predict(img_array)
-
-        ocr_results = []
-        if results:
-            # 새 API 결과 구조: list of dict with 'rec_texts', 'rec_scores', 'dt_polys' 등
-            for result in results:
-                rec_texts = result.get('rec_texts', [])
-                rec_scores = result.get('rec_scores', [])
-                dt_polys = result.get('dt_polys', [])
-
-                for i, (text, score, poly) in enumerate(zip(rec_texts, rec_scores, dt_polys)):
-                    if not text.strip():
-                        continue
-
-                    # poly는 [[x1,y1], [x2,y2], [x3,y3], [x4,y4]] 형식
-                    x_coords = [p[0] for p in poly]
-                    y_coords = [p[1] for p in poly]
-                    box = [int(min(x_coords)), int(min(y_coords)),
-                           int(max(x_coords)), int(max(y_coords))]
-
-                    ocr_results.append({
-                        "text": text,
-                        "box": box,
-                        "score": float(score)
-                    })
-
-        return ocr_results
-    except Exception as e:
-        print(f"PaddleOCR 오류: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
+def get_easyocr():
+    """EasyOCR 인스턴스 싱글톤 (한글+영어)"""
+    global _easyocr_reader
+    if _easyocr_reader is None:
+        print("  [EasyOCR 초기화 중... (한글+영어)]")
+        _easyocr_reader = easyocr.Reader(['ko', 'en'], gpu=False, verbose=False)
+    return _easyocr_reader
 
 
 # =============================================================================
 # Grid-First 핵심 함수들
 # =============================================================================
 
-def cluster_values(values: list, threshold: int = 15) -> list:
-    """값들을 클러스터링하여 대표값 리스트 반환"""
-    if not values:
+def grid_group_coords(coords: np.ndarray, gap: int = 5) -> list:
+    """연속 좌표 그룹화"""
+    if len(coords) == 0:
         return []
 
-    sorted_vals = sorted(set(values))
-    clusters = []
-    current_cluster = [sorted_vals[0]]
+    groups = []
+    current = [coords[0]]
 
-    for v in sorted_vals[1:]:
-        if v - current_cluster[-1] <= threshold:
-            current_cluster.append(v)
+    for c in coords[1:]:
+        if c - current[-1] <= gap:
+            current.append(c)
         else:
-            clusters.append(int(np.mean(current_cluster)))
-            current_cluster = [v]
+            groups.append(int(np.mean(current)))
+            current = [c]
 
-    clusters.append(int(np.mean(current_cluster)))
-    return clusters
+    groups.append(int(np.mean(current)))
+    return groups
 
 
-def build_table_from_ocr(ocr_results: list) -> list:
-    """OCR 결과의 위치 정보만으로 테이블 구성 (그리드 라인 감지 없음)"""
-    if not ocr_results:
+def grid_count_cells_in_region(img: Image.Image, box: list, min_line_len: int = 20) -> tuple:
+    """영역 내 가로선/세로선 수 -> 셀 수 계산"""
+    x1, y1, x2, y2 = box
+    cropped = img.crop((x1, y1, x2, y2))
+
+    img_cv = cv2.cvtColor(np.array(cropped), cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    _, binary = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+
+    h, w = binary.shape
+
+    # 가로선 찾기
+    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (min_line_len, 1))
+    h_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, h_kernel)
+    h_proj = np.sum(h_lines, axis=1)
+    h_coords = np.where(h_proj > min_line_len)[0]
+    row_bounds = grid_group_coords(h_coords)
+
+    # 세로선 찾기
+    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, min_line_len))
+    v_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, v_kernel)
+    v_proj = np.sum(v_lines, axis=0)
+    v_coords = np.where(v_proj > min_line_len)[0]
+    col_bounds = grid_group_coords(v_coords)
+
+    num_rows = max(0, len(row_bounds) - 1)
+    num_cols = max(0, len(col_bounds) - 1)
+
+    return num_rows, num_cols, row_bounds, col_bounds
+
+
+def grid_find_index(value: float, bounds: list) -> int:
+    """bounds 리스트에서 value가 속하는 인덱스 찾기"""
+    for i in range(len(bounds) - 1):
+        if bounds[i] <= value < bounds[i + 1]:
+            return i
+    return -1
+
+
+def ocr_image_easyocr(image: Image.Image) -> list:
+    """EasyOCR로 이미지 OCR"""
+    reader = get_easyocr()
+    img_array = np.array(image)
+
+    try:
+        results = reader.readtext(
+            img_array,
+            min_size=5,
+            text_threshold=0.5,
+            low_text=0.3,
+            contrast_ths=0.1,
+            adjust_contrast=0.5,
+        )
+
+        ocr_results = []
+        for (bbox, text, score) in results:
+            x_coords = [p[0] for p in bbox]
+            y_coords = [p[1] for p in bbox]
+            box = [int(min(x_coords)), int(min(y_coords)),
+                   int(max(x_coords)), int(max(y_coords))]
+
+            ocr_results.append({
+                "text": text,
+                "box": box,
+                "score": float(score)
+            })
+
+        return ocr_results
+    except Exception as e:
+        print(f"EasyOCR 오류: {e}")
         return []
 
-    # 각 텍스트의 중심 Y좌표와 X좌표 수집
-    y_centers = []
-    x_centers = []
 
-    for ocr in ocr_results:
-        box = ocr.get("box", [])
-        if len(box) < 4:
-            continue
-        cy = (box[1] + box[3]) / 2
-        cx = (box[0] + box[2]) / 2
-        y_centers.append(cy)
-        x_centers.append(cx)
+def grid_extract_table(img: Image.Image, table_info: dict) -> list:
+    """Grid-First 방식: 테이블 영역에서 데이터 추출"""
+    box = table_info["box"]
+    x1, y1, x2, y2 = box
 
-    if not y_centers or not x_centers:
-        return []
+    cropped = img.crop((x1, y1, x2, y2))
 
-    # Y좌표 클러스터링 → 행 결정
-    row_positions = cluster_values(y_centers, threshold=15)
-    # X좌표 클러스터링 → 열 결정
-    col_positions = cluster_values(x_centers, threshold=30)
+    row_bounds = table_info["row_bounds"]
+    col_bounds = table_info["col_bounds"]
+    num_rows = len(row_bounds) - 1
+    num_cols = len(col_bounds) - 1
 
-    num_rows = len(row_positions)
-    num_cols = len(col_positions)
-
-    if num_rows == 0 or num_cols == 0:
-        return []
-
-    # 테이블 초기화
     table = [["" for _ in range(num_cols)] for _ in range(num_rows)]
 
-    # 각 OCR 결과를 가장 가까운 행/열에 배치
+    ocr_results = ocr_image_easyocr(cropped)
+
     for ocr in ocr_results:
-        box = ocr.get("box", [])
+        ocr_box = ocr.get("box", [])
         text = ocr.get("text", "").strip()
 
-        if not text or len(box) < 4:
+        if not text or len(ocr_box) < 4:
             continue
 
-        cy = (box[1] + box[3]) / 2
-        cx = (box[0] + box[2]) / 2
+        cx = (ocr_box[0] + ocr_box[2]) / 2
+        cy = (ocr_box[1] + ocr_box[3]) / 2
 
-        # 가장 가까운 행 찾기
-        row_idx = min(range(num_rows), key=lambda i: abs(row_positions[i] - cy))
-        # 가장 가까운 열 찾기
-        col_idx = min(range(num_cols), key=lambda i: abs(col_positions[i] - cx))
+        row_idx = grid_find_index(cy, row_bounds)
+        col_idx = grid_find_index(cx, col_bounds)
 
-        # 셀에 텍스트 추가
-        if table[row_idx][col_idx]:
-            table[row_idx][col_idx] += " " + text
-        else:
-            table[row_idx][col_idx] = text
+        if 0 <= row_idx < num_rows and 0 <= col_idx < num_cols:
+            if table[row_idx][col_idx]:
+                table[row_idx][col_idx] += " " + text
+            else:
+                table[row_idx][col_idx] = text
 
     return table
 
@@ -156,11 +164,11 @@ def build_table_from_ocr(ocr_results: list) -> list:
 # HTML 생성
 # =============================================================================
 
-def generate_erp_table_html(table_2d: list) -> str:
+def generate_generic_erp_table_html(table_2d: list) -> str:
     """Grid-First 2D 테이블을 ERP용 HTML 테이블로 변환"""
 
     if not table_2d or len(table_2d) == 0:
-        return '<p style="color: #ff6b6b;">테이블 격자를 감지하지 못했습니다. Comet 탭에서 직접 텍스트를 복사해주세요.</p>'
+        return '<p>테이블 데이터가 없습니다.</p>'
 
     num_cols = max(len(row) for row in table_2d)
 
@@ -181,7 +189,7 @@ def generate_erp_table_html(table_2d: list) -> str:
                 css_class = 'empty-cell'
             elif 'TOTAL' in ' '.join([c for c in row if c]).upper():
                 css_class = 'total-row-cell'
-            elif cell.replace(',', '').replace('.', '').replace('-', '').isdigit():
+            elif cell.replace(',', '').replace('.', '').isdigit():
                 css_class = 'data-cell'
             else:
                 css_class = ''
@@ -199,24 +207,34 @@ def generate_erp_table_html(table_2d: list) -> str:
 
 
 def process_image(img: Image.Image, img_base64: str) -> dict:
-    """이미지 처리 - Comet OCR + OCR 위치 기반 ERP 테이블"""
+    """이미지 처리 및 결과 반환"""
 
     width, height = img.size
 
-    # 1. PaddleOCR 수행
-    ocr_results = ocr_image_paddle(img)
+    # 1. Grid 구조 분석
+    full_box = [0, 0, width, height]
+    num_rows, num_cols, row_bounds, col_bounds = grid_count_cells_in_region(img, full_box)
 
-    # 2. OCR 결과 위치 기반으로 테이블 구성 (그리드 라인 감지 없음)
-    table_2d = build_table_from_ocr(ocr_results)
+    if num_rows < 2 or num_cols < 2:
+        return {"error": "테이블 격자를 찾을 수 없습니다."}
 
-    num_rows = len(table_2d)
-    num_cols = len(table_2d[0]) if table_2d else 0
-    has_grid = num_rows >= 2 and num_cols >= 2
-    grid_info = f"{num_rows}행 x {num_cols}열" if has_grid else "테이블 없음"
+    table_info = {
+        "box": full_box,
+        "rows": num_rows,
+        "cols": num_cols,
+        "row_bounds": row_bounds,
+        "col_bounds": col_bounds
+    }
 
-    # 4. Comet 텍스트 스팬 생성
+    # 2. 전체 이미지 OCR
+    all_ocr_results = ocr_image_easyocr(img)
+
+    # 3. Grid 기반 셀 매핑
+    table_2d = grid_extract_table(img, table_info)
+
+    # 4. OCR 텍스트 스팬 생성
     text_spans = []
-    for item in ocr_results:
+    for item in all_ocr_results:
         x1, y1, x2, y2 = item["box"]
         text = item["text"].replace("<", "&lt;").replace(">", "&gt;").replace("&", "&amp;")
         score = item.get("score", 1.0)
@@ -230,23 +248,22 @@ def process_image(img: Image.Image, img_base64: str) -> dict:
         })
 
     # 5. ERP 테이블 HTML 생성
-    erp_table_html = generate_erp_table_html(table_2d)
+    erp_table_html = generate_generic_erp_table_html(table_2d)
 
     return {
         "success": True,
         "width": width,
         "height": height,
         "image_base64": img_base64,
-        "ocr_count": len(ocr_results),
-        "grid_info": grid_info,
-        "has_grid": has_grid,
+        "ocr_count": len(all_ocr_results),
+        "grid_info": f"{num_rows}행 x {num_cols}열",
         "text_spans": text_spans,
         "erp_table_html": erp_table_html
     }
 
 
 # =============================================================================
-# HTML 템플릿
+# Flask 라우트
 # =============================================================================
 
 HTML_TEMPLATE = '''
@@ -255,7 +272,7 @@ HTML_TEMPLATE = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Comet + ERP 테이블 추출 (PaddleOCR)</title>
+    <title>ERP 테이블 추출기</title>
     <style>
         * {
             box-sizing: border-box;
@@ -264,7 +281,7 @@ HTML_TEMPLATE = '''
             margin: 0;
             padding: 20px;
             font-family: 'Segoe UI', Arial, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
         }
         .container {
@@ -272,67 +289,49 @@ HTML_TEMPLATE = '''
             margin: 0 auto;
         }
         h1 {
-            color: #4ecca3;
-            text-align: center;
-            margin-bottom: 10px;
-            font-size: 2.2em;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        }
-        .subtitle {
-            color: #a0a0a0;
+            color: white;
             text-align: center;
             margin-bottom: 30px;
-            font-size: 1.1em;
-        }
-        .engine-badge {
-            display: inline-block;
-            background: linear-gradient(135deg, #e94560, #ff6b6b);
-            color: white;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            margin-left: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
         }
 
         /* 업로드 영역 */
         .upload-section {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 20px;
+            background: white;
+            border-radius: 16px;
             padding: 40px;
             text-align: center;
-            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
             margin-bottom: 30px;
         }
         .upload-area {
-            border: 3px dashed #4ecca3;
-            border-radius: 16px;
+            border: 3px dashed #667eea;
+            border-radius: 12px;
             padding: 60px 40px;
             cursor: pointer;
             transition: all 0.3s ease;
-            background: rgba(78, 204, 163, 0.05);
+            background: #f8f9ff;
         }
         .upload-area:hover {
-            border-color: #45b393;
-            background: rgba(78, 204, 163, 0.1);
-            transform: scale(1.01);
+            border-color: #764ba2;
+            background: #f0f2ff;
         }
         .upload-area.dragover {
-            border-color: #e94560;
-            background: rgba(233, 69, 96, 0.1);
+            border-color: #28a745;
+            background: #e8f5e9;
         }
         .upload-icon {
-            font-size: 80px;
+            font-size: 64px;
             margin-bottom: 20px;
         }
         .upload-text {
-            font-size: 20px;
-            color: #fff;
+            font-size: 18px;
+            color: #666;
             margin-bottom: 10px;
         }
         .upload-hint {
             font-size: 14px;
-            color: #888;
+            color: #999;
         }
         #fileInput {
             display: none;
@@ -342,17 +341,16 @@ HTML_TEMPLATE = '''
         .loading {
             display: none;
             text-align: center;
-            padding: 60px;
-            color: #fff;
+            padding: 40px;
         }
         .loading.active {
             display: block;
         }
         .spinner {
-            width: 60px;
-            height: 60px;
-            border: 4px solid rgba(78, 204, 163, 0.2);
-            border-top: 4px solid #4ecca3;
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin: 0 auto 20px;
@@ -361,93 +359,44 @@ HTML_TEMPLATE = '''
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .loading-text {
-            font-size: 18px;
-            color: #ccc;
-        }
 
         /* 결과 영역 */
         .result-section {
             display: none;
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 20px;
+            background: white;
+            border-radius: 16px;
             padding: 30px;
-            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
         }
         .result-section.active {
             display: block;
         }
         .section-title {
-            font-size: 22px;
+            font-size: 20px;
             font-weight: bold;
-            color: #4ecca3;
-            margin-bottom: 20px;
+            color: #333;
+            margin-bottom: 15px;
             padding-bottom: 10px;
-            border-bottom: 2px solid rgba(78, 204, 163, 0.3);
-        }
-        .info-bar {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-bottom: 20px;
-            align-items: center;
+            border-bottom: 2px solid #667eea;
         }
         .info-badge {
             display: inline-block;
-            background: rgba(78, 204, 163, 0.2);
-            color: #4ecca3;
-            padding: 6px 14px;
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
             border-radius: 20px;
             font-size: 14px;
-            border: 1px solid rgba(78, 204, 163, 0.3);
-        }
-
-        /* 탭 */
-        .tabs {
-            display: flex;
-            gap: 5px;
-            margin-bottom: 20px;
-        }
-        .tab {
-            padding: 14px 28px;
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 12px 12px 0 0;
-            cursor: pointer;
-            font-size: 15px;
-            color: #ccc;
-            transition: all 0.2s;
-        }
-        .tab:hover {
-            background: rgba(255,255,255,0.15);
-        }
-        .tab.active {
-            background: linear-gradient(135deg, #4ecca3, #45b393);
-            color: white;
-            border-color: transparent;
-        }
-        .tab-content {
-            display: none;
-            background: rgba(0,0,0,0.2);
-            border-radius: 0 12px 12px 12px;
-            padding: 20px;
-        }
-        .tab-content.active {
-            display: block;
+            margin-right: 10px;
         }
 
         /* Comet 컨테이너 */
-        .comet-wrapper {
-            overflow: auto;
-            max-height: 70vh;
-            border: 2px solid #333;
-            border-radius: 8px;
-            background: #1a1a1a;
-        }
         .comet-container {
             position: relative;
             display: inline-block;
+            border: 2px solid #333;
+            margin: 20px 0;
+            overflow: auto;
+            max-width: 100%;
         }
         .comet-image {
             display: block;
@@ -466,44 +415,38 @@ HTML_TEMPLATE = '''
             line-height: 1.2;
         }
         .ocr-text::selection {
-            background: rgba(78, 204, 163, 0.4);
+            background: rgba(0, 120, 215, 0.3);
         }
         .debug-mode .ocr-text {
-            background: rgba(78, 204, 163, 0.2);
-            border: 1px solid rgba(78, 204, 163, 0.5);
+            background: rgba(255, 0, 0, 0.15);
+            border: 1px dashed rgba(255, 0, 0, 0.5);
         }
 
         /* ERP 테이블 */
-        .erp-wrapper {
-            overflow: auto;
-            max-height: 70vh;
-            background: #fff;
-            border-radius: 8px;
-            padding: 20px;
-        }
         .erp-table {
             border-collapse: collapse;
-            font-size: 13px;
+            font-size: 12px;
             border: 2px solid #000;
-            width: auto;
-            min-width: 100%;
+            margin: 20px 0;
+            width: 100%;
+            overflow-x: auto;
+            display: block;
         }
         .erp-table td {
             border: 1px solid #000;
-            padding: 6px 12px;
+            padding: 5px 10px;
             text-align: center;
-            height: 28px;
+            height: 24px;
             background: #fff;
             white-space: nowrap;
-            color: #000;
         }
         .erp-table .header {
             font-weight: bold;
-            background: #d0d0d0;
+            background: #e8e8e8;
         }
         .erp-table .sub-header {
             font-weight: bold;
-            background: #e8e8e8;
+            background: #f0f0f0;
         }
         .erp-table .data-cell {
             text-align: right;
@@ -518,106 +461,110 @@ HTML_TEMPLATE = '''
 
         /* 버튼 */
         .btn {
-            padding: 12px 24px;
+            padding: 10px 20px;
             border: none;
-            border-radius: 10px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 14px;
-            font-weight: 600;
+            margin-right: 10px;
             transition: all 0.2s;
         }
         .btn-primary {
-            background: linear-gradient(135deg, #4ecca3, #45b393);
+            background: #667eea;
             color: white;
         }
         .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(78, 204, 163, 0.4);
-        }
-        .btn-secondary {
-            background: rgba(255,255,255,0.1);
-            color: #fff;
-            border: 1px solid rgba(255,255,255,0.2);
-        }
-        .btn-secondary:hover {
-            background: rgba(255,255,255,0.15);
+            background: #5a6fd6;
         }
         .btn-success {
-            background: linear-gradient(135deg, #28a745, #20c997);
+            background: #28a745;
             color: white;
         }
         .btn-success:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
+            background: #218838;
+        }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #5a6268;
         }
 
         /* 컨트롤 */
         .controls {
+            margin: 15px 0;
             display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
-            margin-bottom: 20px;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
         }
         .controls label {
             cursor: pointer;
             display: flex;
             align-items: center;
-            gap: 8px;
-            color: #ccc;
-            font-size: 14px;
-        }
-        .controls input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-            accent-color: #4ecca3;
+            gap: 5px;
         }
 
-        /* 토스트 */
+        /* 토스트 메시지 */
         .toast {
             position: fixed;
             bottom: 30px;
             right: 30px;
-            background: linear-gradient(135deg, #4ecca3, #45b393);
+            background: #28a745;
             color: white;
-            padding: 15px 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 20px rgba(78, 204, 163, 0.4);
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             display: none;
             z-index: 1000;
-            font-weight: 600;
         }
         .toast.show {
             display: block;
-            animation: slideIn 0.3s ease;
+            animation: fadeIn 0.3s ease;
         }
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateX(50px); }
-            to { opacity: 1; transform: translateX(0); }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        /* 안내 텍스트 */
-        .help-text {
-            color: #888;
-            font-size: 14px;
-            margin-bottom: 15px;
+        /* 탭 */
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 20px;
         }
-        .help-text strong {
-            color: #4ecca3;
+        .tab {
+            padding: 12px 24px;
+            background: #f0f0f0;
+            border: none;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .tab.active {
+            background: #667eea;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📊 Comet + ERP 테이블 추출 <span class="engine-badge">PaddleOCR</span></h1>
-        <p class="subtitle">이미지에서 텍스트를 추출하고 ERP 테이블로 변환합니다</p>
+        <h1>📊 ERP 테이블 추출기</h1>
 
         <!-- 업로드 섹션 -->
         <div class="upload-section" id="uploadSection">
             <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
-                <div class="upload-icon">🖼️</div>
+                <div class="upload-icon">📤</div>
                 <div class="upload-text">이미지를 드래그하거나 클릭하여 업로드</div>
-                <div class="upload-hint">PNG, JPG, JPEG 지원 (최대 16MB)</div>
+                <div class="upload-hint">지원 형식: PNG, JPG, JPEG (최대 16MB)</div>
             </div>
             <input type="file" id="fileInput" accept="image/*">
         </div>
@@ -625,56 +572,50 @@ HTML_TEMPLATE = '''
         <!-- 로딩 -->
         <div class="loading" id="loading">
             <div class="spinner"></div>
-            <div class="loading-text">PaddleOCR 처리 중... 잠시만 기다려주세요</div>
+            <div>이미지 분석 중... (OCR 처리에 시간이 걸릴 수 있습니다)</div>
         </div>
 
         <!-- 결과 섹션 -->
         <div class="result-section" id="resultSection">
-            <div class="info-bar">
-                <button class="btn btn-secondary" onclick="resetUpload()">🔄 새 이미지</button>
+            <div class="controls">
+                <button class="btn btn-secondary" onclick="resetUpload()">🔄 새 이미지 업로드</button>
                 <span id="imageInfo"></span>
             </div>
 
             <div class="tabs">
-                <button class="tab active" onclick="switchTab('comet')">1️⃣ Comet 오버레이</button>
-                <button class="tab" onclick="switchTab('erp')">2️⃣ ERP 테이블</button>
+                <button class="tab active" onclick="switchTab('comet')">1. Comet 오버레이</button>
+                <button class="tab" onclick="switchTab('erp')">2. ERP 테이블</button>
             </div>
 
             <!-- Comet 탭 -->
             <div class="tab-content active" id="cometTab">
-                <div class="section-title">📝 Comet 방식 텍스트 추출</div>
-                <p class="help-text">
-                    <strong>사용법:</strong> 이미지 위의 텍스트를 드래그하여 선택하고 <strong>Ctrl+C</strong>로 복사하세요.
-                </p>
+                <div class="section-title">Comet 방식 테이블 추출</div>
+                <p>텍스트를 드래그하여 선택/복사할 수 있습니다.</p>
                 <div class="controls">
                     <label>
                         <input type="checkbox" id="debugMode" onchange="toggleDebug()">
                         디버그 모드 (텍스트 영역 표시)
                     </label>
                 </div>
-                <div class="comet-wrapper">
-                    <div class="comet-container" id="cometContainer">
-                        <img class="comet-image" id="cometImage">
-                        <div class="comet-overlay" id="cometOverlay"></div>
-                    </div>
+                <div class="comet-container" id="cometContainer">
+                    <img class="comet-image" id="cometImage">
+                    <div class="comet-overlay" id="cometOverlay"></div>
                 </div>
             </div>
 
             <!-- ERP 탭 -->
             <div class="tab-content" id="erpTab">
-                <div class="section-title">📋 ERP 전송용 테이블</div>
-                <p class="help-text">
-                    <strong>사용법:</strong> 아래 테이블을 복사하여 ERP 시스템에 붙여넣을 수 있습니다.
-                </p>
+                <div class="section-title">ERP 전송용 테이블</div>
+                <p>아래 테이블을 복사하여 ERP 시스템에 붙여넣을 수 있습니다.</p>
                 <div class="controls">
                     <button class="btn btn-success" onclick="copyTable()">📋 테이블 복사</button>
                 </div>
-                <div class="erp-wrapper" id="erpTableContainer"></div>
+                <div id="erpTableContainer"></div>
             </div>
         </div>
     </div>
 
-    <div class="toast" id="toast"></div>
+    <div class="toast" id="toast">복사 완료!</div>
 
     <script>
         const uploadArea = document.getElementById('uploadArea');
@@ -724,7 +665,7 @@ HTML_TEMPLATE = '''
             .then(data => {
                 loading.classList.remove('active');
                 if (data.error) {
-                    showToast('오류: ' + data.error, true);
+                    alert(data.error);
                     uploadSection.style.display = 'block';
                 } else {
                     displayResult(data);
@@ -732,7 +673,7 @@ HTML_TEMPLATE = '''
             })
             .catch(error => {
                 loading.classList.remove('active');
-                showToast('오류가 발생했습니다', true);
+                alert('오류가 발생했습니다: ' + error);
                 uploadSection.style.display = 'block';
             });
         }
@@ -740,9 +681,9 @@ HTML_TEMPLATE = '''
         function displayResult(data) {
             // 이미지 정보
             document.getElementById('imageInfo').innerHTML =
-                `<span class="info-badge">📐 ${data.width} x ${data.height}</span>` +
-                `<span class="info-badge">📝 ${data.ocr_count}개 텍스트</span>` +
-                `<span class="info-badge">📊 ${data.grid_info}</span>`;
+                `<span class="info-badge">크기: ${data.width} x ${data.height}</span>` +
+                `<span class="info-badge">OCR: ${data.ocr_count}개 텍스트</span>` +
+                `<span class="info-badge">Grid: ${data.grid_info}</span>`;
 
             // Comet 이미지
             const cometImage = document.getElementById('cometImage');
@@ -779,8 +720,6 @@ HTML_TEMPLATE = '''
             resultSection.classList.remove('active');
             uploadSection.style.display = 'block';
             fileInput.value = '';
-            // 탭 초기화
-            switchTab('comet');
         }
 
         function toggleDebug() {
@@ -808,10 +747,7 @@ HTML_TEMPLATE = '''
 
         function copyTable() {
             const table = document.querySelector('.erp-table');
-            if (!table) {
-                showToast('복사할 테이블이 없습니다', true);
-                return;
-            }
+            if (!table) return;
 
             const range = document.createRange();
             range.selectNode(table);
@@ -820,19 +756,16 @@ HTML_TEMPLATE = '''
             document.execCommand('copy');
             window.getSelection().removeAllRanges();
 
-            showToast('테이블 복사 완료!');
+            showToast('복사 완료!');
         }
 
-        function showToast(message, isError = false) {
+        function showToast(message) {
             const toast = document.getElementById('toast');
             toast.textContent = message;
-            toast.style.background = isError
-                ? 'linear-gradient(135deg, #e94560, #ff6b6b)'
-                : 'linear-gradient(135deg, #4ecca3, #45b393)';
             toast.classList.add('show');
             setTimeout(() => {
                 toast.classList.remove('show');
-            }, 3000);
+            }, 2000);
         }
     </script>
 </body>
@@ -861,7 +794,7 @@ def upload():
         # Base64 인코딩
         img_base64 = base64.b64encode(img_bytes).decode()
 
-        # 처리 (PaddleOCR + Grid 매핑)
+        # 처리
         result = process_image(img, img_base64)
 
         return jsonify(result)
@@ -872,7 +805,7 @@ def upload():
 
 if __name__ == '__main__':
     print("=" * 50)
-    print("Comet + ERP 테이블 추출 (PaddleOCR)")
-    print("http://localhost:5001 에서 접속하세요")
+    print("ERP 테이블 추출 웹 앱")
+    print("http://localhost:5000 에서 접속하세요")
     print("=" * 50)
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=5000)
