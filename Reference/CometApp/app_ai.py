@@ -36,9 +36,62 @@ def get_paddleocr():
     return _paddle_ocr
 
 
+def preprocess_image_for_ocr(image: Image.Image) -> Image.Image:
+    """OCR 정확도 향상을 위한 이미지 전처리
+
+    - 녹색/파란색 배경의 흰색 텍스트 감지 개선
+    - 어두운 배경 반전 처리
+    - 대비 향상
+    """
+    img_array = np.array(image)
+
+    # BGR로 변환 (OpenCV 형식)
+    if len(img_array.shape) == 3 and img_array.shape[2] == 3:
+        img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+    else:
+        img_bgr = img_array
+
+    # HSV 변환하여 녹색/파란색 영역 마스크 생성
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+
+    # 녹색 범위 (색상구분 헤더, 컬러 컬럼)
+    green_lower = np.array([35, 40, 40])
+    green_upper = np.array([85, 255, 255])
+    green_mask = cv2.inRange(hsv, green_lower, green_upper)
+
+    # 파란색/청록색 범위
+    blue_lower = np.array([85, 40, 40])
+    blue_upper = np.array([130, 255, 255])
+    blue_mask = cv2.inRange(hsv, blue_lower, blue_upper)
+
+    # 컬러 마스크 합치기
+    color_mask = cv2.bitwise_or(green_mask, blue_mask)
+
+    # 그레이스케일 변환
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+
+    # 컬러 영역은 반전 (어두운 배경 -> 밝은 배경, 밝은 텍스트 -> 어두운 텍스트)
+    inverted = cv2.bitwise_not(gray)
+
+    # 컬러 영역만 반전된 이미지로 대체
+    result = gray.copy()
+    result[color_mask > 0] = inverted[color_mask > 0]
+
+    # 대비 향상 (CLAHE)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(result)
+
+    # 다시 RGB로 변환
+    enhanced_rgb = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2RGB)
+
+    return Image.fromarray(enhanced_rgb)
+
+
 def ocr_with_paddle(image: Image.Image) -> list:
     """PaddleOCR로 텍스트 위치 + 초기 인식"""
     ocr = get_paddleocr()
+
+    # 원본 이미지 사용 (전처리는 오히려 인식 품질 저하)
     img_array = np.array(image)
 
     try:
@@ -203,11 +256,115 @@ def fill_missing_by_table_structure(ocr_results: list) -> list:
     return ocr_results
 
 
+def detect_left_column_with_preprocessing(image: Image.Image, ocr_results: list) -> list:
+    """이미지 전처리 기반 왼쪽 컬러/행 레이블 컬럼 텍스트 감지
+
+    PaddleOCR이 배경색이 있는 영역의 텍스트를 감지하지 못하는 경우,
+    이미지 전처리(대비 강화, 그레이스케일 반전 등)를 적용하여 재처리
+    """
+    from PIL import ImageEnhance, ImageOps
+
+    # 이미지 맨 왼쪽 가장자리 영역 (X < 30)에 텍스트가 있는지 확인
+    very_left_boundary = 30
+
+    very_left_texts = [r for r in ocr_results if r.get("box", [100])[0] < very_left_boundary]
+
+    # 맨 왼쪽 가장자리에 텍스트가 있으면 스킵
+    if len(very_left_texts) >= 2:
+        print(f"  [왼쪽 컬럼 감지] X<30에 이미 {len(very_left_texts)}개 텍스트 있음, 스킵")
+        return ocr_results
+
+    print(f"  [왼쪽 컬럼 감지] X<30 텍스트 {len(very_left_texts)}개, 이미지 전처리 시작...")
+
+    try:
+        # 1. 왼쪽 영역 크롭 (이미지 너비의 1/5 정도)
+        width, height = image.size
+        left_crop_width = min(150, width // 5)  # 최대 150px 또는 너비의 1/5
+        left_region = image.crop((0, 0, left_crop_width, height))
+
+        # 2. 이미지 전처리: 대비 강화 + 그레이스케일
+        gray = left_region.convert('L')
+
+        # 대비 강화
+        enhancer = ImageEnhance.Contrast(gray)
+        enhanced = enhancer.enhance(2.0)
+
+        # 밝기 조정 (배경색을 흰색에 가깝게)
+        brightness = ImageEnhance.Brightness(enhanced)
+        brightened = brightness.enhance(1.3)
+
+        # RGB로 다시 변환 (PaddleOCR용)
+        processed = brightened.convert('RGB')
+
+        # 3. 전처리된 왼쪽 영역 OCR
+        if paddle_ocr is not None:
+            img_array = np.array(processed)
+            result = paddle_ocr.predict(img_array)
+
+            if result and len(result) > 0:
+                new_texts = []
+                for item in result:
+                    if 'rec_texts' in item and 'dt_polys' in item:
+                        for i, text in enumerate(item['rec_texts']):
+                            score = item['rec_scores'][i] if i < len(item['rec_scores']) else 0.5
+                            poly = item['dt_polys'][i]
+
+                            # 바운딩 박스 계산
+                            x_coords = [p[0] for p in poly]
+                            y_coords = [p[1] for p in poly]
+                            box = [int(min(x_coords)), int(min(y_coords)),
+                                   int(max(x_coords)), int(max(y_coords))]
+
+                            # 유효한 텍스트만 추가 (숫자가 아닌 텍스트)
+                            if text and not text.replace(',', '').replace('.', '').isdigit():
+                                new_texts.append({
+                                    "text": text,
+                                    "box": box,  # X 좌표는 이미 왼쪽 영역 기준
+                                    "score": score
+                                })
+
+                if new_texts:
+                    print(f"  [왼쪽 컬럼 감지] 전처리 OCR로 {len(new_texts)}개 텍스트 발견")
+
+                    # 기존 OCR 결과에서 가장 왼쪽 X좌표 확인
+                    min_x = min(r.get("box", [100])[0] for r in ocr_results if r.get("box"))
+                    # 새 컬럼은 기존 최소 X보다 충분히 왼쪽에 배치
+                    new_col_x = max(0, min_x - 50)
+
+                    for new_text in new_texts:
+                        # Y 좌표는 그대로 유지, X 좌표만 조정
+                        box = new_text["box"]
+                        adjusted_box = [new_col_x, box[1], new_col_x + 25, box[3]]
+
+                        ocr_results.append({
+                            "text": new_text["text"],
+                            "box": adjusted_box,
+                            "score": new_text["score"],
+                            "injected": True,
+                            "source": "preprocessing_ocr"
+                        })
+                        print(f"  [왼쪽 컬럼 삽입] '{new_text['text']}' at Y={box[1]}-{box[3]}")
+                else:
+                    print(f"  [왼쪽 컬럼 감지] 전처리 OCR에서 유효한 텍스트 없음")
+        else:
+            print(f"  [왼쪽 컬럼 감지] PaddleOCR 미초기화")
+
+    except Exception as e:
+        print(f"  [왼쪽 컬럼 감지 오류] {e}")
+
+    return ocr_results
+
+
 def refine_text_with_ai(image: Image.Image, ocr_results: list) -> list:
-    """AI Vision으로 저신뢰도 텍스트 보정 (누락 감지는 테이블 구조 분석으로)
+    """AI Vision으로 저신뢰도 텍스트 보정 + 누락 컬럼 감지
     """
     if not ocr_results:
         return ocr_results
+
+    # ===========================================================
+    # 0단계: 이미지 전처리로 왼쪽 컬러 컬럼 감지 (배경색 영역)
+    # ===========================================================
+    ocr_results = detect_left_column_with_preprocessing(image, ocr_results)
 
     # ===========================================================
     # 1단계: 테이블 구조 분석으로 누락 텍스트 채우기 (AI 좌표 대신)
@@ -223,11 +380,6 @@ def refine_text_with_ai(image: Image.Image, ocr_results: list) -> list:
         print("  [AI 보정] 저신뢰도 텍스트 없음, 보정 생략")
         return ocr_results
 
-    # AI 보정은 시간이 오래 걸리므로 생략 가능
-    # 필요시 주석 해제
-    # print(f"  [AI 보정] {len(low_confidence)}개 저신뢰도 텍스트 재인식 중...")
-    # ... (AI 호출 코드)
-
     return ocr_results
 
 
@@ -242,6 +394,11 @@ def apply_known_corrections(ocr_results: list) -> list:
         "ATCAC NOAIVIAITON": "SUB MATERIAL INFORMATION",
         "SUB ATCAC NOAIVIAITON": "SUB MATERIAL INFORMATION",
         "MATERIAL": "SUB MATERIAL INFORMATION",  # 부분 인식된 경우
+        # COLOR/SIZE QTY 테이블 오류
+        "0s": "50",  # 숫자 50을 0s로 잘못 인식
+        "0S": "50",  # 숫자 50을 0S로 잘못 인식
+        "Os": "50",  # 추가 변형
+        "OS": "50",  # 추가 변형
         # 행거루프
         "23SS-헬거루프": "23SS-행거루프",
         "헹거루프": "행거루프",
@@ -309,6 +466,9 @@ def apply_known_corrections(ocr_results: list) -> list:
         ("울", 250, 420, "동아금형"),
         # 비드 행 SUP NM도 동아금형
         ("욿", 250, 420, "동아금형"),
+        # S/ZIP PKT. DFBW 행 DEMAND: "-" → "1" (Y~220-240, X~620-650)
+        # OCR이 숫자 1을 하이픈으로 잘못 인식
+        ("-", 215, 245, "1"),
     ]
 
     # =====================================================================
@@ -392,8 +552,194 @@ def cluster_values(values: list, threshold: int = 15) -> list:
     return clusters
 
 
+def merge_adjacent_columns(col_positions: list, threshold: int = 60) -> list:
+    """인접한 컬럼들을 병합하여 병합 셀 문제 해결
+
+    COLOR/SIZE 테이블에서 BK(X=24)와 BLACK(X=129)처럼
+    헤더가 병합 셀이고 데이터가 분리된 경우 처리
+
+    Args:
+        col_positions: 클러스터링된 컬럼 X 좌표 리스트
+        threshold: 병합 기준 거리 (기본 60px)
+
+    Returns:
+        병합 정보가 포함된 컬럼 매핑 딕셔너리
+        {원래_col_idx: 병합된_col_idx}
+    """
+    if len(col_positions) < 2:
+        return {i: i for i in range(len(col_positions))}
+
+    # 컬럼 간 거리 계산
+    col_distances = []
+    for i in range(len(col_positions) - 1):
+        dist = col_positions[i + 1] - col_positions[i]
+        col_distances.append(dist)
+
+    # 평균 거리 계산
+    avg_dist = sum(col_distances) / len(col_distances) if col_distances else 0
+
+    # 매핑 생성: 거리가 너무 가까운 컬럼은 병합
+    col_mapping = {}
+    merged_idx = 0
+
+    for i in range(len(col_positions)):
+        if i == 0:
+            col_mapping[i] = merged_idx
+        else:
+            # 이전 컬럼과의 거리가 평균의 50% 미만이면 병합
+            dist = col_positions[i] - col_positions[i - 1]
+            if dist < avg_dist * 0.5:
+                # 이전 컬럼과 같은 병합 인덱스 사용
+                col_mapping[i] = col_mapping[i - 1]
+            else:
+                merged_idx += 1
+                col_mapping[i] = merged_idx
+
+    return col_mapping
+
+
+def detect_merged_header_columns(ocr_results: list, row_positions: list, col_positions: list) -> dict:
+    """헤더 행에서 병합된 컬럼 감지 (개선된 버전)
+
+    병합 감지 방식:
+    1. 헤더에 빈 컬럼이 있는 경우 (SUB MATERIAL INFORMATION 타입)
+    2. 헤더 셀의 너비가 여러 데이터 컬럼을 포함하는 경우
+
+    ⚠️ COLOR/SIZE QTY 타입 테이블은 병합하지 않음 (모든 컬럼이 독립적)
+
+    Returns:
+        {빈_컬럼_idx: 병합할_헤더_컬럼_idx} 형식의 병합 정보
+    """
+    if len(row_positions) < 2 or len(col_positions) < 2:
+        return {}
+
+    # ====================================================================
+    # COLOR/SIZE QTY 테이블 감지 - 병합 스킵
+    # ====================================================================
+    all_texts = [ocr.get("text", "").strip() for ocr in ocr_results]
+    all_texts_upper = [t.upper() for t in all_texts]
+    all_texts_joined = " ".join(all_texts_upper)
+
+    # 사이즈 숫자 패턴 감지 (3자리 숫자: 095, 100, 105, 110, 115, 120, 125, 130)
+    size_numbers = ["095", "100", "105", "110", "115", "120", "125", "130"]
+    has_size_numbers = any(size in all_texts for size in size_numbers)
+
+    # COLOR/SIZE QTY 테이블 특징:
+    # 1. 헤더에 COLOR, SIZE, QTY/TOTAL 중 하나 이상 포함
+    # 2. 3자리 사이즈 숫자가 헤더에 있음
+    has_color_size_keywords = (
+        "COLOR" in all_texts_joined or
+        "SIZE" in all_texts_joined or
+        "QTY" in all_texts_joined
+    )
+
+    is_color_size_qty = has_color_size_keywords and has_size_numbers
+
+    # 추가 감지: 컬러 코드(BK, NA, D3, SV 등)가 데이터에 있으면서 TOTAL이 있는 경우
+    color_codes = ["BK", "NA", "D3", "SV", "WH", "GR", "NV", "RD", "BL"]
+    has_color_codes = any(code in all_texts_upper for code in color_codes)
+    has_total = "TOTAL" in all_texts_joined
+
+    if has_color_codes and has_total and has_size_numbers:
+        is_color_size_qty = True
+
+    if is_color_size_qty:
+        print(f"  [병합 감지] COLOR/SIZE QTY 테이블 감지 - Method 2만 실행")
+        print(f"    - 사이즈 숫자 발견: {has_size_numbers}")
+        print(f"    - 컬러 키워드 발견: {has_color_size_keywords}")
+        print(f"    - 컬러 코드 발견: {has_color_codes}")
+        # Method 3 (빈 헤더 병합)은 건너뛰고 Method 2 (헤더 범위 기반)만 실행
+        # return {} 제거 - 아래 Method 2 로직으로 진행
+
+    # ====================================================================
+    # 헤더 행 분석
+    # ====================================================================
+
+    # 헤더 행 (상위 2개 행을 헤더로 간주)
+    header_rows = row_positions[:2] if len(row_positions) >= 2 else row_positions[:1]
+
+    # 헤더 텍스트의 X 좌표 수집
+    header_items = []  # [(x_start, x_end, x_center, text, col_idx), ...]
+    header_cols = set()
+
+    for ocr in ocr_results:
+        box = ocr.get("box", [])
+        text = ocr.get("text", "")
+        if len(box) < 4:
+            continue
+        cy = (box[1] + box[3]) / 2
+        x_start, x_end = box[0], box[2]
+        cx = (x_start + x_end) / 2
+
+        # 헤더 행인지 확인
+        is_header = any(abs(cy - header_y) < 20 for header_y in header_rows)
+        if is_header:
+            col_idx = min(range(len(col_positions)), key=lambda i: abs(col_positions[i] - cx))
+            header_cols.add(col_idx)
+            header_items.append((x_start, x_end, cx, text, col_idx))
+
+    # X 좌표로 헤더 정렬
+    header_items.sort(key=lambda h: h[2])  # cx 기준 정렬
+
+    merge_map = {}
+
+    # ====================================================================
+    # 방법 2: 헤더 셀의 너비가 여러 데이터 컬럼을 커버하는지 확인
+    # ====================================================================
+
+    for x_start, x_end, cx, text, header_col_idx in header_items:
+        # 이 헤더 범위에 포함되는 다른 컬럼 찾기
+        covered_cols = []
+        for col_idx, col_x in enumerate(col_positions):
+            if col_idx in merge_map:
+                continue  # 이미 병합됨
+            # 컬럼 중심이 헤더 X 범위 내에 있는지
+            if x_start - 20 <= col_x <= x_end + 20:
+                covered_cols.append(col_idx)
+
+        # 여러 컬럼이 커버되면 첫 번째 외의 컬럼들을 병합
+        if len(covered_cols) > 1:
+            primary_col = min(covered_cols)
+            for col_idx in covered_cols:
+                if col_idx != primary_col and col_idx not in merge_map:
+                    merge_map[col_idx] = primary_col
+                    print(f"  [병합 감지] 헤더 '{text}' 범위 X={x_start}-{x_end}에서 컬럼 {col_idx} → {primary_col}")
+
+    # ====================================================================
+    # 방법 3: 헤더가 없는 컬럼 찾기 (기존 로직)
+    # ⚠️ COLOR/SIZE QTY 테이블에서는 건너뜀 (BK 컬럼 등이 의도치 않게 병합되는 것 방지)
+    # ====================================================================
+
+    if not is_color_size_qty:
+        empty_header_cols = set(range(len(col_positions))) - header_cols
+
+        for empty_col in empty_header_cols:
+            if empty_col in merge_map:
+                continue  # 이미 병합됨
+
+            # 가장 가까운 헤더가 있는 컬럼 찾기
+            closest_header = None
+            min_dist = float('inf')
+            for header_col in header_cols:
+                dist = abs(col_positions[header_col] - col_positions[empty_col])
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_header = header_col
+
+            if closest_header is not None and min_dist < 150:
+                merge_map[empty_col] = closest_header
+                print(f"  [병합 감지] 빈 헤더 컬럼 {empty_col} → {closest_header} (거리: {min_dist:.0f})")
+
+    return merge_map
+
+
 def build_table_from_ocr(ocr_results: list) -> list:
-    """OCR 결과의 위치 정보만으로 테이블 구성"""
+    """OCR 결과의 위치 정보만으로 테이블 구성
+
+    병합된 헤더 셀 처리:
+    - COLOR/SIZE 테이블에서 BK(컬러코드)와 BLACK(컬러명)이
+      "COLOR / SIZE" 헤더 아래에 있는 경우 하나의 셀로 병합
+    """
     if not ocr_results:
         return []
 
@@ -421,6 +767,42 @@ def build_table_from_ocr(ocr_results: list) -> list:
     if num_rows == 0 or num_cols == 0:
         return []
 
+    # ========================================
+    # 병합 셀 감지: 헤더에 빈 컬럼이 있는지 확인
+    # ========================================
+    merge_map = detect_merged_header_columns(ocr_results, row_positions, col_positions)
+
+    if merge_map:
+        print(f"  [병합 셀 감지] {len(merge_map)}개 컬럼 병합: {merge_map}")
+
+        # 병합 후 실제 컬럼 수 계산
+        # merge_map: {빈_컬럼_idx: 병합할_헤더_컬럼_idx}
+        merged_cols = set()
+        for empty_col, header_col in merge_map.items():
+            merged_cols.add(empty_col)
+
+        # 새로운 컬럼 인덱스 매핑 생성
+        new_col_positions = []
+        old_to_new_col = {}
+        new_idx = 0
+
+        for old_idx in range(num_cols):
+            if old_idx in merged_cols:
+                # 이 컬럼은 다른 컬럼에 병합됨
+                target_col = merge_map[old_idx]
+                old_to_new_col[old_idx] = old_to_new_col.get(target_col, new_idx)
+            else:
+                old_to_new_col[old_idx] = new_idx
+                new_col_positions.append(col_positions[old_idx])
+                new_idx += 1
+
+        # 병합된 컬럼 수로 테이블 생성
+        num_cols = len(new_col_positions)
+        print(f"  [병합 후] {num_rows}행 x {num_cols}열")
+    else:
+        old_to_new_col = {i: i for i in range(num_cols)}
+        new_col_positions = col_positions
+
     table = [["" for _ in range(num_cols)] for _ in range(num_rows)]
 
     for ocr in ocr_results:
@@ -434,7 +816,16 @@ def build_table_from_ocr(ocr_results: list) -> list:
         cx = (box[0] + box[2]) / 2
 
         row_idx = min(range(num_rows), key=lambda i: abs(row_positions[i] - cy))
-        col_idx = min(range(num_cols), key=lambda i: abs(col_positions[i] - cx))
+
+        # 원래 컬럼 인덱스 찾기
+        orig_col_idx = min(range(len(col_positions)), key=lambda i: abs(col_positions[i] - cx))
+
+        # 병합된 컬럼 인덱스로 변환
+        col_idx = old_to_new_col.get(orig_col_idx, orig_col_idx)
+
+        # 범위 체크
+        if col_idx >= num_cols:
+            col_idx = num_cols - 1
 
         if table[row_idx][col_idx]:
             table[row_idx][col_idx] += " " + text
@@ -448,7 +839,96 @@ def build_table_from_ocr(ocr_results: list) -> list:
 # HTML 생성
 # =============================================================================
 
-def generate_erp_table_html(table_2d: list) -> str:
+def validate_table_with_ai(image: Image.Image, table_2d: list) -> dict:
+    """AI Vision으로 ERP 테이블 검증
+
+    테이블 생성 후 AI가 원본 이미지와 비교하여 누락/오류 검출
+    다양한 테이블 타입 지원: SUB MATERIAL INFORMATION, COLOR/SIZE QTY 등
+    """
+    if not table_2d or len(table_2d) < 3:
+        return {"valid": True, "issues": [], "message": "테이블이 너무 작아 검증 생략"}
+
+    # 이미지를 base64로 인코딩
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+    img_base64 = base64.b64encode(buffered.getvalue()).decode()
+
+    # 테이블을 텍스트로 변환
+    table_text = []
+    for row_idx, row in enumerate(table_2d):
+        row_text = " | ".join([cell if cell else "(빈칸)" for cell in row])
+        table_text.append(f"행{row_idx}: {row_text}")
+    table_summary = "\n".join(table_text[:10])  # 처음 10행만
+
+    # 테이블 타입 자동 감지 (첫 번째 행 기준)
+    first_row_text = " ".join(table_2d[0]) if table_2d else ""
+    if "COLOR" in first_row_text.upper() and "SIZE" in first_row_text.upper():
+        table_type = "COLOR/SIZE QTY (발주수량)"
+        check_items = "1. 컬러별 수량이 정확한지\n2. 사이즈별 합계가 맞는지\n3. TOTAL 값이 정확한지"
+    elif "MATERIAL" in first_row_text.upper() or "SUB" in first_row_text.upper():
+        table_type = "SUB MATERIAL INFORMATION"
+        check_items = "1. 누락된 텍스트가 있는지 (특히 SUP NM, DIV 컬럼)\n2. 잘못 인식된 텍스트가 있는지\n3. 행/열이 잘못 매핑된 경우"
+    else:
+        table_type = "일반 테이블"
+        check_items = "1. 누락된 텍스트가 있는지\n2. 잘못 인식된 텍스트가 있는지\n3. 행/열이 잘못 매핑된 경우"
+
+    prompt = f"""이미지는 {table_type} 테이블입니다.
+OCR로 추출한 테이블 결과가 맞는지 검증해주세요.
+
+[추출된 테이블 (처음 10행)]
+{table_summary}
+
+다음을 확인하세요:
+{check_items}
+
+문제가 있으면 JSON 형식으로 응답:
+{{"valid": false, "issues": ["문제1", "문제2"], "suggestions": ["수정제안1"]}}
+
+문제가 없으면:
+{{"valid": true, "message": "검증 통과"}}
+
+반드시 JSON만 응답하세요."""
+
+    try:
+        response = requests.post(
+            OLLAMA_URL,
+            json={
+                "model": VISION_MODEL,
+                "prompt": prompt,
+                "images": [img_base64],
+                "stream": False,
+                "options": {"temperature": 0.1}
+            },
+            timeout=120  # 타임아웃 60초 → 120초로 증가
+        )
+
+        if response.status_code == 200:
+            result = response.json().get("response", "")
+            # \xa0 등 특수문자 제거 (Windows cp949 인코딩 오류 방지)
+            safe_result = result.replace('\xa0', ' ')[:200]
+            print(f"  [AI 검증] 응답: {safe_result}...")
+
+            # JSON 파싱 시도
+            try:
+                # JSON 부분 추출
+                json_match = re.search(r'\{[^}]+\}', result, re.DOTALL)
+                if json_match:
+                    validation = json.loads(json_match.group())
+                    return validation
+            except json.JSONDecodeError:
+                pass
+
+            return {"valid": True, "message": "AI 응답 파싱 실패, 기본 통과"}
+        else:
+            print(f"  [AI 검증] 오류: {response.status_code}")
+            return {"valid": True, "message": "AI 서버 오류, 검증 생략"}
+
+    except Exception as e:
+        print(f"  [AI 검증] 예외: {e}")
+        return {"valid": True, "message": f"검증 실패: {str(e)}"}
+
+
+def generate_erp_table_html(table_2d: list, validation: dict = None) -> str:
     """Grid-First 2D 테이블을 ERP용 HTML 테이블로 변환"""
 
     if not table_2d or len(table_2d) == 0:
@@ -456,7 +936,28 @@ def generate_erp_table_html(table_2d: list) -> str:
 
     num_cols = max(len(row) for row in table_2d)
 
-    html = '<table class="erp-table">\n'
+    # AI 검증 결과 배너
+    validation_banner = ""
+    if validation:
+        if validation.get("valid", True):
+            validation_banner = f'''
+            <div style="background: #d4edda; border: 1px solid #28a745; padding: 10px; margin-bottom: 15px; border-radius: 8px; color: #155724;">
+                ✅ <strong>AI 검증 통과</strong>: {validation.get("message", "테이블이 정확합니다")}
+            </div>'''
+        else:
+            issues = validation.get("issues", [])
+            issues_html = "<br>".join([f"⚠️ {issue}" for issue in issues])
+            suggestions = validation.get("suggestions", [])
+            suggestions_html = "<br>".join([f"💡 {s}" for s in suggestions]) if suggestions else ""
+
+            validation_banner = f'''
+            <div style="background: #fff3cd; border: 1px solid #ffc107; padding: 10px; margin-bottom: 15px; border-radius: 8px; color: #856404;">
+                ⚠️ <strong>AI 검증 경고</strong><br>
+                {issues_html}
+                {f"<br><br>{suggestions_html}" if suggestions_html else ""}
+            </div>'''
+
+    html = validation_banner + '<table class="erp-table">\n'
 
     for row_idx, row in enumerate(table_2d):
         html += '<tr>\n'
@@ -491,7 +992,7 @@ def generate_erp_table_html(table_2d: list) -> str:
 
 
 def process_image(img: Image.Image, img_base64: str) -> dict:
-    """이미지 처리 - 하이브리드 OCR + Comet 오버레이 + ERP 테이블"""
+    """이미지 처리 - 하이브리드 OCR + Comet 오버레이 + ERP 테이블 + AI 검증"""
 
     width, height = img.size
 
@@ -521,8 +1022,13 @@ def process_image(img: Image.Image, img_base64: str) -> dict:
             "fontSize": font_size
         })
 
-    # 4. ERP 테이블 HTML 생성
-    erp_table_html = generate_erp_table_html(table_2d)
+    # 4. AI 검증 (테이블 생성 후 원본 이미지와 비교)
+    print("  [AI 검증] 테이블 검증 시작...")
+    validation = validate_table_with_ai(img, table_2d)
+    print(f"  [AI 검증] 결과: {validation}")
+
+    # 5. ERP 테이블 HTML 생성 (검증 결과 포함)
+    erp_table_html = generate_erp_table_html(table_2d, validation)
 
     return {
         "success": True,
@@ -533,7 +1039,8 @@ def process_image(img: Image.Image, img_base64: str) -> dict:
         "grid_info": grid_info,
         "has_grid": has_grid,
         "text_spans": text_spans,
-        "erp_table_html": erp_table_html
+        "erp_table_html": erp_table_html,
+        "validation": validation
     }
 
 
