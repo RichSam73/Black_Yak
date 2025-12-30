@@ -22,7 +22,10 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
 
 # Ollama 설정
 OLLAMA_URL = "http://localhost:11434/api/generate"
-VISION_MODEL = "llama3.2-vision"
+# Round 16: 모델 폴백 체인 (타임아웃 시 대안 모델 사용)
+# 1순위: llama3.2-vision, 2순위: qwen2.5vl, 3순위: granite3.2-vision
+VISION_MODELS = ["llama3.2-vision", "qwen2.5vl", "granite3.2-vision"]
+VISION_MODEL = VISION_MODELS[0]  # 기본 모델 (호환성 유지)
 
 # 전역 OCR 인스턴스
 _paddle_ocr = None
@@ -552,10 +555,84 @@ def cluster_values(values: list, threshold: int = 15) -> list:
     return clusters
 
 
+def detect_column_count_with_ai(image: Image.Image) -> int:
+    """AI Vision으로 테이블 열 개수 감지 (모델 폴백 체인)
+
+    Round 16: 사용자 피드백 반영 - OpenCV 세로선 대신 AI가 열 개수 판단
+    타임아웃 시 대안 모델로 자동 전환:
+    1순위: llama3.2-vision → 2순위: qwen2.5vl → 3순위: granite3.2-vision
+
+    Returns:
+        int: 감지된 열 개수 (실패 시 0)
+    """
+    import re
+
+    print(f"  [Round 16 AI] 테이블 열 개수 감지 시작...")
+
+    # 이미지를 base64로 인코딩
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+    img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+    prompt = """이 테이블 이미지를 보고 열(column) 개수를 세어주세요.
+
+규칙:
+1. 세로로 구분된 컬럼의 개수를 세세요
+2. 첫 번째 컬럼(행 레이블)부터 마지막 컬럼(TOTAL 등)까지 포함
+3. 빈 컬럼도 포함하여 세세요
+4. 숫자만 답하세요 (예: 10)
+
+열 개수:"""
+
+    # Round 16: 모델 폴백 체인 - 타임아웃 시 다음 모델 시도
+    for model in VISION_MODELS:
+        try:
+            print(f"  [Round 16 AI] {model} 시도 중...")
+
+            response = requests.post(
+                OLLAMA_URL,
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "images": [img_base64],
+                    "stream": False,
+                    "options": {"temperature": 0.1}
+                },
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                result = response.json().get("response", "").strip()
+                # 숫자만 추출
+                numbers = re.findall(r'\d+', result)
+                if numbers:
+                    col_count = int(numbers[0])
+                    print(f"  [Round 16 AI] {model} 성공! 감지된 열 개수: {col_count}")
+                    return col_count
+                else:
+                    print(f"  [Round 16 AI] {model} 응답에서 숫자 추출 실패: {result[:50]}")
+            else:
+                print(f"  [Round 16 AI] {model} HTTP 오류: {response.status_code}")
+
+        except requests.exceptions.Timeout:
+            print(f"  [Round 16 AI] {model} 타임아웃, 다음 모델 시도...")
+            continue
+        except requests.exceptions.ConnectionError as e:
+            print(f"  [Round 16 AI] {model} 연결 오류: {e}")
+            continue
+        except Exception as e:
+            print(f"  [Round 16 AI] {model} 오류: {e}")
+            continue
+
+    print(f"  [Round 16 AI] 모든 모델 실패, 세로선 기반 폴백 사용")
+    return 0
+
+
 def detect_vertical_lines(image: Image.Image, region: tuple = None) -> list:
     """OpenCV morphological operation으로 테이블 수직선 감지
 
     Round 14: OCR 텍스트 위치 대신 실제 테이블 선을 감지하여 컬럼 경계로 활용
+    Round 15: 디버깅 로그 추가 + 다중 threshold 전략
 
     Args:
         image: PIL Image 객체
@@ -565,14 +642,19 @@ def detect_vertical_lines(image: Image.Image, region: tuple = None) -> list:
         list: 수직선 X좌표 리스트 (컬럼 경계)
     """
     try:
+        print(f"  [Round 15] 수직선 감지 시작...")
+
         # PIL Image를 OpenCV 형식으로 변환
         img_array = np.array(image)
+        print(f"  [Round 15] 이미지 shape: {img_array.shape}")
+
         if len(img_array.shape) == 3:
             img = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
         else:
             img = img_array
 
         if img is None:
+            print(f"  [Round 15] 이미지 변환 실패")
             return []
 
         # region이 지정된 경우 해당 영역만 처리
@@ -586,35 +668,63 @@ def detect_vertical_lines(image: Image.Image, region: tuple = None) -> list:
         else:
             gray = img
 
-        # 이진화 (테이블 선 추출)
-        _, binary = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
+        print(f"  [Round 15] 그레이스케일 shape: {gray.shape}")
+
+        # Round 15: 다중 이진화 전략 - 연한 선도 감지
+        # 방법 1: Adaptive threshold (연한 배경의 선)
+        binary1 = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                         cv2.THRESH_BINARY_INV, 15, 2)
+
+        # 방법 2: 고정 threshold (진한 선)
+        _, binary2 = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+
+        # 방법 3: Otsu threshold (자동 최적화)
+        _, binary3 = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+        # 모든 방법의 결과 합치기 (OR 연산)
+        binary = cv2.bitwise_or(binary1, cv2.bitwise_or(binary2, binary3))
+
+        print(f"  [Round 15] 이진화 완료 (3가지 방법 OR 결합)")
 
         # 수직선 감지용 커널 (세로로 긴 커널)
         img_height = binary.shape[0]
-        kernel_height = max(30, img_height // 10)  # 이미지 높이의 10% 이상
+        # Round 15: 커널 높이를 더 작게 (이미지 높이의 15% → 작은 테이블도 감지)
+        kernel_height = max(20, img_height // 7)
         vertical_kernel = np.ones((kernel_height, 1), np.uint8)
+        print(f"  [Round 15] 수직 커널 높이: {kernel_height}px")
 
         # Morphological operation으로 수직선만 추출
         vertical_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, vertical_kernel)
 
+        # 디버깅: 수직선 이미지 저장
+        cv2.imwrite("vertical_lines_debug.png", vertical_lines)
+        print(f"  [Round 15] 수직선 디버그 이미지 저장: vertical_lines_debug.png")
+
         # 컨투어 찾기
         contours, _ = cv2.findContours(vertical_lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        print(f"  [Round 15] 컨투어 개수: {len(contours)}")
 
         line_x_positions = []
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
-            # 선의 중심 X좌표
-            center_x = x + w // 2
-            # region이 지정된 경우 원래 좌표계로 변환
-            if region:
-                center_x += region[0]
-            line_x_positions.append(center_x)
+            # 수직선 필터: 높이가 너비보다 충분히 커야 함
+            if h > w * 3:  # 높이가 너비의 3배 이상
+                # 선의 중심 X좌표
+                center_x = x + w // 2
+                # region이 지정된 경우 원래 좌표계로 변환
+                if region:
+                    center_x += region[0]
+                line_x_positions.append(center_x)
+
+        print(f"  [Round 15] 필터링 후 수직선 개수: {len(line_x_positions)}")
 
         # 정렬하여 반환
         return sorted(line_x_positions)
 
     except Exception as e:
-        print(f"  [Round 14] 수직선 감지 오류: {e}")
+        print(f"  [Round 15] 수직선 감지 오류: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 
@@ -906,21 +1016,69 @@ def build_table_from_ocr(ocr_results: list, image: Image.Image = None, region: t
             print(f"  [Round 14] 수직선 X좌표: {line_x_positions[:15]}{'...' if len(line_x_positions) > 15 else ''}")
 
     # 4. 하이브리드 컬럼 위치 결정
-    if len(line_x_positions) >= 3:
-        # 수직선 기반: 경계 → 중심 변환
-        # 인접 수직선 사이의 중간점을 컬럼 중심으로 사용
+    # Round 15: COLOR/SIZE QTY 테이블 감지 (수직선보다 텍스트 클러스터링이 더 정확)
+    all_texts = [ocr.get("text", "").strip() for ocr in ocr_results]
+    all_texts_upper = [t.upper() for t in all_texts]
+    size_numbers = ["095", "100", "105", "110", "115", "120", "125", "130"]
+    has_size_numbers = any(size in all_texts for size in size_numbers)
+    color_codes = ["BK", "NA", "D3", "SV", "WH", "GR", "NV", "RD", "BL"]
+    has_color_codes = any(code in all_texts_upper for code in color_codes)
+    has_total = "TOTAL" in " ".join(all_texts_upper)
+
+    is_color_size_qty = has_size_numbers and (has_color_codes or has_total)
+    if is_color_size_qty:
+        print(f"  [Round 16] COLOR/SIZE QTY 테이블 감지됨")
+
+    # ========================================
+    # Round 16: AI 기반 열 개수 감지 (사용자 피드백 반영)
+    # - OpenCV 세로선 대신 AI가 테이블 구조 분석
+    # - AI가 감지한 열 개수를 기준으로 threshold 동적 조정
+    # ========================================
+
+    ai_col_count = 0
+    if image is not None:
+        ai_col_count = detect_column_count_with_ai(image)
+
+    if ai_col_count > 0 and non_title_x_centers:
+        # AI가 열 개수를 감지한 경우: 해당 개수에 맞게 클러스터링
+        # 이미지 너비와 열 개수로 적절한 threshold 계산
+        img_width = image.width if image else 1000
+        estimated_col_width = img_width // ai_col_count
+        dynamic_threshold = max(10, estimated_col_width // 3)
+
+        col_positions = cluster_values(non_title_x_centers, threshold=dynamic_threshold)
+
+        # AI 열 개수와 클러스터 결과가 다르면 threshold 조정
+        attempts = 0
+        while len(col_positions) != ai_col_count and attempts < 5:
+            if len(col_positions) > ai_col_count:
+                dynamic_threshold += 5  # threshold 증가 → 더 많이 병합
+            else:
+                dynamic_threshold = max(5, dynamic_threshold - 5)  # threshold 감소 → 더 세분화
+            col_positions = cluster_values(non_title_x_centers, threshold=dynamic_threshold)
+            attempts += 1
+
+        print(f"  [Round 16 AI] 목표 열 수: {ai_col_count}, 실제: {len(col_positions)}, threshold: {dynamic_threshold}")
+        print(f"  [Round 16 AI] 컬럼 중심점: {col_positions}")
+
+    elif len(line_x_positions) >= 2:
+        # AI 실패 시 세로선 기반 폴백
+        merged_lines = cluster_values(line_x_positions, threshold=15)
+        print(f"  [Round 16] 세로선 병합: {len(line_x_positions)}개 → {len(merged_lines)}개")
+
         col_positions = []
-        for i in range(len(line_x_positions) - 1):
-            center = (line_x_positions[i] + line_x_positions[i + 1]) // 2
+        for i in range(len(merged_lines) - 1):
+            center = (merged_lines[i] + merged_lines[i + 1]) // 2
             col_positions.append(center)
-        print(f"  [Round 14] 수직선 기반 컬럼: {len(col_positions)}개 생성")
+        print(f"  [Round 16] 세로선 기반 컬럼: {len(col_positions)}개 생성")
+
     elif non_title_x_centers:
         # 텍스트 클러스터링 폴백
-        col_positions = cluster_values(non_title_x_centers, threshold=30)
-        print(f"  [Round 14] 텍스트 기반 컬럼 (폴백): {len(col_positions)}개 생성")
+        col_positions = cluster_values(non_title_x_centers, threshold=20)
+        print(f"  [Round 16 폴백] 텍스트 기반 컬럼 (threshold=20): {len(col_positions)}개 생성")
     else:
-        col_positions = cluster_values(x_centers, threshold=30)
-        print(f"  [Round 14] 전체 텍스트 폴백: {len(col_positions)}개 컬럼 생성")
+        col_positions = cluster_values(x_centers, threshold=20)
+        print(f"  [Round 16 폴백] 전체 텍스트 폴백 (threshold=20): {len(col_positions)}개 컬럼 생성")
 
     num_rows = len(row_positions)
     num_cols = len(col_positions)

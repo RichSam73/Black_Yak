@@ -22,7 +22,10 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
 
 # Ollama 설정
 OLLAMA_URL = "http://localhost:11434/api/generate"
-VISION_MODEL = "qwen2.5vl"
+# Round 16: 모델 폴백 체인 (타임아웃 시 대안 모델 사용)
+# 1순위: qwen2.5vl, 2순위: gemma3:4b, 3순위: llama3.2-vision
+VISION_MODELS = ["qwen2.5vl", "gemma3:4b", "llama3.2-vision"]
+VISION_MODEL = VISION_MODELS[0]  # 기본 모델
 
 # 전역 OCR 인스턴스
 _paddle_ocr = None
@@ -552,6 +555,139 @@ def cluster_values(values: list, threshold: int = 15) -> list:
     return clusters
 
 
+def detect_column_count_with_ai(image: Image.Image) -> int:
+    """AI 비전 모델로 테이블 열 개수 감지
+
+    Round 16: 사용자 피드백 반영 - OpenCV 세로선 대신 AI가 열 개수 판단
+    타임아웃 시 대안 모델로 자동 전환:
+    1순위: qwen2.5vl → 2순위: gemma3:4b → 3순위: llama3.2-vision
+
+    Returns:
+        int: 감지된 열 개수 (실패 시 0)
+    """
+    print(f"  [Round 16 AI] 테이블 열 개수 감지 시작...")
+
+    # 이미지를 base64로 인코딩
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+    img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+    prompt = """이 테이블 이미지를 보고 열(column) 개수를 세어주세요.
+
+규칙:
+1. 세로로 구분된 컬럼의 개수를 세세요
+2. 첫 번째 컬럼(행 레이블)부터 마지막 컬럼(TOTAL 등)까지 포함
+3. 빈 컬럼도 포함하여 세세요
+4. 숫자만 답하세요 (예: 10)
+
+열 개수:"""
+
+    # Round 16: 모델 폴백 체인 - 타임아웃 시 다음 모델 시도
+    for model in VISION_MODELS:
+        try:
+            print(f"  [Round 16 AI] {model} 시도 중...")
+
+            response = requests.post(
+                OLLAMA_URL,
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "images": [img_base64],
+                    "stream": False,
+                    "options": {"temperature": 0.1}
+                },
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                result = response.json().get("response", "").strip()
+                # 숫자만 추출
+                numbers = re.findall(r'\d+', result)
+                if numbers:
+                    col_count = int(numbers[0])
+                    print(f"  [Round 16 AI] {model} 성공! 감지된 열 개수: {col_count}")
+                    return col_count
+                else:
+                    print(f"  [Round 16 AI] {model} 응답에서 숫자 추출 실패: {result[:50]}")
+            else:
+                print(f"  [Round 16 AI] {model} HTTP 오류: {response.status_code}")
+
+        except requests.exceptions.Timeout:
+            print(f"  [Round 16 AI] {model} 타임아웃, 다음 모델 시도...")
+            continue
+        except requests.exceptions.ConnectionError as e:
+            print(f"  [Round 16 AI] {model} 연결 오류: {e}")
+            continue
+        except Exception as e:
+            print(f"  [Round 16 AI] {model} 오류: {e}")
+            continue
+
+    print(f"  [Round 16 AI] 모든 모델 실패, 세로선 기반 폴백 사용")
+    return 0
+
+
+def detect_vertical_lines(image: Image.Image, region: tuple = None) -> list:
+    """OpenCV morphological operation으로 테이블 수직선 감지
+
+    Round 14: OCR 텍스트 위치 대신 실제 테이블 선을 감지하여 컬럼 경계로 활용
+    Round 15: 디버깅 로그 추가 + 다중 threshold 전략
+
+    Args:
+        image: PIL Image 객체
+        region: (x, y, w, h) - 향후 차트 분리 시 특정 영역만 처리
+
+    Returns:
+        list: 수직선 X좌표 리스트 (컬럼 경계)
+    """
+    try:
+        print(f"  [Round 15] 수직선 감지 시작...")
+
+        # PIL Image를 OpenCV 형식으로 변환
+        img_array = np.array(image)
+        print(f"  [Round 15] 이미지 shape: {img_array.shape}")
+
+        if len(img_array.shape) == 3:
+            img = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+        else:
+            img = img_array
+
+        if img is None:
+            print(f"  [Round 15] 이미지 변환 실패")
+            return []
+
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # 다중 threshold 전략 (Round 15)
+        thresholds = [150, 180, 120, 200]
+        all_line_positions = []
+
+        for thresh_val in thresholds:
+            _, binary = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY_INV)
+
+            # 수직선 감지용 커널 (세로로 긴 커널)
+            vertical_kernel = np.ones((30, 1), np.uint8)
+            vertical_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, vertical_kernel)
+
+            # 수직선의 X좌표 추출
+            contours, _ = cv2.findContours(vertical_lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            for cnt in contours:
+                x, y, w, h = cv2.boundingRect(cnt)
+                # 높이가 충분한 선만 (노이즈 필터링)
+                if h > img.shape[0] * 0.3:
+                    all_line_positions.append(x + w // 2)
+
+        # 중복 제거 및 정렬
+        unique_positions = sorted(set(all_line_positions))
+        print(f"  [Round 15] 수직선 후보: {len(unique_positions)}개")
+
+        return unique_positions
+
+    except Exception as e:
+        print(f"  [Round 15] 수직선 감지 오류: {e}")
+        return []
+
+
 def merge_adjacent_columns(col_positions: list, threshold: int = 60) -> list:
     """인접한 컬럼들을 병합하여 병합 셀 문제 해결
 
@@ -636,7 +772,7 @@ def detect_merged_header_columns(ocr_results: list, row_positions: list, col_pos
     is_color_size_qty = has_color_size_keywords and has_size_numbers
 
     # 추가 감지: 컬러 코드(BK, NA, D3, SV 등)가 데이터에 있으면서 TOTAL이 있는 경우
-    color_codes = ["BK", "NA", "D3", "SV", "WH", "GR", "NV", "RD", "BL"]
+    color_codes = ["BK", "NA", "D3", "SV", "WH", "GR", "NV", "RD", "BL", "CM", "TE", "CR", "BE", "GY"]
     has_color_codes = any(code in all_texts_upper for code in color_codes)
     has_total = "TOTAL" in all_texts_joined
 
@@ -693,6 +829,14 @@ def detect_merged_header_columns(ocr_results: list, row_positions: list, col_pos
         if "QTY" in text_upper or text_upper == "TOTAL":
             continue
 
+        # Round 18: 타이틀 행(1행)의 넓은 헤더는 병합 기준으로 사용하지 않음
+        # SUB MATERIAL INFORMATION, COLOR/SIZE QTY 등은 여러 컬럼에 걸쳐있지만 병합 의도 아님
+        title_keywords = ["INFORMATION", "COLOR/SIZE", "MATERIAL", "SUB "]
+        is_title_header = any(kw in text_upper for kw in title_keywords)
+        if is_title_header:
+            print(f"  [병합 스킵] 타이틀 헤더 '{text}' - 병합 기준으로 사용 안함")
+            continue
+
         # 이 헤더 범위에 포함되는 다른 컬럼 찾기
         covered_cols = []
         for col_idx, col_x in enumerate(col_positions):
@@ -738,12 +882,47 @@ def detect_merged_header_columns(ocr_results: list, row_positions: list, col_pos
     return merge_map
 
 
-def build_table_from_ocr(ocr_results: list) -> list:
+def remove_empty_rows_cols(table: list) -> list:
+    """완전히 빈 행과 열 제거 (후처리)
+
+    Round 12: Docling 패턴 적용 - 업계 표준 후처리 방식
+    - 모든 셀이 빈 행만 제거
+    - 모든 셀이 빈 열만 제거
+    - 데이터가 있는 셀은 모두 보존
+    """
+    if not table:
+        return table
+
+    # 1. 빈 행 제거
+    table = [row for row in table if any(cell.strip() for cell in row)]
+
+    if not table:
+        return table
+
+    # 2. 빈 열 제거
+    num_cols = len(table[0])
+    non_empty_cols = []
+    for col_idx in range(num_cols):
+        if any(row[col_idx].strip() for row in table if col_idx < len(row)):
+            non_empty_cols.append(col_idx)
+
+    if non_empty_cols:
+        table = [[row[col_idx] for col_idx in non_empty_cols if col_idx < len(row)] for row in table]
+
+    return table
+
+
+def build_table_from_ocr(ocr_results: list, image: Image.Image = None, region: tuple = None) -> list:
     """OCR 결과의 위치 정보만으로 테이블 구성
 
-    병합된 헤더 셀 처리:
-    - COLOR/SIZE 테이블에서 BK(컬러코드)와 BLACK(컬러명)이
-      "COLOR / SIZE" 헤더 아래에 있는 경우 하나의 셀로 병합
+    Round 12: 병합 로직 비활성화, 후처리로 빈 열/행 제거
+    Round 14: 수직선 감지 하이브리드 방식 추가
+    Round 16: AI 기반 열 개수 감지
+
+    Args:
+        ocr_results: OCR 결과 리스트
+        image: PIL Image 객체 (수직선 감지용, 선택적)
+        region: (x, y, w, h) - 향후 차트 분리 시 특정 영역만 처리
     """
     if not ocr_results:
         return []
@@ -766,29 +945,212 @@ def build_table_from_ocr(ocr_results: list) -> list:
     row_positions = cluster_values(y_centers, threshold=15)
 
     # ========================================
-    # Round 11: Header-First Column Detection
-    # 헤더 행의 X좌표만으로 컬럼 위치 고정 (빈 셀 문제 해결)
+    # Round 14: 하이브리드 컬럼 감지
+    # - 수직선 감지 우선 → 텍스트 클러스터링 폴백
     # ========================================
-    header_rows = row_positions[:2] if len(row_positions) >= 2 else row_positions[:1]
 
-    # 헤더 행에 속한 텍스트의 X좌표만 수집
-    header_x_centers = []
+    # 1. 각 행의 텍스트 개수 계산 (타이틀 행 제외용)
+    row_text_counts = {}
+    row_x_centers = {}
     for ocr in ocr_results:
         box = ocr.get("box", [])
         if len(box) < 4:
             continue
         cy = (box[1] + box[3]) / 2
         cx = (box[0] + box[2]) / 2
-        if any(abs(cy - header_y) < 20 for header_y in header_rows):
-            header_x_centers.append(cx)
+        row_idx = min(range(len(row_positions)), key=lambda i: abs(row_positions[i] - cy))
+        row_text_counts[row_idx] = row_text_counts.get(row_idx, 0) + 1
+        if row_idx not in row_x_centers:
+            row_x_centers[row_idx] = []
+        row_x_centers[row_idx].append(cx)
 
-    # 헤더 X좌표로 컬럼 위치 고정
-    if header_x_centers:
-        col_positions = cluster_values(header_x_centers, threshold=30)
-        print(f"  [Header-First] 헤더 {len(header_x_centers)}개 텍스트로 {len(col_positions)}개 컬럼 생성")
+    max_cols = max(row_text_counts.values()) if row_text_counts else 0
+    print(f"  [Max-Column] 행별 텍스트 개수: {dict(sorted(row_text_counts.items()))}")
+    print(f"  [Max-Column] 최대 열 수: {max_cols}")
+
+    # 2. 타이틀 행 제외한 X좌표 수집
+    non_title_x_centers = []
+    for row_idx, count in row_text_counts.items():
+        if count > 1:
+            non_title_x_centers.extend(row_x_centers.get(row_idx, []))
+
+    # 3. Round 14: 수직선 감지 시도
+    line_x_positions = []
+    if image is not None:
+        line_x_positions = detect_vertical_lines(image, region)
+        print(f"  [Round 14] 수직선 감지: {len(line_x_positions)}개 발견")
+        if line_x_positions:
+            print(f"  [Round 14] 수직선 X좌표: {line_x_positions[:15]}{'...' if len(line_x_positions) > 15 else ''}")
+
+    # 4. 하이브리드 컬럼 위치 결정
+    # Round 15: COLOR/SIZE QTY 테이블 감지 (수직선보다 텍스트 클러스터링이 더 정확)
+    all_texts = [ocr.get("text", "").strip() for ocr in ocr_results]
+    all_texts_upper = [t.upper() for t in all_texts]
+    size_numbers = ["095", "100", "105", "110", "115", "120", "125", "130"]
+    has_size_numbers = any(size in all_texts for size in size_numbers)
+    color_codes = ["BK", "NA", "D3", "SV", "WH", "GR", "NV", "RD", "BL", "CM", "TE", "CR", "BE", "GY"]
+    has_color_codes = any(code in all_texts_upper for code in color_codes)
+    has_total = "TOTAL" in " ".join(all_texts_upper)
+
+    is_color_size_qty = has_size_numbers and (has_color_codes or has_total)
+    if is_color_size_qty:
+        print(f"  [Round 16] COLOR/SIZE QTY 테이블 감지됨")
+
+    # ========================================
+    # Round 17: 헤더 행 기반 컬럼 위치 결정 (핵심 개선)
+    # - SIZE 숫자가 있는 헤더 행을 찾아 컬럼 위치 기준으로 사용
+    # - 빈 컬럼도 헤더 기준으로 정확히 배치
+    # ========================================
+
+    header_col_positions = None
+    if is_color_size_qty:
+        # 헤더 행 찾기: SIZE 숫자(095, 100, ...)가 포함된 행
+        header_row_idx = None
+        header_row_x_positions = []
+
+        for ocr in ocr_results:
+            text = ocr.get("text", "").strip()
+            box = ocr.get("box", [])
+            if len(box) < 4:
+                continue
+
+            # SIZE 숫자인지 확인
+            if text in size_numbers:
+                cy = (box[1] + box[3]) / 2
+                cx = (box[0] + box[2]) / 2
+
+                # 해당 행 인덱스 찾기
+                row_idx = min(range(len(row_positions)), key=lambda i: abs(row_positions[i] - cy))
+
+                if header_row_idx is None:
+                    header_row_idx = row_idx
+
+                if row_idx == header_row_idx:
+                    header_row_x_positions.append((cx, text))
+
+        if header_row_x_positions:
+            # 헤더 행의 X 좌표 정렬
+            header_row_x_positions.sort(key=lambda x: x[0])
+            print(f"  [Round 17] 헤더 행 발견: {[(t, int(x)) for x, t in header_row_x_positions]}")
+
+            # 헤더 행에서 컬럼 위치 계산
+            # COLOR/SIZE 컬럼 (첫 번째 size 숫자 왼쪽)
+            first_size_x = header_row_x_positions[0][0]
+
+            # COLOR/SIZE 텍스트 찾기
+            color_size_x = None
+            for ocr in ocr_results:
+                text = ocr.get("text", "").strip().upper()
+                box = ocr.get("box", [])
+                if len(box) >= 4 and ("COLOR" in text or "SIZE" in text) and "QTY" not in text:
+                    cx = (box[0] + box[2]) / 2
+                    cy = (box[1] + box[3]) / 2
+                    row_idx = min(range(len(row_positions)), key=lambda i: abs(row_positions[i] - cy))
+                    if row_idx == header_row_idx or abs(row_positions[row_idx] - row_positions[header_row_idx]) < 30:
+                        color_size_x = cx
+                        break
+
+            # 색상 코드 컬럼 위치 (왼쪽 끝)
+            color_code_x_list = []
+            color_name_x_list = []
+            for ocr in ocr_results:
+                text = ocr.get("text", "").strip().upper()
+                box = ocr.get("box", [])
+                if len(box) >= 4:
+                    cx = (box[0] + box[2]) / 2
+                    if text in [c.upper() for c in color_codes]:
+                        color_code_x_list.append(cx)
+                    elif text in ["BLACK", "NAVY", "CREAM", "TEAL", "D/TAUPE GRAY", "SILVER BEIGE"]:
+                        color_name_x_list.append(cx)
+
+            # 컬럼 위치 구성
+            header_col_positions = []
+
+            # 1. 색상 코드 컬럼 (있으면)
+            if color_code_x_list:
+                avg_color_code_x = sum(color_code_x_list) / len(color_code_x_list)
+                header_col_positions.append(avg_color_code_x)
+
+            # 2. COLOR/SIZE 또는 색상 이름 컬럼
+            if color_size_x:
+                header_col_positions.append(color_size_x)
+            elif color_name_x_list:
+                avg_color_name_x = sum(color_name_x_list) / len(color_name_x_list)
+                if not header_col_positions or abs(avg_color_name_x - header_col_positions[-1]) > 30:
+                    header_col_positions.append(avg_color_name_x)
+
+            # 3. SIZE 숫자 컬럼들
+            for x, text in header_row_x_positions:
+                header_col_positions.append(x)
+
+            # 4. TOTAL 컬럼
+            total_x = None
+            for ocr in ocr_results:
+                text = ocr.get("text", "").strip().upper()
+                box = ocr.get("box", [])
+                if len(box) >= 4 and text == "TOTAL":
+                    cy = (box[1] + box[3]) / 2
+                    row_idx = min(range(len(row_positions)), key=lambda i: abs(row_positions[i] - cy))
+                    if row_idx == header_row_idx or abs(row_positions[row_idx] - row_positions[header_row_idx]) < 30:
+                        total_x = (box[0] + box[2]) / 2
+                        break
+
+            if total_x and (not header_col_positions or abs(total_x - header_col_positions[-1]) > 30):
+                header_col_positions.append(total_x)
+
+            # 정렬 및 중복 제거
+            header_col_positions = sorted(set(int(x) for x in header_col_positions))
+            print(f"  [Round 17] 헤더 기반 컬럼 위치: {header_col_positions}")
+
+    # ========================================
+    # Round 16: AI 기반 열 개수 감지 (헤더 기반이 없을 때만)
+    # ========================================
+
+    ai_col_count = 0
+    if image is not None and not header_col_positions:
+        ai_col_count = detect_column_count_with_ai(image)
+
+    # 컬럼 위치 결정 우선순위: 헤더 기반 > AI 기반 > 텍스트 클러스터링
+    if header_col_positions:
+        col_positions = header_col_positions
+        print(f"  [Round 17] 헤더 기반 컬럼 사용: {len(col_positions)}개")
+    elif ai_col_count > 0 and non_title_x_centers:
+        # AI가 열 개수를 감지한 경우: 해당 개수에 맞게 클러스터링
+        # 이미지 너비와 열 개수로 적절한 threshold 계산
+        img_width = image.width if image else 1000
+        estimated_col_width = img_width // ai_col_count
+        dynamic_threshold = max(10, estimated_col_width // 3)
+
+        col_positions = cluster_values(non_title_x_centers, threshold=dynamic_threshold)
+
+        # AI 열 개수와 클러스터 결과가 다르면 threshold 조정
+        attempts = 0
+        while len(col_positions) != ai_col_count and attempts < 5:
+            if len(col_positions) > ai_col_count:
+                dynamic_threshold += 5  # threshold 증가 → 더 많이 병합
+            else:
+                dynamic_threshold = max(5, dynamic_threshold - 5)  # threshold 감소 → 더 세분화
+            col_positions = cluster_values(non_title_x_centers, threshold=dynamic_threshold)
+            attempts += 1
+
+        print(f"  [Round 16 AI] 목표 열 수: {ai_col_count}, 실제: {len(col_positions)}, threshold: {dynamic_threshold}")
+        print(f"  [Round 16 AI] 컬럼 중심점: {col_positions}")
+
+    elif len(line_x_positions) >= 2:
+        # AI 실패 시 세로선 기반 폴백
+        merged_lines = cluster_values(line_x_positions, threshold=15)
+        print(f"  [Round 16] 세로선 병합: {len(line_x_positions)}개 → {len(merged_lines)}개")
+
+        col_positions = []
+        for i in range(len(merged_lines) - 1):
+            center = (merged_lines[i] + merged_lines[i + 1]) // 2
+            col_positions.append(center)
+        print(f"  [Round 16] 세로선 기반 컬럼: {len(col_positions)}개")
+
     else:
-        col_positions = cluster_values(x_centers, threshold=30)  # 폴백
-        print(f"  [Header-First] 헤더 없음, 전체 텍스트로 {len(col_positions)}개 컬럼 생성")
+        # 세로선도 없으면 텍스트 기반 클러스터링
+        col_positions = cluster_values(non_title_x_centers, threshold=20)
+        print(f"  [Round 16] 텍스트 기반 컬럼 (폴백): {len(col_positions)}개")
 
     num_rows = len(row_positions)
     num_cols = len(col_positions)
@@ -796,28 +1158,24 @@ def build_table_from_ocr(ocr_results: list) -> list:
     if num_rows == 0 or num_cols == 0:
         return []
 
-    # ========================================
-    # 병합 셀 감지: 헤더에 빈 컬럼이 있는지 확인
-    # ========================================
-    merge_map = detect_merged_header_columns(ocr_results, row_positions, col_positions)
+    # Round 8: COLOR/SIZE QTY 테이블은 Method 2만 허용
+    merge_map = {}
+    if not is_color_size_qty:
+        merge_map = detect_merged_header_columns(ocr_results, row_positions, col_positions)
 
     if merge_map:
         print(f"  [병합 셀 감지] {len(merge_map)}개 컬럼 병합: {merge_map}")
 
-        # 병합 후 실제 컬럼 수 계산
-        # merge_map: {빈_컬럼_idx: 병합할_헤더_컬럼_idx}
         merged_cols = set()
         for empty_col, header_col in merge_map.items():
             merged_cols.add(empty_col)
 
-        # 새로운 컬럼 인덱스 매핑 생성
         new_col_positions = []
         old_to_new_col = {}
         new_idx = 0
 
         for old_idx in range(num_cols):
             if old_idx in merged_cols:
-                # 이 컬럼은 다른 컬럼에 병합됨
                 target_col = merge_map[old_idx]
                 old_to_new_col[old_idx] = old_to_new_col.get(target_col, new_idx)
             else:
@@ -825,7 +1183,6 @@ def build_table_from_ocr(ocr_results: list) -> list:
                 new_col_positions.append(col_positions[old_idx])
                 new_idx += 1
 
-        # 병합된 컬럼 수로 테이블 생성
         num_cols = len(new_col_positions)
         print(f"  [병합 후] {num_rows}행 x {num_cols}열")
     else:
@@ -846,13 +1203,10 @@ def build_table_from_ocr(ocr_results: list) -> list:
 
         row_idx = min(range(num_rows), key=lambda i: abs(row_positions[i] - cy))
 
-        # 원래 컬럼 인덱스 찾기
         orig_col_idx = min(range(len(col_positions)), key=lambda i: abs(col_positions[i] - cx))
 
-        # 병합된 컬럼 인덱스로 변환
         col_idx = old_to_new_col.get(orig_col_idx, orig_col_idx)
 
-        # 범위 체크
         if col_idx >= num_cols:
             col_idx = num_cols - 1
 
@@ -860,6 +1214,9 @@ def build_table_from_ocr(ocr_results: list) -> list:
             table[row_idx][col_idx] += " " + text
         else:
             table[row_idx][col_idx] = text
+
+    # Round 12: 후처리 - 빈 행/열 제거
+    table = remove_empty_rows_cols(table)
 
     return table
 
@@ -1028,8 +1385,8 @@ def process_image(img: Image.Image, img_base64: str) -> dict:
     # 1. 하이브리드 OCR 수행 (PaddleOCR + AI 보정)
     ocr_results = hybrid_ocr(img)
 
-    # 2. OCR 결과 위치 기반으로 테이블 구성
-    table_2d = build_table_from_ocr(ocr_results)
+    # 2. OCR 결과 위치 기반으로 테이블 구성 (Round 16: 이미지 전달)
+    table_2d = build_table_from_ocr(ocr_results, image=img)
 
     num_rows = len(table_2d)
     num_cols = len(table_2d[0]) if table_2d else 0
