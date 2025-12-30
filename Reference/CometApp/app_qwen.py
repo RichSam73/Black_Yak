@@ -1,10 +1,10 @@
 """
-Comet + ERP 통합 웹 앱 (하이브리드 AI OCR)
+Comet + ERP 통합 웹 앱 (Qwen2.5-VL 버전)
 - PaddleOCR: 텍스트 위치(좌표) 감지
-- Ollama Vision: 한글 인식 정확도 보강
+- Qwen2.5-VL: OCR/문서 파싱 특화 모델 (Alibaba)
 - Comet 오버레이 + ERP 테이블 동시 제공
 - Grid 감지 방식으로 셀 매핑 (기존 방식 유지)
-- 포트: 6001
+- 포트: 6002
 """
 from flask import Flask, render_template_string, request, jsonify
 from PIL import Image
@@ -22,7 +22,7 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
 
 # Ollama 설정
 OLLAMA_URL = "http://localhost:11434/api/generate"
-VISION_MODEL = "llama3.2-vision"
+VISION_MODEL = "qwen2.5vl"
 
 # 전역 OCR 인스턴스
 _paddle_ocr = None
@@ -552,72 +552,6 @@ def cluster_values(values: list, threshold: int = 15) -> list:
     return clusters
 
 
-def detect_vertical_lines(image: Image.Image, region: tuple = None) -> list:
-    """OpenCV morphological operation으로 테이블 수직선 감지
-
-    Round 14: OCR 텍스트 위치 대신 실제 테이블 선을 감지하여 컬럼 경계로 활용
-
-    Args:
-        image: PIL Image 객체
-        region: (x, y, w, h) - 향후 차트 분리 시 특정 영역만 처리
-
-    Returns:
-        list: 수직선 X좌표 리스트 (컬럼 경계)
-    """
-    try:
-        # PIL Image를 OpenCV 형식으로 변환
-        img_array = np.array(image)
-        if len(img_array.shape) == 3:
-            img = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-        else:
-            img = img_array
-
-        if img is None:
-            return []
-
-        # region이 지정된 경우 해당 영역만 처리
-        if region:
-            x, y, w, h = region
-            img = img[y:y+h, x:x+w]
-
-        # 그레이스케일 변환
-        if len(img.shape) == 3:
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = img
-
-        # 이진화 (테이블 선 추출)
-        _, binary = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
-
-        # 수직선 감지용 커널 (세로로 긴 커널)
-        img_height = binary.shape[0]
-        kernel_height = max(30, img_height // 10)  # 이미지 높이의 10% 이상
-        vertical_kernel = np.ones((kernel_height, 1), np.uint8)
-
-        # Morphological operation으로 수직선만 추출
-        vertical_lines = cv2.morphologyEx(binary, cv2.MORPH_OPEN, vertical_kernel)
-
-        # 컨투어 찾기
-        contours, _ = cv2.findContours(vertical_lines, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        line_x_positions = []
-        for cnt in contours:
-            x, y, w, h = cv2.boundingRect(cnt)
-            # 선의 중심 X좌표
-            center_x = x + w // 2
-            # region이 지정된 경우 원래 좌표계로 변환
-            if region:
-                center_x += region[0]
-            line_x_positions.append(center_x)
-
-        # 정렬하여 반환
-        return sorted(line_x_positions)
-
-    except Exception as e:
-        print(f"  [Round 14] 수직선 감지 오류: {e}")
-        return []
-
-
 def merge_adjacent_columns(col_positions: list, threshold: int = 60) -> list:
     """인접한 컬럼들을 병합하여 병합 셀 문제 해결
 
@@ -804,48 +738,12 @@ def detect_merged_header_columns(ocr_results: list, row_positions: list, col_pos
     return merge_map
 
 
-def remove_empty_rows_cols(table: list) -> list:
-    """완전히 빈 행과 열 제거 (후처리)
-
-    Round 12: Docling 패턴 적용 - 업계 표준 후처리 방식
-    - 모든 셀이 빈 행만 제거
-    - 모든 셀이 빈 열만 제거
-    - 데이터가 있는 셀은 모두 보존
-    """
-    if not table:
-        return table
-
-    # 1. 빈 행 제거
-    table = [row for row in table if any(cell.strip() for cell in row)]
-
-    if not table:
-        return table
-
-    # 2. 빈 열 제거
-    num_cols = len(table[0])
-    non_empty_cols = []
-    for col_idx in range(num_cols):
-        if any(row[col_idx].strip() for row in table if col_idx < len(row)):
-            non_empty_cols.append(col_idx)
-
-    if non_empty_cols:
-        table = [[row[col_idx] for col_idx in non_empty_cols if col_idx < len(row)] for row in table]
-
-    return table
-
-
-def build_table_from_ocr(ocr_results: list, image: Image.Image = None, region: tuple = None) -> list:
+def build_table_from_ocr(ocr_results: list) -> list:
     """OCR 결과의 위치 정보만으로 테이블 구성
 
-    Round 12: 병합 로직 비활성화, 후처리로 빈 열/행 제거
-    Round 14: 수직선 감지 하이브리드 방식 추가
-    - 수직선 3개 이상 감지 시: 수직선 기반 컬럼 분리
-    - 수직선 부족 시: 텍스트 클러스터링 폴백
-
-    Args:
-        ocr_results: OCR 결과 리스트
-        image: PIL Image 객체 (수직선 감지용, 선택적)
-        region: (x, y, w, h) - 향후 차트 분리 시 특정 영역만 처리
+    병합된 헤더 셀 처리:
+    - COLOR/SIZE 테이블에서 BK(컬러코드)와 BLACK(컬러명)이
+      "COLOR / SIZE" 헤더 아래에 있는 경우 하나의 셀로 병합
     """
     if not ocr_results:
         return []
@@ -868,59 +766,29 @@ def build_table_from_ocr(ocr_results: list, image: Image.Image = None, region: t
     row_positions = cluster_values(y_centers, threshold=15)
 
     # ========================================
-    # Round 14: 하이브리드 컬럼 감지
-    # - 수직선 감지 우선 → 텍스트 클러스터링 폴백
+    # Round 11: Header-First Column Detection
+    # 헤더 행의 X좌표만으로 컬럼 위치 고정 (빈 셀 문제 해결)
     # ========================================
+    header_rows = row_positions[:2] if len(row_positions) >= 2 else row_positions[:1]
 
-    # 1. 각 행의 텍스트 개수 계산 (타이틀 행 제외용)
-    row_text_counts = {}
-    row_x_centers = {}
+    # 헤더 행에 속한 텍스트의 X좌표만 수집
+    header_x_centers = []
     for ocr in ocr_results:
         box = ocr.get("box", [])
         if len(box) < 4:
             continue
         cy = (box[1] + box[3]) / 2
         cx = (box[0] + box[2]) / 2
-        row_idx = min(range(len(row_positions)), key=lambda i: abs(row_positions[i] - cy))
-        row_text_counts[row_idx] = row_text_counts.get(row_idx, 0) + 1
-        if row_idx not in row_x_centers:
-            row_x_centers[row_idx] = []
-        row_x_centers[row_idx].append(cx)
+        if any(abs(cy - header_y) < 20 for header_y in header_rows):
+            header_x_centers.append(cx)
 
-    max_cols = max(row_text_counts.values()) if row_text_counts else 0
-    print(f"  [Max-Column] 행별 텍스트 개수: {dict(sorted(row_text_counts.items()))}")
-    print(f"  [Max-Column] 최대 열 수: {max_cols}")
-
-    # 2. 타이틀 행 제외한 X좌표 수집
-    non_title_x_centers = []
-    for row_idx, count in row_text_counts.items():
-        if count > 1:
-            non_title_x_centers.extend(row_x_centers.get(row_idx, []))
-
-    # 3. Round 14: 수직선 감지 시도
-    line_x_positions = []
-    if image is not None:
-        line_x_positions = detect_vertical_lines(image, region)
-        print(f"  [Round 14] 수직선 감지: {len(line_x_positions)}개 발견")
-        if line_x_positions:
-            print(f"  [Round 14] 수직선 X좌표: {line_x_positions[:15]}{'...' if len(line_x_positions) > 15 else ''}")
-
-    # 4. 하이브리드 컬럼 위치 결정
-    if len(line_x_positions) >= 3:
-        # 수직선 기반: 경계 → 중심 변환
-        # 인접 수직선 사이의 중간점을 컬럼 중심으로 사용
-        col_positions = []
-        for i in range(len(line_x_positions) - 1):
-            center = (line_x_positions[i] + line_x_positions[i + 1]) // 2
-            col_positions.append(center)
-        print(f"  [Round 14] 수직선 기반 컬럼: {len(col_positions)}개 생성")
-    elif non_title_x_centers:
-        # 텍스트 클러스터링 폴백
-        col_positions = cluster_values(non_title_x_centers, threshold=30)
-        print(f"  [Round 14] 텍스트 기반 컬럼 (폴백): {len(col_positions)}개 생성")
+    # 헤더 X좌표로 컬럼 위치 고정
+    if header_x_centers:
+        col_positions = cluster_values(header_x_centers, threshold=30)
+        print(f"  [Header-First] 헤더 {len(header_x_centers)}개 텍스트로 {len(col_positions)}개 컬럼 생성")
     else:
-        col_positions = cluster_values(x_centers, threshold=30)
-        print(f"  [Round 14] 전체 텍스트 폴백: {len(col_positions)}개 컬럼 생성")
+        col_positions = cluster_values(x_centers, threshold=30)  # 폴백
+        print(f"  [Header-First] 헤더 없음, 전체 텍스트로 {len(col_positions)}개 컬럼 생성")
 
     num_rows = len(row_positions)
     num_cols = len(col_positions)
@@ -929,16 +797,40 @@ def build_table_from_ocr(ocr_results: list, image: Image.Image = None, region: t
         return []
 
     # ========================================
-    # Round 12: 병합 로직 비활성화 - 후처리로 대체
+    # 병합 셀 감지: 헤더에 빈 컬럼이 있는지 확인
     # ========================================
-    # 기존 병합 로직 주석 처리 (필요시 복원 가능)
-    # merge_map = detect_merged_header_columns(ocr_results, row_positions, col_positions)
-    merge_map = {}  # Round 12: 병합 비활성화
+    merge_map = detect_merged_header_columns(ocr_results, row_positions, col_positions)
 
-    # 병합 없이 최대 열 수로 테이블 생성
-    old_to_new_col = {i: i for i in range(num_cols)}
-    new_col_positions = col_positions
-    print(f"  [Round 13] 병합 없이 {num_rows}행 x {num_cols}열 테이블 생성 (후처리로 빈 열/행 제거)")
+    if merge_map:
+        print(f"  [병합 셀 감지] {len(merge_map)}개 컬럼 병합: {merge_map}")
+
+        # 병합 후 실제 컬럼 수 계산
+        # merge_map: {빈_컬럼_idx: 병합할_헤더_컬럼_idx}
+        merged_cols = set()
+        for empty_col, header_col in merge_map.items():
+            merged_cols.add(empty_col)
+
+        # 새로운 컬럼 인덱스 매핑 생성
+        new_col_positions = []
+        old_to_new_col = {}
+        new_idx = 0
+
+        for old_idx in range(num_cols):
+            if old_idx in merged_cols:
+                # 이 컬럼은 다른 컬럼에 병합됨
+                target_col = merge_map[old_idx]
+                old_to_new_col[old_idx] = old_to_new_col.get(target_col, new_idx)
+            else:
+                old_to_new_col[old_idx] = new_idx
+                new_col_positions.append(col_positions[old_idx])
+                new_idx += 1
+
+        # 병합된 컬럼 수로 테이블 생성
+        num_cols = len(new_col_positions)
+        print(f"  [병합 후] {num_rows}행 x {num_cols}열")
+    else:
+        old_to_new_col = {i: i for i in range(num_cols)}
+        new_col_positions = col_positions
 
     table = [["" for _ in range(num_cols)] for _ in range(num_rows)]
 
@@ -968,10 +860,6 @@ def build_table_from_ocr(ocr_results: list, image: Image.Image = None, region: t
             table[row_idx][col_idx] += " " + text
         else:
             table[row_idx][col_idx] = text
-
-    # Round 12: 후처리로 완전히 빈 행/열 제거
-    table = remove_empty_rows_cols(table)
-    print(f"  [Round 12 후처리] 빈 행/열 제거 후 {len(table)}행 x {len(table[0]) if table else 0}열")
 
     return table
 
@@ -1140,8 +1028,8 @@ def process_image(img: Image.Image, img_base64: str) -> dict:
     # 1. 하이브리드 OCR 수행 (PaddleOCR + AI 보정)
     ocr_results = hybrid_ocr(img)
 
-    # 2. OCR 결과 위치 기반으로 테이블 구성 (Round 14: 수직선 감지 하이브리드)
-    table_2d = build_table_from_ocr(ocr_results, image=img)
+    # 2. OCR 결과 위치 기반으로 테이블 구성
+    table_2d = build_table_from_ocr(ocr_results)
 
     num_rows = len(table_2d)
     num_cols = len(table_2d[0]) if table_2d else 0
@@ -1853,8 +1741,8 @@ def upload():
 
 if __name__ == '__main__':
     print("=" * 50)
-    print("Comet + ERP 테이블 추출 (하이브리드 OCR)")
-    print(f"PaddleOCR + {VISION_MODEL} (AI 보정)")
-    print("http://localhost:6001 에서 접속하세요")
+    print("Comet + ERP 테이블 추출 (Qwen2.5-VL 버전)")
+    print(f"PaddleOCR + {VISION_MODEL} (OCR 특화)")
+    print("http://localhost:6002 에서 접속하세요")
     print("=" * 50)
-    app.run(debug=True, port=6001)
+    app.run(debug=True, port=6002)
