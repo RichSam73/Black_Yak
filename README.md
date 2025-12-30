@@ -6,20 +6,38 @@
 
 ### 1. CometApp - ERP 테이블 추출 (최신)
 
-**위치**: `Reference/CometApp/app_ai.py`
+#### 1-1. Qwen2.5-VL 기반 (권장)
+
+**위치**: `Reference/CometApp/app_qwen.py`
 
 **기술 스택**:
 - **PaddleOCR v5** (PP-OCRv5_server_det + korean_PP-OCRv5_mobile_rec)
-- **llama3.2-vision** (AI Vision 보정)
-- **Flask** 웹 서버 (포트 6001)
+- **qwen2.5vl** (AI Vision 메인 모델)
+- **AI 모델 폴백 체인**: qwen2.5vl → gemma3:4b → llama3.2-vision
+- **Flask** 웹 서버 (포트 6002)
 
 **핵심 기능**:
 - 하이브리드 OCR: PaddleOCR + AI Vision 조합으로 누락 텍스트 자동 보정
 - X-좌표 클러스터링 (threshold=30) 기반 컬럼 감지
-- 3-Method 병합 헤더 컬럼 감지:
-  - Method 2: 헤더 범위 기반 병합
-  - Method 3: 빈 헤더 컬럼 병합 (임계값 40px)
-- COLOR/SIZE QTY 테이블 특수 처리
+- **Round 17**: 헤더 기반 컬럼 위치 감지 (SIZE 숫자 095-130 패턴)
+- **Round 18**: 타이틀 헤더("SUB MATERIAL INFORMATION") 병합 스킵
+- COLOR/SIZE QTY 테이블 자동 감지 (Method 2 전용)
+- 수직선 기반 강제 컬럼 분리 (OpenCV)
+
+**실행 방법**:
+```bash
+cd Reference/CometApp
+python app_qwen.py
+# http://localhost:6002 접속
+```
+
+#### 1-2. Llama3.2-vision 기반 (레거시)
+
+**위치**: `Reference/CometApp/app_ai.py`
+
+**기술 스택**:
+- **PaddleOCR v5** + **llama3.2-vision**
+- **Flask** 웹 서버 (포트 6001)
 
 **실행 방법**:
 ```bash
@@ -119,16 +137,48 @@ streamlit run app.py
 
 ## 📝 최근 업데이트
 
-### Round 9 (2025-12-30)
+### Round 18 (2025-12-31) - app_qwen.py
+- 타이틀 헤더("SUB MATERIAL INFORMATION") 병합 스킵 로직 추가
+- DIV, CODE, NAME 등 실제 데이터 컬럼만 병합 대상
+
+### Round 17 (2025-12-31) - app_qwen.py
+- 헤더 기반 컬럼 위치 감지 (SIZE 숫자 095-130 패턴)
+- 125/130 사이즈 컬럼 누락 문제 해결
+
+### Round 16 (2025-12-31) - app_qwen.py
+- AI 모델 폴백 체인: qwen2.5vl → gemma3:4b → llama3.2-vision
+- 모델 장애 시 자동 대체
+
+### Round 15 (2025-12-31) - app_qwen.py
+- COLOR/SIZE QTY 테이블 패턴 자동 감지
+- Method 2(헤더 기반 병합)만 허용
+
+### Round 9 (2025-12-30) - app_ai.py
 - SUP CD / SUP NM 컬럼 병합 방지
 - Method 3 임계값 150px → 40px 축소
 
-### Round 8 (2025-12-29)
+### Round 8 (2025-12-29) - app_ai.py
 - COLOR/SIZE QTY 테이블 Method 2만 허용
 - 빈 컬럼 오류 해결
 
-### Round 7 (2025-12-28)
+### Round 7 (2025-12-28) - app_ai.py
 - 하이브리드 OCR + 테이블 구조 분석 기반 누락 텍스트 자동 삽입
+
+---
+
+## 🧪 테스트 결과 (app_qwen.py)
+
+| 테이블 | 컬럼 수 | AI 검증 | 비고 |
+|--------|---------|---------|------|
+| BY_Original_Table.png | 9개 | ✅ 통과 | COLOR/SIZE QTY (095-120) |
+| 005M_Table.png | 11개 | ✅ 통과 | COLOR/SIZE QTY (095-130, 125/130 포함) |
+| Submaterial_information.png | 13개 | ✅ 통과 | SUP CD/SUP NM 분리 |
+
+**테스트 실행**:
+```bash
+cd Reference/CometApp
+python test_all_tables.py
+```
 
 ---
 
