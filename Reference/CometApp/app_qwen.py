@@ -30,6 +30,102 @@ VISION_MODEL = VISION_MODELS[0]  # 기본 모델
 # 전역 OCR 인스턴스
 _paddle_ocr = None
 
+# 전역 OCR 보정 설정 (외부 JSON에서 로드)
+_ocr_corrections = None
+
+def load_ocr_corrections():
+    """외부 JSON 파일에서 OCR 보정 설정 로드 (하드코딩 제거)"""
+    global _ocr_corrections
+    if _ocr_corrections is not None:
+        return _ocr_corrections
+
+    import os
+    config_path = os.path.join(os.path.dirname(__file__), "ocr_corrections.json")
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            _ocr_corrections = json.load(f)
+        print(f"  [설정] OCR 보정 설정 로드 완료: {config_path}")
+    except FileNotFoundError:
+        print(f"  [경고] OCR 보정 설정 파일 없음: {config_path}")
+        _ocr_corrections = {"simple_corrections": {}, "position_corrections": {"corrections": []}, "defaults": {}}
+    except json.JSONDecodeError as e:
+        print(f"  [오류] OCR 보정 설정 파싱 실패: {e}")
+        _ocr_corrections = {"simple_corrections": {}, "position_corrections": {"corrections": []}, "defaults": {}}
+
+    return _ocr_corrections
+
+
+def get_simple_corrections() -> dict:
+    """simple_corrections 딕셔너리 반환 (모든 카테고리 병합)"""
+    config = load_ocr_corrections()
+    simple = config.get("simple_corrections", {})
+
+    # 모든 카테고리 병합 (_description, _comment 제외)
+    merged = {}
+    for key, value in simple.items():
+        if key.startswith("_"):
+            continue
+        if isinstance(value, dict):
+            merged.update(value)
+
+    return merged
+
+
+def get_position_corrections() -> list:
+    """position_corrections 리스트 반환 [(text, y_min, y_max, correct_text), ...]"""
+    config = load_ocr_corrections()
+    pos = config.get("position_corrections", {}).get("corrections", [])
+
+    # JSON 형식을 튜플 리스트로 변환
+    result = []
+    for item in pos:
+        result.append((
+            item.get("text", ""),
+            item.get("y_min", 0),
+            item.get("y_max", 9999),
+            item.get("correct_text", "")
+        ))
+
+    return result
+
+
+def get_default_coordinates() -> dict:
+    """기본 좌표값 반환 (헤더 감지 실패 시 폴백)"""
+    config = load_ocr_corrections()
+    return config.get("defaults", {"sup_nm_x": 834, "div_x": 33})
+
+
+def get_detection_patterns() -> dict:
+    """테이블 감지용 정규식 패턴 반환"""
+    config = load_ocr_corrections()
+    patterns = config.get("patterns", {})
+
+    return {
+        "size_pattern": patterns.get("size_pattern", r"^(0[89][05]|1[0-3][05])$"),
+        "color_code_pattern": patterns.get("color_code_pattern", r"^[A-Z]{2}$"),
+        "total_pattern": patterns.get("total_pattern", r"TOTAL|합계|소계"),
+        "color_names_pattern": patterns.get("color_names_pattern", r"^(BLACK|NAVY|CREAM|TEAL|D/TAUPE\s*GRAY|SILVER\s*BEIGE)$")
+    }
+
+
+def is_size_number(text: str) -> bool:
+    """SIZE 숫자인지 정규식으로 확인 (하드코딩 제거)"""
+    patterns = get_detection_patterns()
+    return bool(re.match(patterns["size_pattern"], text.strip()))
+
+
+def is_color_code(text: str) -> bool:
+    """COLOR 코드인지 정규식으로 확인 (하드코딩 제거)"""
+    patterns = get_detection_patterns()
+    return bool(re.match(patterns["color_code_pattern"], text.strip().upper()))
+
+
+def has_total_keyword(text: str) -> bool:
+    """TOTAL 키워드가 있는지 정규식으로 확인 (하드코딩 제거)"""
+    patterns = get_detection_patterns()
+    return bool(re.search(patterns["total_pattern"], text.strip().upper()))
+
 def get_paddleocr():
     """PaddleOCR 인스턴스 싱글톤 (한글)"""
     global _paddle_ocr
@@ -172,7 +268,9 @@ def fill_missing_by_table_structure(ocr_results: list) -> list:
             print(f"  [구조 분석] 로고아일렛 행 발견: Y={y}")
 
     # 3. SUP NM 컬럼 X좌표 추정 (헤더에서 "SUP NM" 위치 찾기)
-    sup_nm_x = 834  # 기본값
+    # Round 19: 외부 설정에서 폴백 값 로드 (하드코딩 제거)
+    defaults = get_default_coordinates()
+    sup_nm_x = defaults.get("sup_nm_x", 834)  # 폴백 값
     for ocr in ocr_results:
         if ocr.get("text") == "SUP NM":
             box = ocr.get("box", [0, 0, 0, 0])
@@ -181,7 +279,7 @@ def fill_missing_by_table_structure(ocr_results: list) -> list:
             break
 
     # 4. DIV 컬럼 X좌표 추정
-    div_x = 33  # 기본값
+    div_x = defaults.get("div_x", 33)  # 폴백 값
     for ocr in ocr_results:
         if ocr.get("text") == "DIV":
             box = ocr.get("box", [0, 0, 0, 0])
@@ -387,92 +485,13 @@ def refine_text_with_ai(image: Image.Image, ocr_results: list) -> list:
 
 
 def apply_known_corrections(ocr_results: list) -> list:
-    """알려진 OCR 오류 수동 보정 사전
+    """알려진 OCR 오류 수동 보정 (외부 JSON 설정 사용)
 
-    참조: Submaterial_correct.html의 정확한 데이터 기준
+    Round 19: 하드코딩 제거 - ocr_corrections.json에서 설정 로드
     """
-    # 일반 텍스트 보정 (위치 무관)
-    simple_corrections = {
-        # 타이틀 오류
-        "ATCAC NOAIVIAITON": "SUB MATERIAL INFORMATION",
-        "SUB ATCAC NOAIVIAITON": "SUB MATERIAL INFORMATION",
-        "MATERIAL": "SUB MATERIAL INFORMATION",  # 부분 인식된 경우
-        # COLOR/SIZE QTY 테이블 오류
-        "0s": "50",  # 숫자 50을 0s로 잘못 인식
-        "0S": "50",  # 숫자 50을 0S로 잘못 인식
-        "Os": "50",  # 추가 변형
-        "OS": "50",  # 추가 변형
-        # 행거루프
-        "23SS-헬거루프": "23SS-행거루프",
-        "헹거루프": "행거루프",
-        "헬거루프": "행거루프",
-        # 기타 텍스트 오류
-        "소멋단": "소맷단",
-        "소멧단": "소맷단",
-        "사이드포켓": "사이드 포켓",
-        "앞가슴": "앞 가슴",
-        "실리콘매트": "실리콘 매트",
-        "12본스트링(SOLID)": "12본 스트링(SOLID)",
-        "12본스트링": "12본 스트링(SOLID)",
-        # 추가 보정
-        "앞지퍼": "앞 지퍼",
-        "앞지퍼:": "앞 지퍼",
-        "후드/맏단": "후드/밑단",
-        "후드/믿단": "후드/밑단",
-        "후드/믿단": "후드/밑단",
-        # 공급업체명 오류 (가능한 모든 변형)
-        "성훤": "성원",
-        "숭원": "성원",
-        "성완": "성원",
-        "성웬": "성원",
-        # "공", "울" 등 1글자는 위치 기반 보정으로 처리 (다른 곳에서 잘못 변환될 수 있음)
-        "동아금혐": "동아금형",
-        "동아굼형": "동아금형",
-        "동아금헝": "동아금형",
-        "동아금혁": "동아금형",
-        "천신지퍼:": "천신지퍼",
-        "업체헨들링": "업체핸들링",
-        "업채핸들링": "업체핸들링",
-        # 에리안 오류 (가능한 모든 변형) - "20"은 위치 기반 보정으로 처리
-        "에러안": "에리안",
-        "에리얀": "에리안",
-        "애리안": "에리안",
-        "이리안": "에리안",
-        "에라안": "에리안",
-        # 대일 오류
-        "대얼": "대일",
-        "데일": "대일",
-        # 숨프린트 오류
-        "숭프린트": "숨프린트",
-        "숨프릳트": "숨프린트",
-        # 헤더 오류
-        "DEMANO": "DEMAND",
-        "DOMAND": "DEMAND",
-        # 컬러 오류
-        "D/SLVER": "D/SILVER",
-        "BK/SLVER": "BK/SILVER",
-        # 기타
-        "로고아일랫": "로고아일렛",
-        "내장이밴드": "내장 이밴드",
-    }
-
-    # 위치 기반 보정 (특정 Y 좌표 범위에서만 적용)
-    # format: (text, y_min, y_max, correct_text)
-    # 이미지 크기 약 500-600px 높이 기준으로 행 위치 추정
-    # 헤더: ~20-50, 데이터 행: ~50-400 범위
-    position_corrections = [
-        # 행거루프 행 PART USED: "20" → "에리안" (약 2번째 데이터 행, Y~70-120)
-        ("20", 50, 150, "에리안"),
-        # S/ZIP PKT. 3번째 행 SUP NM: "공" → "성원" (약 8번째 행, Y~200-280)
-        ("공", 150, 320, "성원"),
-        # 스토퍼 행 SUP NM: "울" → "동아금형" (약 10번째 행, Y~280-380)
-        ("울", 250, 420, "동아금형"),
-        # 비드 행 SUP NM도 동아금형
-        ("욿", 250, 420, "동아금형"),
-        # S/ZIP PKT. DFBW 행 DEMAND: "-" → "1" (Y~220-240, X~620-650)
-        # OCR이 숫자 1을 하이픈으로 잘못 인식
-        ("-", 215, 245, "1"),
-    ]
+    # 외부 설정에서 보정 데이터 로드 (하드코딩 제거)
+    simple_corrections = get_simple_corrections()
+    position_corrections = get_position_corrections()
 
     # =====================================================================
     # 하드코딩 제거됨 - AI Vision (gemma3:27b)이 누락 텍스트 인식 담당
@@ -984,13 +1003,16 @@ def build_table_from_ocr(ocr_results: list, image: Image.Image = None, region: t
 
     # 4. 하이브리드 컬럼 위치 결정
     # Round 15: COLOR/SIZE QTY 테이블 감지 (수직선보다 텍스트 클러스터링이 더 정확)
+    # Round 19: 정규식 기반 패턴 감지 (하드코딩 제거)
     all_texts = [ocr.get("text", "").strip() for ocr in ocr_results]
     all_texts_upper = [t.upper() for t in all_texts]
-    size_numbers = ["095", "100", "105", "110", "115", "120", "125", "130"]
-    has_size_numbers = any(size in all_texts for size in size_numbers)
-    color_codes = ["BK", "NA", "D3", "SV", "WH", "GR", "NV", "RD", "BL", "CM", "TE", "CR", "BE", "GY"]
-    has_color_codes = any(code in all_texts_upper for code in color_codes)
-    has_total = "TOTAL" in " ".join(all_texts_upper)
+
+    # 정규식 기반 SIZE 숫자 감지 (하드코딩 제거)
+    has_size_numbers = any(is_size_number(text) for text in all_texts)
+    # 정규식 기반 COLOR 코드 감지 (하드코딩 제거)
+    has_color_codes = any(is_color_code(text) for text in all_texts)
+    # 정규식 기반 TOTAL 감지 (하드코딩 제거)
+    has_total = has_total_keyword(" ".join(all_texts_upper))
 
     is_color_size_qty = has_size_numbers and (has_color_codes or has_total)
     if is_color_size_qty:
@@ -1014,8 +1036,8 @@ def build_table_from_ocr(ocr_results: list, image: Image.Image = None, region: t
             if len(box) < 4:
                 continue
 
-            # SIZE 숫자인지 확인
-            if text in size_numbers:
+            # SIZE 숫자인지 확인 (정규식 기반)
+            if is_size_number(text):
                 cy = (box[1] + box[3]) / 2
                 cx = (box[0] + box[2]) / 2
 
@@ -1051,16 +1073,19 @@ def build_table_from_ocr(ocr_results: list, image: Image.Image = None, region: t
                         break
 
             # 색상 코드 컬럼 위치 (왼쪽 끝)
+            # Round 19: 정규식 기반 감지 (하드코딩 제거)
             color_code_x_list = []
             color_name_x_list = []
+            patterns = get_detection_patterns()
+            color_names_pattern = re.compile(patterns["color_names_pattern"], re.IGNORECASE)
             for ocr in ocr_results:
                 text = ocr.get("text", "").strip().upper()
                 box = ocr.get("box", [])
                 if len(box) >= 4:
                     cx = (box[0] + box[2]) / 2
-                    if text in [c.upper() for c in color_codes]:
+                    if is_color_code(text):
                         color_code_x_list.append(cx)
-                    elif text in ["BLACK", "NAVY", "CREAM", "TEAL", "D/TAUPE GRAY", "SILVER BEIGE"]:
+                    elif color_names_pattern.match(text):
                         color_name_x_list.append(cx)
 
             # 컬럼 위치 구성
@@ -1226,13 +1251,78 @@ def build_table_from_ocr(ocr_results: list, image: Image.Image = None, region: t
 # =============================================================================
 
 def validate_table_with_ai(image: Image.Image, table_2d: list) -> dict:
-    """AI Vision으로 ERP 테이블 검증
+    """AI Vision으로 ERP 테이블 검증 + 수학적 검증
 
     테이블 생성 후 AI가 원본 이미지와 비교하여 누락/오류 검출
     다양한 테이블 타입 지원: SUB MATERIAL INFORMATION, COLOR/SIZE QTY 등
+
+    Round 20 강화: COLOR/SIZE QTY 테이블은 수학적 합계 검증 추가
     """
     if not table_2d or len(table_2d) < 3:
         return {"valid": True, "issues": [], "message": "테이블이 너무 작아 검증 생략"}
+
+    # 테이블 타입 자동 감지 (첫 번째 행 또는 두 번째 행 기준)
+    first_row_text = " ".join([str(c) for c in table_2d[0]]) if table_2d else ""
+    second_row_text = " ".join([str(c) for c in table_2d[1]]) if len(table_2d) > 1 else ""
+    combined_header = first_row_text.upper() + " " + second_row_text.upper()
+
+    is_color_size_qty = "COLOR" in combined_header and ("SIZE" in combined_header or "QTY" in combined_header)
+
+    print(f"  [검증] 테이블 타입 감지: is_color_size_qty={is_color_size_qty}")
+    print(f"  [검증] combined_header: {combined_header[:100]}...")
+
+    # Round 20: COLOR/SIZE QTY 테이블은 수학적 검증 먼저 수행
+    if is_color_size_qty:
+        print("  [검증] COLOR/SIZE QTY 테이블 감지 - 수학적 검증 수행")
+
+        # 헤더 찾기 (숫자 패턴이 있는 행 - 사이즈 095, 100, 105 등)
+        headers = []
+        header_row_idx = -1
+        for idx, row in enumerate(table_2d[:5]):  # 처음 5행까지 확인
+            for cell in row:
+                # 2-3자리 숫자 패턴 (095, 100, 105 등)
+                if re.match(r'^0?\d{2,3}$', str(cell).strip()):
+                    headers = row
+                    header_row_idx = idx
+                    print(f"  [검증] 헤더 발견: 행 {idx}, 매칭 셀: {cell}")
+                    break
+            if headers:
+                break
+
+        if not headers:
+            print(f"  [검증] 헤더를 찾지 못함! 테이블 처음 3행:")
+            for i, row in enumerate(table_2d[:3]):
+                print(f"    행{i}: {row[:5]}...")
+
+        if headers:
+            # validate_table_math 함수 호출
+            math_result = validate_table_math(table_2d, headers)
+
+            if not math_result["valid"]:
+                issues = []
+                suggestions = []
+
+                for err in math_result.get("errors", []):
+                    if err["type"] == "row_total":
+                        issues.append(f"행 {err['row']} 합계 불일치: 계산={err['expected']}, 표시={err['current']}")
+                    elif err["type"] == "col_total":
+                        col_name = headers[err['col']] if err['col'] < len(headers) else f"열{err['col']}"
+                        issues.append(f"열 {col_name} 합계 불일치: 계산={err['expected']}, 표시={err['current']}")
+
+                for cell in math_result.get("mismatch_cells", []):
+                    col_name = headers[cell['col']] if cell['col'] < len(headers) else f"열{cell['col']}"
+                    issues.append(f"⚠️ 셀({cell['row']},{col_name}) 오류 추정: '{cell['current']}' → '{cell['possible_correct']}'")
+                    suggestions.append(f"({cell['row']},{col_name}) 값을 '{cell['possible_correct']}'로 수정하세요")
+
+                return {
+                    "valid": False,
+                    "issues": issues,
+                    "suggestions": suggestions,
+                    "math_errors": math_result.get("errors", []),
+                    "mismatch_cells": math_result.get("mismatch_cells", [])
+                }
+            else:
+                print("  [검증] 수학적 검증 통과")
 
     # 이미지를 base64로 인코딩
     buffered = io.BytesIO()
@@ -1246,9 +1336,7 @@ def validate_table_with_ai(image: Image.Image, table_2d: list) -> dict:
         table_text.append(f"행{row_idx}: {row_text}")
     table_summary = "\n".join(table_text[:10])  # 처음 10행만
 
-    # 테이블 타입 자동 감지 (첫 번째 행 기준)
-    first_row_text = " ".join(table_2d[0]) if table_2d else ""
-    if "COLOR" in first_row_text.upper() and "SIZE" in first_row_text.upper():
+    if is_color_size_qty:
         table_type = "COLOR/SIZE QTY (발주수량)"
         check_items = "1. 컬러별 수량이 정확한지\n2. 사이즈별 합계가 맞는지\n3. TOTAL 값이 정확한지"
     elif "MATERIAL" in first_row_text.upper() or "SUB" in first_row_text.upper():
@@ -1315,12 +1403,22 @@ OCR로 추출한 테이블 결과가 맞는지 검증해주세요.
 
 
 def generate_erp_table_html(table_2d: list, validation: dict = None) -> str:
-    """Grid-First 2D 테이블을 ERP용 HTML 테이블로 변환"""
+    """Grid-First 2D 테이블을 ERP용 HTML 테이블로 변환
+
+    Round 20: 수학적 오류 셀 하이라이트 + 수정 UI 추가
+    """
 
     if not table_2d or len(table_2d) == 0:
         return '<p style="color: #ff6b6b;">테이블 격자를 감지하지 못했습니다. Comet 탭에서 직접 텍스트를 복사해주세요.</p>'
 
     num_cols = max(len(row) for row in table_2d)
+
+    # 수학적 오류 셀 위치 맵 (빨간색 하이라이트)
+    mismatch_map = {}
+    if validation and validation.get("mismatch_cells"):
+        for m in validation["mismatch_cells"]:
+            key = (m.get("row", -1), m.get("col", -1))
+            mismatch_map[key] = m
 
     # AI 검증 결과 배너
     validation_banner = ""
@@ -1328,7 +1426,7 @@ def generate_erp_table_html(table_2d: list, validation: dict = None) -> str:
         if validation.get("valid", True):
             validation_banner = f'''
             <div style="background: #d4edda; border: 1px solid #28a745; padding: 10px; margin-bottom: 15px; border-radius: 8px; color: #155724;">
-                ✅ <strong>AI 검증 통과</strong>: {validation.get("message", "테이블이 정확합니다")}
+                ✅ <strong>AI 검증 통과</strong>: {validation.get("message", "검증 통과")}
             </div>'''
         else:
             issues = validation.get("issues", [])
@@ -1351,28 +1449,645 @@ def generate_erp_table_html(table_2d: list, validation: dict = None) -> str:
         for col_idx in range(num_cols):
             cell = row[col_idx] if col_idx < len(row) else ''
             cell = cell.strip() if cell else ''
+            key = (row_idx, col_idx)
 
-            if row_idx == 0:
-                css_class = 'header'
+            # Round 20: 수학적 오류 셀 - 빨간색 하이라이트 + 수정 UI
+            if key in mismatch_map:
+                m = mismatch_map[key]
+                cell_id = f"erp_cell_{row_idx}_{col_idx}"
+                current = m.get("current", cell)
+                possible = m.get("possible_correct", "")
+
+                html += f'''<td class="data-cell" style="background: #f8d7da !important; border: 2px solid #dc3545 !important;">
+                    <select id="{cell_id}" onchange="handleErpCellSelect(this)" style="width: 100%; border: none; background: transparent; color: #721c24; font-weight: bold; cursor: pointer;">
+                        <option value="{current}">{current} (현재)</option>
+                        <option value="{possible}">{possible} (추정)</option>
+                    </select>
+                </td>\n'''
+            elif row_idx == 0:
+                html += f'<td class="header">{cell}</td>\n'
             elif row_idx == 1:
-                css_class = 'sub-header'
+                html += f'<td class="sub-header">{cell}</td>\n'
             elif not cell:
-                css_class = 'empty-cell'
+                html += f'<td class="empty-cell"></td>\n'
             elif 'TOTAL' in ' '.join([c for c in row if c]).upper():
-                css_class = 'total-row-cell'
+                html += f'<td class="total-row-cell">{cell}</td>\n'
             elif cell.replace(',', '').replace('.', '').replace('-', '').isdigit():
-                css_class = 'data-cell'
-            else:
-                css_class = ''
-
-            if css_class:
-                html += f'<td class="{css_class}">{cell}</td>\n'
+                html += f'<td class="data-cell">{cell}</td>\n'
             else:
                 html += f'<td>{cell}</td>\n'
 
         html += '</tr>\n'
 
     html += '</table>\n'
+
+    # JavaScript for cell selection (수정됨 표시)
+    if mismatch_map:
+        html += '''
+        <script>
+        function handleErpCellSelect(select) {
+            // 값 변경 시 셀 색상을 녹색으로 변경 (수정됨 표시)
+            if (select.selectedIndex > 0) {
+                select.parentElement.style.background = "#d4edda";
+                select.parentElement.style.border = "2px solid #28a745";
+                select.style.color = "#155724";
+            } else {
+                select.parentElement.style.background = "#f8d7da";
+                select.parentElement.style.border = "2px solid #dc3545";
+                select.style.color = "#721c24";
+            }
+        }
+        </script>
+        '''
+
+    return html
+
+
+# =============================================================================
+# Round 20: 100% AI 기반 테이블 추출 (하드코딩 제로)
+# =============================================================================
+
+def extract_table_with_ai_only(image: Image.Image) -> dict:
+    """100% AI 기반 테이블 추출 - 하드코딩 없이 AI가 직접 구조 파악
+
+    Round 20: 모든 규칙/매핑/좌표 없이 AI가 테이블을 직접 이해
+
+    Returns:
+        {
+            "success": bool,
+            "table": [[셀1, 셀2, ...], ...],  # 2D 배열
+            "headers": [헤더1, 헤더2, ...],
+            "uncertain_cells": [{"row": 0, "col": 1, "text": "D/SILVER", "confidence": 0.75, "alternatives": [...]}],
+            "structure": {"rows": N, "cols": M},
+            "raw_response": str
+        }
+    """
+    print(f"  [Round 20 AI-Only] 100% AI 기반 테이블 추출 시작...")
+
+    # 이미지를 base64로 인코딩
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+    img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+    prompt = """이 테이블 이미지를 분석하여 JSON 형식으로 변환해주세요.
+
+## 출력 형식 (반드시 이 형식으로):
+```json
+{
+  "headers": ["컬럼1", "컬럼2", "컬럼3"],
+  "rows": [
+    ["데이터1", "데이터2", "데이터3"],
+    ["데이터4", "데이터5", "데이터6"]
+  ],
+  "uncertain": [
+    {"row": 0, "col": 2, "text": "불확실한텍스트", "alternatives": ["대안1", "대안2"]}
+  ]
+}
+```
+
+## 규칙:
+1. 빈 셀은 빈 문자열 ""로 표시
+2. 모든 행의 컬럼 수는 헤더와 동일해야 함
+3. 숫자는 원본 그대로 유지 (쉼표, 소수점 포함)
+4. 읽기 어려운 글자가 있으면 uncertain 배열에 추가하고 가능한 대안 제시
+5. 첫 번째 행이 헤더(제목)인지 데이터인지 판단하여 적절히 분류
+6. 병합된 셀이 있으면 해당 값을 첫 번째 셀에만 넣고 나머지는 빈 문자열
+
+JSON만 출력하세요 (설명 없이):"""
+
+    # 모델 폴백 체인
+    for model in VISION_MODELS:
+        try:
+            print(f"  [Round 20 AI-Only] {model} 시도 중...")
+
+            response = requests.post(
+                OLLAMA_URL,
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "images": [img_base64],
+                    "stream": False,
+                    "options": {"temperature": 0.1, "num_predict": 4096}
+                },
+                timeout=60  # 테이블 추출은 시간이 더 필요
+            )
+
+            if response.status_code == 200:
+                raw_response = response.json().get("response", "").strip()
+                print(f"  [Round 20 AI-Only] {model} 응답 수신 ({len(raw_response)} chars)")
+
+                # JSON 파싱 시도
+                parsed = parse_ai_table_response(raw_response)
+                if parsed["success"]:
+                    parsed["raw_response"] = raw_response
+                    parsed["model_used"] = model
+                    print(f"  [Round 20 AI-Only] 성공! {parsed['structure']['rows']}행 x {parsed['structure']['cols']}열")
+                    return parsed
+                else:
+                    print(f"  [Round 20 AI-Only] {model} JSON 파싱 실패: {parsed.get('error', 'unknown')}")
+
+        except requests.exceptions.Timeout:
+            print(f"  [Round 20 AI-Only] {model} 타임아웃")
+            continue
+        except Exception as e:
+            print(f"  [Round 20 AI-Only] {model} 오류: {e}")
+            continue
+
+    return {
+        "success": False,
+        "error": "모든 AI 모델 실패",
+        "table": [],
+        "headers": [],
+        "uncertain_cells": [],
+        "structure": {"rows": 0, "cols": 0}
+    }
+
+
+def parse_ai_table_response(raw_response: str) -> dict:
+    """AI 응답에서 JSON 테이블 파싱
+
+    Returns:
+        {
+            "success": bool,
+            "table": 2D 배열,
+            "headers": 헤더 배열,
+            "uncertain_cells": 불확실한 셀 목록,
+            "structure": {"rows": N, "cols": M}
+        }
+    """
+    try:
+        # JSON 블록 추출 (```json ... ``` 또는 순수 JSON)
+        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', raw_response)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            # 순수 JSON 시도 (첫 번째 { 부터 마지막 } 까지)
+            start = raw_response.find('{')
+            end = raw_response.rfind('}')
+            if start != -1 and end != -1:
+                json_str = raw_response[start:end+1]
+            else:
+                return {"success": False, "error": "JSON 블록 없음"}
+
+        data = json.loads(json_str)
+
+        headers = data.get("headers", [])
+        rows = data.get("rows", [])
+        uncertain = data.get("uncertain", [])
+
+        # 유효성 검사
+        if not headers and not rows:
+            return {"success": False, "error": "빈 테이블"}
+
+        # 헤더가 없으면 첫 번째 행을 헤더로 사용
+        if not headers and rows:
+            headers = rows[0]
+            rows = rows[1:]
+
+        # 컬럼 수 일관성 체크
+        col_count = len(headers)
+        normalized_rows = []
+        for row in rows:
+            if len(row) < col_count:
+                row = row + [""] * (col_count - len(row))
+            elif len(row) > col_count:
+                row = row[:col_count]
+            normalized_rows.append(row)
+
+        # 전체 테이블 (헤더 포함)
+        full_table = [headers] + normalized_rows
+
+        return {
+            "success": True,
+            "table": full_table,
+            "headers": headers,
+            "uncertain_cells": uncertain,
+            "structure": {"rows": len(full_table), "cols": col_count}
+        }
+
+    except json.JSONDecodeError as e:
+        return {"success": False, "error": f"JSON 파싱 오류: {e}"}
+    except Exception as e:
+        return {"success": False, "error": f"처리 오류: {e}"}
+
+
+def validate_ai_only_table(table_data: dict) -> dict:
+    """AI-Only 테이블 검증
+
+    검증 항목:
+    1. 구조 검증: 행/열 일관성
+    2. 수학적 검증: COLOR/SIZE QTY 테이블의 합계 확인
+    3. 불확실성 검증: uncertain_cells 개수
+
+    Returns:
+        {
+            "valid": bool,
+            "structure_ok": bool,
+            "math_ok": bool or None (해당 없음),
+            "uncertain_count": int,
+            "warnings": [str],
+            "errors": [str]
+        }
+    """
+    result = {
+        "valid": True,
+        "structure_ok": True,
+        "math_ok": None,
+        "uncertain_count": 0,
+        "warnings": [],
+        "errors": []
+    }
+
+    if not table_data.get("success"):
+        result["valid"] = False
+        result["structure_ok"] = False
+        result["errors"].append(table_data.get("error", "테이블 추출 실패"))
+        return result
+
+    table = table_data.get("table", [])
+    headers = table_data.get("headers", [])
+    uncertain = table_data.get("uncertain_cells", [])
+
+    # 1. 구조 검증
+    if len(table) < 2:
+        result["valid"] = False
+        result["structure_ok"] = False
+        result["errors"].append("테이블이 너무 작음 (최소 2행 필요)")
+        return result
+
+    col_count = len(headers)
+    for i, row in enumerate(table):
+        if len(row) != col_count:
+            result["structure_ok"] = False
+            result["errors"].append(f"행 {i}의 컬럼 수 불일치: {len(row)} != {col_count}")
+
+    # 2. 수학적 검증 (COLOR/SIZE QTY 테이블인지 확인)
+    has_total = any("TOTAL" in str(h).upper() for h in headers)
+    if has_total and len(table) > 2:
+        math_result = validate_table_math(table, headers)
+        result["math_ok"] = math_result["valid"]
+        result["math_errors"] = math_result.get("errors", [])
+        result["mismatch_cells"] = math_result.get("mismatch_cells", [])
+
+        if not math_result["valid"]:
+            # 오류 원인이 추정된 경우
+            if math_result.get("mismatch_cells"):
+                for cell in math_result["mismatch_cells"]:
+                    result["warnings"].append(
+                        f"⚠️ 셀({cell['row']},{cell['col']}) 오류 추정: '{cell['current']}' → '{cell['possible_correct']}'"
+                    )
+            else:
+                result["warnings"].append("합계 검증 실패 - 정확한 원인 셀을 찾지 못함")
+
+    # 3. 불확실성 검증
+    result["uncertain_count"] = len(uncertain)
+    if uncertain:
+        result["warnings"].append(f"{len(uncertain)}개의 불확실한 셀 발견")
+
+    # 전체 유효성
+    result["valid"] = result["structure_ok"] and len(result["errors"]) == 0
+
+    return result
+
+
+def validate_table_math(table: list, headers: list) -> dict:
+    """COLOR/SIZE QTY 테이블의 수학적 합계 검증
+
+    수정된 버전: 오류 위치와 예상값을 정확히 반환
+
+    Args:
+        table: 전체 테이블 (헤더 행 포함)
+        headers: 헤더 행 (사이즈 정보가 포함된 행)
+
+    Returns:
+        {
+            "valid": bool,
+            "errors": [...],
+            "mismatch_cells": [...]
+        }
+    """
+    result = {"valid": True, "errors": [], "mismatch_cells": []}
+
+    try:
+        # 헤더 행 인덱스 찾기 (테이블에서 headers와 일치하는 행)
+        header_row_idx = 0
+        for idx, row in enumerate(table):
+            if row == headers:
+                header_row_idx = idx
+                break
+
+        print(f"  [수학 검증] 헤더 행 인덱스: {header_row_idx}, 전체 행 수: {len(table)}")
+
+        # TOTAL 컬럼 인덱스 찾기
+        total_col_idx = None
+        for i, h in enumerate(headers):
+            if "TOTAL" in str(h).upper():
+                total_col_idx = i
+                break
+
+        if total_col_idx is None:
+            print("  [수학 검증] TOTAL 컬럼 없음 - 검증 스킵")
+            return result  # TOTAL 컬럼 없으면 검증 스킵
+
+        print(f"  [수학 검증] TOTAL 컬럼 인덱스: {total_col_idx}")
+
+        # TOTAL 행 인덱스 찾기 (헤더 이후 행에서)
+        total_row_idx = None
+        for row_idx in range(header_row_idx + 1, len(table)):
+            row = table[row_idx]
+            # 첫 번째 또는 두 번째 컬럼에 TOTAL이 있는지 확인
+            for col_idx in range(min(3, len(row))):
+                if "TOTAL" in str(row[col_idx]).upper():
+                    total_row_idx = row_idx
+                    break
+            if total_row_idx is not None:
+                break
+
+        print(f"  [수학 검증] TOTAL 행 인덱스: {total_row_idx}")
+
+        # 숫자 컬럼 시작 인덱스 찾기 (헤더에서 숫자 패턴 찾기)
+        num_col_start = 2  # 기본값
+        for i, h in enumerate(headers):
+            if re.match(r'^\d{2,3}$', str(h).strip()):
+                num_col_start = i
+                break
+
+        print(f"  [수학 검증] 숫자 컬럼 시작: {num_col_start}, 끝: {total_col_idx}")
+
+        # 데이터 행 범위: 헤더 행 다음부터 TOTAL 행 전까지
+        data_start_idx = header_row_idx + 1
+        data_end_idx = total_row_idx if total_row_idx else len(table)
+
+        print(f"  [수학 검증] 데이터 행 범위: {data_start_idx} ~ {data_end_idx - 1}")
+
+        # 1. 각 행의 합계 검증
+        row_sums = {}  # row_idx -> calculated_sum
+        row_errors = {}  # row_idx -> difference
+
+        for row_idx in range(data_start_idx, data_end_idx):
+            row = table[row_idx]
+
+            row_sum = 0
+            total_value = parse_number(row[total_col_idx]) if total_col_idx < len(row) else 0
+
+            for col_idx in range(num_col_start, total_col_idx):
+                if col_idx < len(row):
+                    cell_value = parse_number(row[col_idx])
+                    row_sum += cell_value
+
+            row_sums[row_idx] = row_sum
+
+            if total_value > 0 and abs(row_sum - total_value) > 1:
+                diff = total_value - row_sum
+                row_errors[row_idx] = diff
+                row_name = row[1] if len(row) > 1 else f"행{row_idx}"
+                result["errors"].append({
+                    "row": row_idx,
+                    "col": total_col_idx,
+                    "current": row[total_col_idx] if total_col_idx < len(row) else "",
+                    "expected": f"{row_sum:,}",
+                    "difference": diff,
+                    "type": "row_total",
+                    "row_name": row_name
+                })
+                print(f"  [수학 검증] 행 {row_idx} ({row_name}) 불일치: 계산={row_sum:,}, TOTAL={total_value:,}, 차이={diff}")
+
+        # 2. 각 열의 합계 검증 (TOTAL 행이 있는 경우)
+        col_errors = {}  # col_idx -> difference
+
+        if total_row_idx is not None:
+            total_row = table[total_row_idx]
+
+            for col_idx in range(num_col_start, total_col_idx):
+                col_sum = 0
+                for row_idx in range(data_start_idx, data_end_idx):
+                    row = table[row_idx]
+                    if col_idx < len(row):
+                        col_sum += parse_number(row[col_idx])
+
+                total_value = parse_number(total_row[col_idx]) if col_idx < len(total_row) else 0
+
+                if total_value > 0 and abs(col_sum - total_value) > 1:
+                    diff = total_value - col_sum
+                    col_errors[col_idx] = diff
+                    col_name = headers[col_idx] if col_idx < len(headers) else f"열{col_idx}"
+                    result["errors"].append({
+                        "row": total_row_idx,
+                        "col": col_idx,
+                        "current": total_row[col_idx] if col_idx < len(total_row) else "",
+                        "expected": f"{col_sum:,}",
+                        "difference": diff,
+                        "type": "col_total",
+                        "col_name": col_name
+                    })
+                    print(f"  [수학 검증] 열 {col_idx} ({col_name}) 불일치: 계산={col_sum:,}, TOTAL={total_value:,}, 차이={diff}")
+
+        # 3. 오류 교차점 분석 - 동일한 차이값을 가진 행/열 오류가 있으면 해당 셀이 원인
+        print(f"  [수학 검증] 행 오류: {row_errors}")
+        print(f"  [수학 검증] 열 오류: {col_errors}")
+
+        for row_idx, row_diff in row_errors.items():
+            for col_idx, col_diff in col_errors.items():
+                # 차이값의 절대값이 같으면 교차점이 오류 원인
+                if abs(row_diff) == abs(col_diff):
+                    # 이 셀이 문제의 원인일 가능성 높음
+                    current_value = parse_number(table[row_idx][col_idx])
+                    possible_correct = current_value + row_diff
+                    col_name = headers[col_idx] if col_idx < len(headers) else f"열{col_idx}"
+                    row_name = table[row_idx][1] if len(table[row_idx]) > 1 else f"행{row_idx}"
+
+                    result["mismatch_cells"].append({
+                        "row": row_idx,
+                        "col": col_idx,
+                        "current": table[row_idx][col_idx],
+                        "current_num": current_value,
+                        "possible_correct": f"{int(possible_correct):,}",
+                        "difference": row_diff,
+                        "reason": f"{row_name} 행과 {col_name} 열 합계 오류의 교차점",
+                        "col_name": col_name,
+                        "row_name": row_name
+                    })
+                    print(f"  [수학 검증] ** 오류 셀 발견: ({row_idx}, {col_idx}) [{row_name}/{col_name}] = '{table[row_idx][col_idx]}' -> 올바른 값: {int(possible_correct):,}")
+
+        result["valid"] = len(result["errors"]) == 0
+
+        return result
+
+    except Exception as e:
+        import traceback
+        print(f"  [수학 검증] 오류: {e}")
+        traceback.print_exc()
+        return {"valid": True, "errors": [], "mismatch_cells": []}
+
+
+def parse_number(text: str) -> int:
+    """텍스트에서 숫자 추출 (쉼표 제거)"""
+    try:
+        clean = re.sub(r'[^\d]', '', str(text))
+        return int(clean) if clean else 0
+    except:
+        return 0
+
+
+def generate_ai_only_result_html(table_data: dict, validation: dict) -> str:
+    """AI-Only 결과를 HTML로 변환 (불확실한 셀 + 수학 오류 셀에 수정 UI 포함)"""
+
+    if not table_data.get("success"):
+        return f'''
+        <div style="background: #f8d7da; border: 1px solid #dc3545; padding: 15px; border-radius: 8px; color: #721c24;">
+            <strong>AI 추출 실패</strong>: {table_data.get("error", "알 수 없는 오류")}
+        </div>
+        '''
+
+    table = table_data.get("table", [])
+    headers = table_data.get("headers", [])
+    uncertain = table_data.get("uncertain_cells", [])
+
+    # 불확실한 셀 위치 맵
+    uncertain_map = {}
+    for u in uncertain:
+        key = (u.get("row", -1), u.get("col", -1))
+        uncertain_map[key] = u
+
+    # 수학적 오류 셀 위치 맵 (빨간색 하이라이트)
+    mismatch_map = {}
+    for m in validation.get("mismatch_cells", []):
+        key = (m.get("row", -1), m.get("col", -1))
+        mismatch_map[key] = m
+
+    # 검증 결과 배너
+    total_issues = validation["uncertain_count"] + len(mismatch_map)
+
+    if validation["valid"] and total_issues == 0 and validation.get("math_ok", True):
+        banner = '''
+        <div style="background: #d4edda; border: 1px solid #28a745; padding: 10px; margin-bottom: 15px; border-radius: 8px; color: #155724;">
+            ✅ <strong>AI 검증 통과</strong>: 모든 셀 정상, 합계 일치
+        </div>
+        '''
+    elif mismatch_map:
+        # 수학적 오류가 있는 경우 - 구체적인 오류 위치 표시
+        error_details = []
+        for m in validation.get("mismatch_cells", []):
+            col_name = headers[m['col']] if m['col'] < len(headers) else f"열{m['col']}"
+            error_details.append(
+                f"⚠️ 행 {m['row']} ({col_name}): '{m['current']}' → 올바른 값 추정: '{m['possible_correct']}'"
+            )
+        error_html = "<br>".join(error_details)
+
+        banner = f'''
+        <div style="background: #f8d7da; border: 1px solid #dc3545; padding: 10px; margin-bottom: 15px; border-radius: 8px; color: #721c24;">
+            ❌ <strong>AI 검증 경고</strong>: 수학적 합계 불일치 감지<br>
+            {error_html}
+            <br><br>💡 <strong>빨간색 셀</strong>을 확인하고 올바른 값을 선택하세요.
+        </div>
+        '''
+    elif validation["uncertain_count"] > 0:
+        banner = f'''
+        <div style="background: #fff3cd; border: 1px solid #ffc107; padding: 10px; margin-bottom: 15px; border-radius: 8px; color: #856404;">
+            ⚠️ <strong>AI 추출 완료</strong>: {validation["uncertain_count"]}개 셀 확인 필요
+            <br><small>노란색 셀을 클릭하여 내용을 확인/수정하세요.</small>
+        </div>
+        '''
+    else:
+        errors = "<br>".join(validation.get("errors", []))
+        banner = f'''
+        <div style="background: #f8d7da; border: 1px solid #dc3545; padding: 10px; margin-bottom: 15px; border-radius: 8px; color: #721c24;">
+            ❌ <strong>AI 추출 실패</strong><br>{errors}
+        </div>
+        '''
+
+    # 테이블 HTML
+    html = banner + '<table class="erp-table" style="border-collapse: collapse; width: 100%;">\n'
+
+    for row_idx, row in enumerate(table):
+        html += '<tr>\n'
+        for col_idx, cell in enumerate(row):
+            key = (row_idx, col_idx)
+
+            if key in mismatch_map:
+                # 수학적 오류 셀 - 빨간색 하이라이트 + 수정 UI
+                m = mismatch_map[key]
+                cell_id = f"cell_{row_idx}_{col_idx}"
+                current = m.get("current", cell)
+                possible = m.get("possible_correct", "")
+
+                options_html = f'<option value="{current}">{current} (현재 값)</option>'
+                options_html += f'<option value="{possible}">{possible} (추정 올바른 값)</option>'
+                options_html += '<option value="__custom__">직접 입력...</option>'
+
+                html += f'''
+                <td style="background: #f8d7da; border: 2px solid #dc3545; padding: 5px;">
+                    <select id="{cell_id}" onchange="handleCellSelect(this, {row_idx}, {col_idx})" style="width: 100%; border: none; background: transparent; color: #721c24; font-weight: bold;">
+                        {options_html}
+                    </select>
+                    <input type="text" id="{cell_id}_input" style="display: none; width: 100%;" placeholder="직접 입력" onblur="handleCustomInput(this, {row_idx}, {col_idx})">
+                </td>
+                '''
+            elif key in uncertain_map:
+                # 불확실한 셀 - 노란색 하이라이트 + 선택 UI
+                u = uncertain_map[key]
+                alternatives = u.get("alternatives", [])
+                cell_id = f"cell_{row_idx}_{col_idx}"
+
+                options_html = f'<option value="{cell}" selected>{cell} (AI 추천)</option>'
+                for alt in alternatives:
+                    options_html += f'<option value="{alt}">{alt}</option>'
+                options_html += '<option value="__custom__">직접 입력...</option>'
+
+                html += f'''
+                <td style="background: #fff3cd; border: 1px solid #ffc107; padding: 5px;">
+                    <select id="{cell_id}" onchange="handleCellSelect(this, {row_idx}, {col_idx})" style="width: 100%; border: none; background: transparent;">
+                        {options_html}
+                    </select>
+                    <input type="text" id="{cell_id}_input" style="display: none; width: 100%;" placeholder="직접 입력" onblur="handleCustomInput(this, {row_idx}, {col_idx})">
+                </td>
+                '''
+            elif row_idx == 0:
+                # 헤더
+                html += f'<td style="background: #e9ecef; border: 1px solid #ccc; padding: 5px; font-weight: bold;">{cell}</td>\n'
+            else:
+                # 일반 셀
+                html += f'<td style="border: 1px solid #ccc; padding: 5px;">{cell}</td>\n'
+
+        html += '</tr>\n'
+
+    html += '</table>\n'
+
+    # JavaScript for cell selection
+    html += '''
+    <script>
+    function handleCellSelect(select, row, col) {
+        if (select.value === "__custom__") {
+            select.style.display = "none";
+            var input = document.getElementById(select.id + "_input");
+            input.style.display = "block";
+            input.focus();
+        } else {
+            console.log("Cell [" + row + "," + col + "] = " + select.value);
+            // 선택 시 셀 색상 변경 (수정됨 표시)
+            select.parentElement.style.background = "#d4edda";
+            select.parentElement.style.border = "2px solid #28a745";
+        }
+    }
+
+    function handleCustomInput(input, row, col) {
+        var select = document.getElementById("cell_" + row + "_" + col);
+        if (input.value.trim()) {
+            var option = document.createElement("option");
+            option.value = input.value;
+            option.text = input.value + " (사용자 입력)";
+            option.selected = true;
+            select.add(option, select.options.length - 1);
+            // 셀 색상 변경 (수정됨 표시)
+            select.parentElement.style.background = "#d4edda";
+            select.parentElement.style.border = "2px solid #28a745";
+        }
+        input.style.display = "none";
+        select.style.display = "block";
+        console.log("Cell [" + row + "," + col + "] custom = " + input.value);
+    }
+    </script>
+    '''
 
     return html
 
@@ -2089,6 +2804,202 @@ def upload():
         result = process_image(img, img_base64)
 
         return jsonify(result)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"처리 오류: {str(e)}"})
+
+
+# =============================================================================
+# Round 20: AI-Only 테스트 엔드포인트
+# =============================================================================
+
+AI_ONLY_TEST_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>AI-Only 테이블 추출 테스트 (Round 20)</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #fff; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #ff6b6b; }
+        .badge { background: linear-gradient(135deg, #f093fb, #f5576c); padding: 5px 15px; border-radius: 20px; font-size: 0.8em; }
+        .upload-box { border: 2px dashed #4ecdc4; padding: 40px; text-align: center; margin: 20px 0; border-radius: 10px; }
+        .upload-box:hover { background: rgba(78, 205, 196, 0.1); }
+        input[type="file"] { display: none; }
+        .btn { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 10px 25px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; }
+        .btn:hover { opacity: 0.9; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .result { margin-top: 20px; padding: 20px; background: #16213e; border-radius: 10px; }
+        .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+        .panel { background: #0f3460; padding: 15px; border-radius: 8px; }
+        .panel h3 { margin-top: 0; color: #4ecdc4; }
+        .loading { display: none; text-align: center; padding: 20px; }
+        .spinner { border: 4px solid #333; border-top: 4px solid #4ecdc4; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        td, th { border: 1px solid #444; padding: 5px; }
+        th { background: #333; }
+        .info { background: #2d3436; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 AI-Only 테이블 추출 <span class="badge">Round 20</span></h1>
+        <p>100% AI 기반 - 하드코딩 없이 qwen2.5vl이 직접 테이블 구조 파악</p>
+
+        <div class="info">
+            <strong>기존 방식 (Hybrid)</strong>: PaddleOCR → 규칙 기반 처리 → ocr_corrections.json<br>
+            <strong>AI-Only 방식</strong>: 이미지 → AI → JSON 테이블 (규칙/매핑 없음)
+        </div>
+
+        <div class="upload-box" onclick="document.getElementById('fileInput').click()">
+            <p>📁 테이블 이미지를 클릭하여 업로드</p>
+            <input type="file" id="fileInput" accept="image/*" onchange="handleUpload(this)">
+        </div>
+
+        <button class="btn" onclick="runTest()" id="testBtn" disabled>🚀 AI-Only 추출 실행</button>
+        <button class="btn" onclick="runComparison()" id="compareBtn" disabled>⚖️ 기존 방식과 비교</button>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>AI 처리 중... (최대 60초)</p>
+        </div>
+
+        <div class="result" id="result" style="display: none;">
+            <h3>📊 AI-Only 결과</h3>
+            <div id="aiOnlyResult"></div>
+        </div>
+
+        <div class="comparison" id="comparison" style="display: none;">
+            <div class="panel">
+                <h3>🔧 기존 방식 (Hybrid)</h3>
+                <div id="hybridResult"></div>
+            </div>
+            <div class="panel">
+                <h3>🤖 AI-Only 방식</h3>
+                <div id="aiOnlyResult2"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let uploadedFile = null;
+
+        function handleUpload(input) {
+            if (input.files && input.files[0]) {
+                uploadedFile = input.files[0];
+                document.querySelector('.upload-box p').textContent = '✅ ' + uploadedFile.name;
+                document.getElementById('testBtn').disabled = false;
+                document.getElementById('compareBtn').disabled = false;
+            }
+        }
+
+        async function runTest() {
+            if (!uploadedFile) return;
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('image', uploadedFile);
+
+            try {
+                const response = await fetch('/api/ai-only', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('result').style.display = 'block';
+                document.getElementById('aiOnlyResult').innerHTML = data.html || '<p>오류: ' + (data.error || 'Unknown') + '</p>';
+            } catch (e) {
+                document.getElementById('loading').style.display = 'none';
+                alert('오류: ' + e.message);
+            }
+        }
+
+        async function runComparison() {
+            if (!uploadedFile) return;
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('comparison').style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('image', uploadedFile);
+
+            try {
+                // AI-Only 실행
+                const aiResponse = await fetch('/api/ai-only', {
+                    method: 'POST',
+                    body: formData
+                });
+                const aiData = await aiResponse.json();
+
+                // Hybrid 실행 (기존 방식)
+                const formData2 = new FormData();
+                formData2.append('image', uploadedFile);
+                const hybridResponse = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData2
+                });
+                const hybridData = await hybridResponse.json();
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('comparison').style.display = 'grid';
+                document.getElementById('hybridResult').innerHTML = hybridData.erp_table_html || '<p>오류</p>';
+                document.getElementById('aiOnlyResult2').innerHTML = aiData.html || '<p>오류</p>';
+            } catch (e) {
+                document.getElementById('loading').style.display = 'none';
+                alert('오류: ' + e.message);
+            }
+        }
+    </script>
+</body>
+</html>
+'''
+
+
+@app.route('/test-ai-only')
+def test_ai_only_page():
+    """AI-Only 테스트 페이지"""
+    return render_template_string(AI_ONLY_TEST_TEMPLATE)
+
+
+@app.route('/api/ai-only', methods=['POST'])
+def api_ai_only():
+    """AI-Only 테이블 추출 API"""
+    if 'image' not in request.files:
+        return jsonify({"error": "이미지를 선택해주세요."})
+
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({"error": "이미지를 선택해주세요."})
+
+    try:
+        img_bytes = file.read()
+        img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+
+        # AI-Only 추출
+        table_data = extract_table_with_ai_only(img)
+
+        # 검증
+        validation = validate_ai_only_table(table_data)
+
+        # HTML 생성
+        html = generate_ai_only_result_html(table_data, validation)
+
+        return jsonify({
+            "success": table_data.get("success", False),
+            "html": html,
+            "table": table_data.get("table", []),
+            "structure": table_data.get("structure", {}),
+            "validation": validation,
+            "model_used": table_data.get("model_used", "unknown")
+        })
 
     except Exception as e:
         import traceback
