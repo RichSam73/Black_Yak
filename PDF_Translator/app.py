@@ -29,6 +29,9 @@ app = Flask(__name__)
 
 # 설정
 OLLAMA_URL = "http://localhost:11434/api/generate"
+CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 UPLOAD_FOLDER = tempfile.gettempdir()
 OUTPUT_FOLDER = os.path.join(os.path.dirname(__file__), "output")
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
@@ -187,8 +190,332 @@ def translate_with_dict(korean_text, target_lang):
     return result
 
 
-def translate_with_vlm(image_path, texts, target_lang):
-    """VLM으로 이미지 컨텍스트와 함께 번역"""
+def translate_with_claude(image_path, texts, target_lang, api_key):
+    """Claude API로 이미지 컨텍스트와 함께 번역"""
+    lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
+
+    # 이미지를 base64로 인코딩
+    with open(image_path, "rb") as f:
+        image_data = base64.b64encode(f.read()).decode()
+
+    translations = []
+
+    # 모든 한글 텍스트를 한 번에 번역 요청
+    korean_list = [item["text"] for item in texts]
+    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(korean_list)])
+
+    prompt = f"""This is a garment/clothing technical specification image (tech pack).
+Translate the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
+Keep translations SHORT and professional. Only respond with numbered translations in {lang_config['prompt_lang']}.
+
+Korean texts:
+{korean_joined}
+
+{lang_config['prompt_lang']} translations (same numbering, SHORT answers only):"""
+
+    try:
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01"
+        }
+
+        payload = {
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 4096,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": image_data
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }
+            ]
+        }
+
+        response = requests.post(
+            CLAUDE_API_URL,
+            headers=headers,
+            json=payload,
+            timeout=120
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            response_text = result.get("content", [{}])[0].get("text", "").strip()
+
+            # 응답 파싱
+            lines = response_text.split("\n")
+            trans_dict = {}
+            for line in lines:
+                line = line.strip()
+                if line and line[0].isdigit():
+                    parts = line.split(".", 1)
+                    if len(parts) == 2:
+                        idx = int(parts[0]) - 1
+                        trans = parts[1].strip()
+                        if idx < len(korean_list):
+                            trans_dict[idx] = trans
+
+            # 결과 매핑
+            for i, item in enumerate(texts):
+                if i in trans_dict:
+                    translated = trans_dict[i]
+                else:
+                    translated = translate_with_dict(item["text"], target_lang)
+
+                translations.append({
+                    **item,
+                    "translated": translated
+                })
+        else:
+            print(f"Claude API error: {response.status_code} - {response.text}")
+            # fallback: 사전 번역
+            for item in texts:
+                translated = translate_with_dict(item["text"], target_lang)
+                translations.append({**item, "translated": translated})
+
+    except Exception as e:
+        print(f"Claude API error: {e}")
+        for item in texts:
+            translated = translate_with_dict(item["text"], target_lang)
+            translations.append({**item, "translated": translated})
+
+    return translations
+
+
+def translate_with_openai(image_path, texts, target_lang, api_key):
+    """OpenAI GPT-4 Vision API로 이미지 컨텍스트와 함께 번역"""
+    lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
+
+    # 이미지를 base64로 인코딩
+    with open(image_path, "rb") as f:
+        image_data = base64.b64encode(f.read()).decode()
+
+    translations = []
+
+    # 모든 한글 텍스트를 한 번에 번역 요청
+    korean_list = [item["text"] for item in texts]
+    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(korean_list)])
+
+    prompt = f"""This is a garment/clothing technical specification image (tech pack).
+Translate the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
+Keep translations SHORT and professional. Only respond with numbered translations in {lang_config['prompt_lang']}.
+
+Korean texts:
+{korean_joined}
+
+{lang_config['prompt_lang']} translations (same numbering, SHORT answers only):"""
+
+    try:
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+
+        payload = {
+            "model": "gpt-4o",
+            "max_tokens": 4096,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{image_data}"
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }
+            ]
+        }
+
+        response = requests.post(
+            OPENAI_API_URL,
+            headers=headers,
+            json=payload,
+            timeout=120
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            response_text = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+
+            # 응답 파싱
+            lines = response_text.split("\n")
+            trans_dict = {}
+            for line in lines:
+                line = line.strip()
+                if line and line[0].isdigit():
+                    parts = line.split(".", 1)
+                    if len(parts) == 2:
+                        idx = int(parts[0]) - 1
+                        trans = parts[1].strip()
+                        if idx < len(korean_list):
+                            trans_dict[idx] = trans
+
+            # 결과 매핑
+            for i, item in enumerate(texts):
+                if i in trans_dict:
+                    translated = trans_dict[i]
+                else:
+                    translated = translate_with_dict(item["text"], target_lang)
+
+                translations.append({
+                    **item,
+                    "translated": translated
+                })
+        else:
+            print(f"OpenAI API error: {response.status_code} - {response.text}")
+            # fallback: 사전 번역
+            for item in texts:
+                translated = translate_with_dict(item["text"], target_lang)
+                translations.append({**item, "translated": translated})
+
+    except Exception as e:
+        print(f"OpenAI API error: {e}")
+        for item in texts:
+            translated = translate_with_dict(item["text"], target_lang)
+            translations.append({**item, "translated": translated})
+
+    return translations
+
+
+def translate_with_gemini(image_path, texts, target_lang, api_key):
+    """Google Gemini API로 이미지 컨텍스트와 함께 번역"""
+    lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
+
+    # 이미지를 base64로 인코딩
+    with open(image_path, "rb") as f:
+        image_data = base64.b64encode(f.read()).decode()
+
+    translations = []
+
+    # 모든 한글 텍스트를 한 번에 번역 요청
+    korean_list = [item["text"] for item in texts]
+    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(korean_list)])
+
+    prompt = f"""This is a garment/clothing technical specification image (tech pack).
+Translate the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
+Keep translations SHORT and professional. Only respond with numbered translations in {lang_config['prompt_lang']}.
+
+Korean texts:
+{korean_joined}
+
+{lang_config['prompt_lang']} translations (same numbering, SHORT answers only):"""
+
+    try:
+        # Gemini API URL에 API 키 추가
+        url = f"{GEMINI_API_URL}?key={api_key}"
+
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "inline_data": {
+                                "mime_type": "image/png",
+                                "data": image_data
+                            }
+                        },
+                        {
+                            "text": prompt
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "maxOutputTokens": 4096
+            }
+        }
+
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=120
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            response_text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+
+            # 응답 파싱
+            lines = response_text.split("\n")
+            trans_dict = {}
+            for line in lines:
+                line = line.strip()
+                if line and line[0].isdigit():
+                    parts = line.split(".", 1)
+                    if len(parts) == 2:
+                        idx = int(parts[0]) - 1
+                        trans = parts[1].strip()
+                        if idx < len(korean_list):
+                            trans_dict[idx] = trans
+
+            # 결과 매핑
+            for i, item in enumerate(texts):
+                if i in trans_dict:
+                    translated = trans_dict[i]
+                else:
+                    translated = translate_with_dict(item["text"], target_lang)
+
+                translations.append({
+                    **item,
+                    "translated": translated
+                })
+        else:
+            print(f"Gemini API error: {response.status_code} - {response.text}")
+            # fallback: 사전 번역
+            for item in texts:
+                translated = translate_with_dict(item["text"], target_lang)
+                translations.append({**item, "translated": translated})
+
+    except Exception as e:
+        print(f"Gemini API error: {e}")
+        for item in texts:
+            translated = translate_with_dict(item["text"], target_lang)
+            translations.append({**item, "translated": translated})
+
+    return translations
+
+
+def translate_with_vlm(image_path, texts, target_lang, ai_engine="ollama", api_key=None):
+    """VLM으로 이미지 컨텍스트와 함께 번역 (Ollama, Claude, GPT-4, Gemini)"""
+
+    # Claude API 선택 시
+    if ai_engine == "claude" and api_key:
+        return translate_with_claude(image_path, texts, target_lang, api_key)
+
+    # OpenAI GPT-4 API 선택 시
+    if ai_engine == "openai" and api_key:
+        return translate_with_openai(image_path, texts, target_lang, api_key)
+
+    # Google Gemini API 선택 시
+    if ai_engine == "gemini" and api_key:
+        return translate_with_gemini(image_path, texts, target_lang, api_key)
+
+    # 기본: Ollama (기존 코드)
     lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
 
     # 이미지를 base64로 인코딩
@@ -458,7 +785,179 @@ HTML_TEMPLATE = """
             background: #ccc;
             cursor: not-allowed;
         }
+        .settings-btn {
+            padding: 3px 8px;
+            border: 2px solid #6c757d;
+            border-radius: 10px;
+            background: white;
+            color: #6c757d;
+            cursor: pointer;
+            font-size: 0.7em;
+            transition: all 0.3s;
+        }
+        .settings-btn:hover {
+            background: #6c757d;
+            color: white;
+        }
         input[type="file"] { display: none; }
+
+        /* 모달 스타일 */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.2em;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5em;
+            cursor: pointer;
+            opacity: 0.8;
+        }
+        .modal-close:hover {
+            opacity: 1;
+        }
+        .modal-body {
+            padding: 20px;
+        }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            padding: 15px 20px;
+            background: #f8f9fa;
+            border-top: 1px solid #eee;
+        }
+        .setting-group {
+            margin-bottom: 20px;
+        }
+        .setting-group label {
+            display: block;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .setting-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+        }
+        .setting-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .setting-hint {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 5px;
+        }
+        .api-key-input-wrapper {
+            display: flex;
+            gap: 8px;
+        }
+        .api-key-input-wrapper input {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+        .api-key-input-wrapper input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .toggle-visibility {
+            padding: 10px 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        .toggle-visibility:hover {
+            background: #f0f0f0;
+        }
+        .setting-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .setting-info h4 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .setting-info ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        .setting-info li {
+            margin-bottom: 5px;
+            font-size: 0.9em;
+            color: #555;
+        }
+        .btn-primary {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+        .btn-primary:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            padding: 10px 20px;
+            border: 2px solid #6c757d;
+            border-radius: 8px;
+            background: white;
+            color: #6c757d;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+        .btn-secondary:hover {
+            background: #6c757d;
+            color: white;
+        }
 
         /* 에디터 레이아웃 */
         .editor-container {
@@ -774,6 +1273,54 @@ HTML_TEMPLATE = """
             <button type="button" class="lang-btn" data-lang="bengali">🇧🇩BN</button>
             <button type="button" class="file-select-btn" id="fileSelectBtn">📁 파일선택</button>
             <button type="button" class="translate-btn" id="translateBtn" disabled>🚀 번역</button>
+            <button type="button" class="settings-btn" id="settingsBtn">⚙️</button>
+        </div>
+
+        <!-- 설정 모달 -->
+        <div class="modal-overlay" id="settingsModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>⚙️ AI 설정</h2>
+                    <button class="modal-close" id="closeSettings">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="setting-group">
+                        <label>AI 엔진 선택</label>
+                        <select id="aiEngineSelect">
+                            <option value="ollama" selected>🖥️ Ollama (로컬) - 무료</option>
+                            <option value="claude">🟣 Claude API</option>
+                            <option value="openai">🟢 OpenAI GPT-4</option>
+                            <option value="gemini">🔵 Google Gemini</option>
+                        </select>
+                        <p class="setting-hint">Ollama는 로컬에서 실행되며 API 키가 필요 없습니다.</p>
+                    </div>
+
+                    <div class="setting-group api-key-group" id="apiKeyGroup" style="display: none;">
+                        <label id="apiKeyLabel">API Key</label>
+                        <div class="api-key-input-wrapper">
+                            <input type="password" id="apiKeyInput" placeholder="API 키를 입력하세요">
+                            <button type="button" class="toggle-visibility" id="toggleApiKey">👁️</button>
+                        </div>
+                        <p class="setting-hint" id="apiKeyHint">
+                            API 키는 브라우저에만 저장되며 서버로 전송되지 않습니다.
+                        </p>
+                    </div>
+
+                    <div class="setting-info">
+                        <h4>AI별 특징</h4>
+                        <ul>
+                            <li><strong>Ollama</strong>: 무료, 로컬 실행, 인터넷 불필요</li>
+                            <li><strong>Claude</strong>: 높은 정확도, Vision 지원</li>
+                            <li><strong>GPT-4</strong>: 범용성 높음, Vision 지원</li>
+                            <li><strong>Gemini</strong>: 빠른 속도, 비용 저렴</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="cancelSettings">취소</button>
+                    <button type="button" class="btn-primary" id="saveSettings">저장</button>
+                </div>
+            </div>
         </div>
 
         <div class="status" id="status"></div>
@@ -853,6 +1400,129 @@ HTML_TEMPLATE = """
         const confirmBtn = document.getElementById('confirmBtn');
         const results = document.getElementById('results');
 
+        // 설정 관련 요소
+        const settingsBtn = document.getElementById('settingsBtn');
+        const settingsModal = document.getElementById('settingsModal');
+        const closeSettings = document.getElementById('closeSettings');
+        const cancelSettings = document.getElementById('cancelSettings');
+        const saveSettings = document.getElementById('saveSettings');
+        const aiEngineSelect = document.getElementById('aiEngineSelect');
+        const apiKeyGroup = document.getElementById('apiKeyGroup');
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const apiKeyLabel = document.getElementById('apiKeyLabel');
+        const apiKeyHint = document.getElementById('apiKeyHint');
+        const toggleApiKey = document.getElementById('toggleApiKey');
+
+        // AI 설정 상태 (localStorage에서 로드)
+        let currentAiEngine = localStorage.getItem('pdf_translator_ai_engine') || 'ollama';
+        let apiKeys = JSON.parse(localStorage.getItem('pdf_translator_api_keys') || '{}');
+
+        // API 키 힌트 정보
+        const apiKeyInfo = {
+            claude: {
+                label: 'Claude API Key',
+                hint: 'Anthropic Console에서 발급받은 API 키를 입력하세요.',
+                placeholder: 'sk-ant-...'
+            },
+            openai: {
+                label: 'OpenAI API Key',
+                hint: 'OpenAI Platform에서 발급받은 API 키를 입력하세요.',
+                placeholder: 'sk-...'
+            },
+            gemini: {
+                label: 'Google Gemini API Key',
+                hint: 'Google AI Studio에서 발급받은 API 키를 입력하세요.',
+                placeholder: 'AIza...'
+            }
+        };
+
+        // 초기 설정 UI 업데이트
+        function initSettings() {
+            aiEngineSelect.value = currentAiEngine;
+            updateApiKeyVisibility();
+        }
+
+        // API 키 입력 필드 표시/숨김
+        function updateApiKeyVisibility() {
+            const engine = aiEngineSelect.value;
+            if (engine === 'ollama') {
+                apiKeyGroup.style.display = 'none';
+            } else {
+                apiKeyGroup.style.display = 'block';
+                const info = apiKeyInfo[engine];
+                apiKeyLabel.textContent = info.label;
+                apiKeyHint.textContent = info.hint;
+                apiKeyInput.placeholder = info.placeholder;
+                apiKeyInput.value = apiKeys[engine] || '';
+            }
+        }
+
+        // 설정 모달 열기
+        settingsBtn.addEventListener('click', () => {
+            initSettings();
+            settingsModal.classList.add('active');
+        });
+
+        // 설정 모달 닫기
+        function closeModal() {
+            settingsModal.classList.remove('active');
+        }
+        closeSettings.addEventListener('click', closeModal);
+        cancelSettings.addEventListener('click', closeModal);
+        settingsModal.addEventListener('click', (e) => {
+            if (e.target === settingsModal) closeModal();
+        });
+
+        // AI 엔진 변경 시
+        aiEngineSelect.addEventListener('change', updateApiKeyVisibility);
+
+        // API 키 표시/숨김 토글
+        toggleApiKey.addEventListener('click', () => {
+            if (apiKeyInput.type === 'password') {
+                apiKeyInput.type = 'text';
+                toggleApiKey.textContent = '🙈';
+            } else {
+                apiKeyInput.type = 'password';
+                toggleApiKey.textContent = '👁️';
+            }
+        });
+
+        // 설정 저장
+        saveSettings.addEventListener('click', () => {
+            const engine = aiEngineSelect.value;
+            currentAiEngine = engine;
+
+            // localStorage에 저장
+            localStorage.setItem('pdf_translator_ai_engine', engine);
+
+            // API 키 저장 (Ollama 제외)
+            if (engine !== 'ollama' && apiKeyInput.value) {
+                apiKeys[engine] = apiKeyInput.value;
+                localStorage.setItem('pdf_translator_api_keys', JSON.stringify(apiKeys));
+            }
+
+            closeModal();
+            status.className = 'status success';
+            status.textContent = `✅ AI 엔진이 ${getEngineName(engine)}(으)로 설정되었습니다.`;
+        });
+
+        // 엔진 이름 반환
+        function getEngineName(engine) {
+            const names = {
+                ollama: 'Ollama (로컬)',
+                claude: 'Claude',
+                openai: 'GPT-4',
+                gemini: 'Gemini'
+            };
+            return names[engine] || engine;
+        }
+
+        // 현재 API 키 가져오기
+        function getCurrentApiKey() {
+            if (currentAiEngine === 'ollama') return null;
+            return apiKeys[currentAiEngine] || null;
+        }
+
         // 파일 선택 버튼
         fileSelectBtn.addEventListener('click', () => fileInput.click());
 
@@ -875,9 +1545,9 @@ HTML_TEMPLATE = """
                 btn.classList.add('active');
                 targetLang.value = btn.dataset.lang;
 
-                // 이미 파일이 로드되어 있으면 재번역
+                // 이미 파일이 로드되어 있으면 전체 페이지 재번역
                 if (pagesData.length > 0) {
-                    await retranslateCurrentPage();
+                    await retranslateAllPages();
                 }
             });
         });
@@ -893,6 +1563,11 @@ HTML_TEMPLATE = """
             const formData = new FormData();
             formData.append('file', file);
             formData.append('target_lang', targetLang.value);
+            formData.append('ai_engine', currentAiEngine);
+            const apiKey = getCurrentApiKey();
+            if (apiKey) {
+                formData.append('api_key', apiKey);
+            }
 
             try {
                 const response = await fetch('/analyze', {
@@ -1045,35 +1720,45 @@ HTML_TEMPLATE = """
             status.textContent = `✅ 페이지 ${currentPage + 1} 번역 확정됨`;
         });
 
-        // 현재 페이지 재번역
-        async function retranslateCurrentPage() {
+        // 모든 페이지 재번역 (언어 변경 시)
+        async function retranslateAllPages() {
             if (pagesData.length === 0) return;
 
             status.className = 'status processing';
-            status.innerHTML = '<span class="spinner"></span>언어 변경 중... 재번역 중입니다';
+            status.innerHTML = '<span class="spinner"></span>언어 변경 중... 전체 페이지 재번역 중입니다';
 
             try {
-                const response = await fetch('/retranslate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        page_idx: currentPage,
-                        target_lang: targetLang.value,
-                        texts: pagesData[currentPage].translations.map(t => ({
-                            text: t.text,
-                            bbox: t.bbox
-                        }))
-                    })
-                });
+                // 모든 페이지 재번역
+                for (let i = 0; i < pagesData.length; i++) {
+                    status.innerHTML = `<span class="spinner"></span>재번역 중... (${i + 1}/${pagesData.length})`;
 
-                const data = await response.json();
-                if (data.success) {
-                    pagesData[currentPage].translations = data.translations;
-                    pagesData[currentPage].confirmed = false;
-                    showPage(currentPage);
-                    status.className = 'status success';
-                    status.textContent = `✅ 재번역 완료`;
+                    const response = await fetch('/retranslate', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            page_idx: i,
+                            target_lang: targetLang.value,
+                            ai_engine: currentAiEngine,
+                            api_key: getCurrentApiKey(),
+                            image: pagesData[i].image,
+                            texts: pagesData[i].translations.map(t => ({
+                                text: t.text,
+                                bbox: t.bbox
+                            }))
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (data.success) {
+                        pagesData[i].translations = data.translations;
+                        pagesData[i].confirmed = false;
+                    }
                 }
+
+                // 현재 페이지 다시 표시
+                showPage(currentPage);
+                status.className = 'status success';
+                status.textContent = `✅ 전체 ${pagesData.length}페이지 재번역 완료`;
             } catch (err) {
                 status.className = 'status error';
                 status.textContent = `❌ 재번역 오류: ${err.message}`;
@@ -1194,6 +1879,10 @@ def analyze():
 
         file = request.files['file']
         target_lang = request.form.get('target_lang', 'english')
+        ai_engine = request.form.get('ai_engine', 'ollama')
+        api_key = request.form.get('api_key', None)
+
+        print(f"[AI Engine] {ai_engine}")
 
         if file.filename == '':
             return jsonify({"success": False, "error": "파일이 선택되지 않았습니다"})
@@ -1226,10 +1915,10 @@ def analyze():
             texts = get_ocr_results(img_path)
             print(f"  Found {len(texts)} Korean texts")
 
-            # 번역
+            # 번역 (선택된 AI 엔진 사용)
             translations = []
             if texts:
-                translations = translate_with_vlm(img_path, texts, target_lang)
+                translations = translate_with_vlm(img_path, texts, target_lang, ai_engine, api_key)
 
             pages.append({
                 "image": image_base64,
@@ -1252,21 +1941,45 @@ def analyze():
 
 @app.route('/retranslate', methods=['POST'])
 def retranslate():
-    """언어 변경 시 재번역"""
+    """언어 변경 시 재번역 (VLM 사용)"""
     try:
         data = request.get_json()
         target_lang = data.get('target_lang', 'english')
+        ai_engine = data.get('ai_engine', 'ollama')
+        api_key = data.get('api_key', None)
+        image_base64 = data.get('image', None)
         texts = data.get('texts', [])
 
-        # 사전 기반 번역 (VLM 없이 빠르게)
-        translations = []
-        for item in texts:
-            translated = translate_with_dict(item['text'], target_lang)
-            translations.append({
-                "text": item['text'],
-                "bbox": item['bbox'],
-                "translated": translated
-            })
+        print(f"[Retranslate] AI Engine: {ai_engine}, Target: {target_lang}")
+
+        # 이미지가 있고 AI 엔진을 사용하는 경우 VLM으로 번역
+        if image_base64 and texts:
+            # base64 이미지를 임시 파일로 저장
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            temp_img_path = os.path.join(UPLOAD_FOLDER, f"temp_retrans_{timestamp}.png")
+            with open(temp_img_path, 'wb') as f:
+                f.write(base64.b64decode(image_base64))
+
+            try:
+                # VLM으로 번역 (선택된 AI 엔진 사용)
+                text_items = [{"text": item['text'], "bbox": item['bbox']} for item in texts]
+                translations = translate_with_vlm(temp_img_path, text_items, target_lang, ai_engine, api_key)
+            finally:
+                # 임시 파일 삭제
+                try:
+                    os.remove(temp_img_path)
+                except:
+                    pass
+        else:
+            # fallback: 사전 기반 번역
+            translations = []
+            for item in texts:
+                translated = translate_with_dict(item['text'], target_lang)
+                translations.append({
+                    "text": item['text'],
+                    "bbox": item['bbox'],
+                    "translated": translated
+                })
 
         return jsonify({
             "success": True,
