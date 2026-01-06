@@ -483,30 +483,46 @@ HTML_TEMPLATE = """
 
         /* 리사이저 (드래그 핸들) */
         .resizer {
-            width: 8px;
-            background: #e0e0e0;
+            width: 12px;
+            background: linear-gradient(90deg, #ddd 0%, #bbb 50%, #ddd 100%);
             cursor: col-resize;
             flex-shrink: 0;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background 0.2s;
-            border-radius: 4px;
-            margin: 0 3px;
+            transition: all 0.2s;
+            border-radius: 6px;
+            margin: 0 4px;
+            position: relative;
         }
         .resizer:hover {
-            background: #667eea;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #667eea 100%);
+            width: 14px;
         }
         .resizer:active {
             background: #764ba2;
         }
-        .resizer::after {
-            content: '⋮';
-            color: #999;
-            font-size: 14px;
+        .resizer::before {
+            content: '';
+            position: absolute;
+            left: 3px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 2px;
+            height: 40px;
+            background: rgba(255,255,255,0.5);
+            border-radius: 1px;
         }
-        .resizer:hover::after {
-            color: white;
+        .resizer::after {
+            content: '';
+            position: absolute;
+            right: 3px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 2px;
+            height: 40px;
+            background: rgba(255,255,255,0.5);
+            border-radius: 1px;
         }
         .preview-header {
             background: #f8f9fa;
