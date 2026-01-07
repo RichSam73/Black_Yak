@@ -6,6 +6,22 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 - 지원 언어: 영어, 베트남어, 중국어, 인도네시아어, 벵골어
 """
 
+# 버전 정보
+VERSION = "1.1.0"
+VERSION_DATE = "2026-01-06"
+VERSION_NOTES = """
+v1.1.0 (2026-01-06)
+- 텍스트 지우기 개선: 글자에서 떨어진 영역에서 배경색 샘플링
+- 마진 확장: 글자 높이에 비례한 동적 마진으로 완전히 지움
+- 배경색 감지 개선: 5-10픽셀 떨어진 곳에서 샘플링하여 글자 색상 혼입 방지
+
+v1.0.0 (2026-01-06)
+- 미리보기 기능 추가: 번역 결과를 내보내기 전 미리보기 가능
+- 텍스트 영역 지우기: 한국어 텍스트를 배경색으로 지우고 번역 텍스트 삽입
+- 배경색 자동 감지: 테두리 픽셀 샘플링으로 흰색 계열 우선 감지
+- 미리보기 캐시: 페이지별 캐시로 성능 최적화
+"""
+
 import os
 import sys
 import io
@@ -592,60 +608,120 @@ Korean texts:
     return translations
 
 
+def get_background_color(img, bbox, height, width):
+    """bbox 주변의 배경색을 샘플링 (글자에서 떨어진 영역에서 샘플링)"""
+    # bbox 경계 계산
+    x_min = int(min(p[0] for p in bbox))
+    y_min = int(min(p[1] for p in bbox))
+    x_max = int(max(p[0] for p in bbox))
+    y_max = int(max(p[1] for p in bbox))
+
+    box_height = y_max - y_min
+    box_width = x_max - x_min
+
+    # 샘플링 거리: bbox에서 5-10픽셀 떨어진 곳 (글자가 없는 영역)
+    sample_dist = max(5, min(10, box_height // 3))
+
+    border_pixels = []
+
+    # 상단 바깥 영역 (bbox 위 sample_dist~sample_dist+3 픽셀)
+    sample_y = y_min - sample_dist
+    if sample_y >= 3:
+        for x in range(max(0, x_min), min(width, x_max)):
+            for dy in range(3):
+                if sample_y - dy >= 0:
+                    border_pixels.append(img[sample_y - dy, x])
+
+    # 하단 바깥 영역
+    sample_y = y_max + sample_dist
+    if sample_y < height - 3:
+        for x in range(max(0, x_min), min(width, x_max)):
+            for dy in range(3):
+                if sample_y + dy < height:
+                    border_pixels.append(img[sample_y + dy, x])
+
+    # 좌측 바깥 영역
+    sample_x = x_min - sample_dist
+    if sample_x >= 3:
+        for y in range(max(0, y_min), min(height, y_max)):
+            for dx in range(3):
+                if sample_x - dx >= 0:
+                    border_pixels.append(img[y, sample_x - dx])
+
+    # 우측 바깥 영역
+    sample_x = x_max + sample_dist
+    if sample_x < width - 3:
+        for y in range(max(0, y_min), min(height, y_max)):
+            for dx in range(3):
+                if sample_x + dx < width:
+                    border_pixels.append(img[y, sample_x + dx])
+
+    if border_pixels:
+        # 흰색/밝은 계열 픽셀만 필터링 (RGB 각 채널이 180 이상)
+        bright_pixels = [p for p in border_pixels if all(c >= 180 for c in p)]
+        if bright_pixels:
+            # 가장 밝은 픽셀들의 평균 사용
+            bg_color = np.mean(bright_pixels, axis=0).astype(np.uint8)
+        else:
+            # 밝은 픽셀이 없으면 전체 평균
+            bg_color = np.mean(border_pixels, axis=0).astype(np.uint8)
+    else:
+        bg_color = np.array([255, 255, 255], dtype=np.uint8)
+
+    return bg_color
+
+
+def erase_text_region(img, bbox, bg_color):
+    """텍스트 영역을 배경색으로 지우기 (충분한 마진으로 완전히 지움)"""
+    height, width = img.shape[:2]
+
+    # bbox 경계 계산
+    x_min = int(min(p[0] for p in bbox))
+    y_min = int(min(p[1] for p in bbox))
+    x_max = int(max(p[0] for p in bbox))
+    y_max = int(max(p[1] for p in bbox))
+
+    box_height = y_max - y_min
+
+    # 마진 계산: 글자 높이에 비례하여 확장 (최소 3픽셀, 최대 글자높이의 15%)
+    margin_x = max(3, int(box_height * 0.1))
+    margin_y = max(2, int(box_height * 0.15))
+
+    # 영역을 확장하여 지우기
+    x1 = max(0, x_min - margin_x)
+    y1 = max(0, y_min - margin_y)
+    x2 = min(width, x_max + margin_x)
+    y2 = min(height, y_max + margin_y)
+
+    # 사각형으로 채우기
+    cv2.rectangle(img, (x1, y1), (x2, y2), bg_color.tolist(), -1)
+
+    return img
+
+
 def replace_text_in_image(image_path, translations, output_path):
     """이미지에서 한글 영역을 지우고 번역된 텍스트로 교체"""
     img = cv2.imread(image_path)
     height, width = img.shape[:2]
 
-    # 제목 영역 처리
+    # 제목 영역 처리 (상단 25픽셀 이내)
     title_items = [item for item in translations if min(p[1] for p in item["bbox"]) < 25]
     if title_items:
         title_y_max = max(max(p[1] for p in item["bbox"]) for item in title_items) + 5
         cv2.rectangle(img, (0, 0), (width, int(title_y_max)), (255, 255, 255), -1)
 
-    # 한글 영역을 배경색으로 덮기
+    # 1단계: 모든 한글 영역을 배경색으로 지우기
     for item in translations:
         bbox = item["bbox"]
-        pts = np.array(bbox, dtype=np.int32)
+        bg_color = get_background_color(img, bbox, height, width)
+        img = erase_text_region(img, bbox, bg_color)
 
-        x_min = max(0, int(min(p[0] for p in bbox)) - 5)
-        y_min = max(0, int(min(p[1] for p in bbox)) - 5)
-        x_max = min(width, int(max(p[0] for p in bbox)) + 5)
-        y_max = min(height, int(max(p[1] for p in bbox)) + 5)
-
-        border_pixels = []
-        for x in range(x_min, x_max):
-            if y_min > 0:
-                border_pixels.append(img[y_min-1, x])
-            if y_max < height:
-                border_pixels.append(img[min(y_max, height-1), x])
-
-        if border_pixels:
-            bg_color = np.mean(border_pixels, axis=0).astype(np.uint8)
-        else:
-            bg_color = np.array([255, 255, 255], dtype=np.uint8)
-
-        # 확장된 영역 채우기
-        expanded_pts = pts.copy().astype(np.float64)
-        center = np.mean(pts, axis=0)
-        for i in range(len(expanded_pts)):
-            direction = expanded_pts[i] - center
-            expanded_pts[i] = expanded_pts[i] + direction * 0.35
-
-        cv2.fillPoly(img, [expanded_pts.astype(np.int32)], bg_color.tolist())
-
-        x1 = max(0, int(min(p[0] for p in bbox)) - 5)
-        y1 = max(0, int(min(p[1] for p in bbox)) - 3)
-        x2 = min(width, int(max(p[0] for p in bbox)) + 5)
-        y2 = min(height, int(max(p[1] for p in bbox)) + 3)
-        cv2.rectangle(img, (x1, y1), (x2, y2), bg_color.tolist(), -1)
-        cv2.rectangle(img, (x1-2, y1-2), (x2+2, y2+2), bg_color.tolist(), -1)
-
-    # PIL로 변환하여 텍스트 삽입
+    # 2단계: PIL로 변환하여 번역 텍스트 삽입
     img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(img_result)
 
-    font_sizes = [11, 10, 9, 8, 7]
+    # 폰트 크기 (고정 폰트, 크기만 조절)
+    font_sizes = [12, 11, 10, 9, 8, 7]
 
     for item in translations:
         bbox = item["bbox"]
@@ -654,34 +730,101 @@ def replace_text_in_image(image_path, translations, output_path):
         xs = [p[0] for p in bbox]
         ys = [p[1] for p in bbox]
         box_width = max(xs) - min(xs)
+        box_height = max(ys) - min(ys)
 
+        # 왼쪽 상단에서 시작 (왼쪽 정렬)
         x = int(min(xs))
         y = int(min(ys))
 
+        # 적절한 폰트 크기 선택
         font = None
         text_width = 0
         for size in font_sizes:
             try:
                 font = ImageFont.truetype("arial.ttf", size)
             except:
-                font = ImageFont.load_default()
-                break
+                try:
+                    font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", size)
+                except:
+                    font = ImageFont.load_default()
+                    break
 
             text_bbox = draw.textbbox((0, 0), translated_text, font=font)
             text_width = text_bbox[2] - text_bbox[0]
+            text_height = text_bbox[3] - text_bbox[1]
 
-            if text_width <= box_width * 1.5:
+            # 높이가 원본 박스에 맞으면 OK (너비는 오른쪽으로 확장 가능)
+            if text_height <= box_height * 1.2:
                 break
 
-        if text_width > box_width * 2:
-            words = translated_text.split()
-            if len(words) > 3:
-                translated_text = " ".join(words[:3]) + "..."
-
+        # 텍스트 그리기 (왼쪽 정렬, 오른쪽으로 확장)
         draw.text((x, y), translated_text, fill=(0, 0, 0), font=font)
 
     img_result.save(output_path)
     return output_path
+
+
+def generate_preview_image(image_base64, translations):
+    """미리보기 이미지 생성 (메모리에서 처리)"""
+    # base64 이미지를 numpy 배열로 변환
+    image_data = base64.b64decode(image_base64)
+    nparr = np.frombuffer(image_data, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    height, width = img.shape[:2]
+
+    # 제목 영역 처리
+    title_items = [item for item in translations if min(p[1] for p in item["bbox"]) < 25]
+    if title_items:
+        title_y_max = max(max(p[1] for p in item["bbox"]) for item in title_items) + 5
+        cv2.rectangle(img, (0, 0), (width, int(title_y_max)), (255, 255, 255), -1)
+
+    # 1단계: 모든 한글 영역을 배경색으로 지우기
+    for item in translations:
+        bbox = item["bbox"]
+        bg_color = get_background_color(img, bbox, height, width)
+        img = erase_text_region(img, bbox, bg_color)
+
+    # 2단계: PIL로 변환하여 번역 텍스트 삽입
+    img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img_result)
+
+    font_sizes = [12, 11, 10, 9, 8, 7]
+
+    for item in translations:
+        bbox = item["bbox"]
+        translated_text = item.get("translated", item.get("text", ""))
+
+        xs = [p[0] for p in bbox]
+        ys = [p[1] for p in bbox]
+        box_height = max(ys) - min(ys)
+
+        x = int(min(xs))
+        y = int(min(ys))
+
+        font = None
+        for size in font_sizes:
+            try:
+                font = ImageFont.truetype("arial.ttf", size)
+            except:
+                try:
+                    font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", size)
+                except:
+                    font = ImageFont.load_default()
+                    break
+
+            text_bbox = draw.textbbox((0, 0), translated_text, font=font)
+            text_height = text_bbox[3] - text_bbox[1]
+
+            if text_height <= box_height * 1.2:
+                break
+
+        draw.text((x, y), translated_text, fill=(0, 0, 0), font=font)
+
+    # 결과를 base64로 반환
+    buffer = io.BytesIO()
+    img_result.save(buffer, format='PNG')
+    buffer.seek(0)
+    return base64.b64encode(buffer.read()).decode()
 
 
 # HTML 템플릿
@@ -730,6 +873,15 @@ HTML_TEMPLATE = """
             color: #666;
             font-size: 0.7em;
             margin: 0;
+            white-space: nowrap;
+        }
+        .version-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 0.6em;
+            font-weight: bold;
             white-space: nowrap;
         }
         .lang-btn {
@@ -1030,10 +1182,39 @@ HTML_TEMPLATE = """
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 10px;
         }
         .preview-header .page-info {
             font-weight: bold;
             color: #333;
+        }
+        .preview-toggle {
+            display: flex;
+            gap: 2px;
+            background: #e9ecef;
+            padding: 2px;
+            border-radius: 6px;
+        }
+        .toggle-btn {
+            padding: 4px 10px;
+            border: none;
+            background: transparent;
+            color: #666;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8em;
+            transition: all 0.2s;
+        }
+        .toggle-btn:hover {
+            background: rgba(102, 126, 234, 0.1);
+        }
+        .toggle-btn.active {
+            background: #667eea;
+            color: white;
+        }
+        .toggle-btn.loading {
+            opacity: 0.6;
+            cursor: wait;
         }
         .preview-nav {
             display: flex;
@@ -1265,6 +1446,7 @@ HTML_TEMPLATE = """
 
         <div class="header-row">
             <h1>📄 PDF Translator</h1>
+            <span class="version-badge">v{{ version }}</span>
             <span class="subtitle">한글→다국어</span>
             <button type="button" class="lang-btn active" data-lang="english">🇺🇸EN</button>
             <button type="button" class="lang-btn" data-lang="vietnamese">🇻🇳VI</button>
@@ -1338,6 +1520,10 @@ HTML_TEMPLATE = """
             <div class="preview-panel" id="previewPanel">
                 <div class="preview-header">
                     <span class="page-info" id="pageInfo">페이지 1 / 1</span>
+                    <div class="preview-toggle">
+                        <button class="toggle-btn active" id="showOriginal">📄 원본</button>
+                        <button class="toggle-btn" id="showPreview">🔄 미리보기</button>
+                    </div>
                     <div class="preview-nav">
                         <button id="prevPageBtn" disabled>◀ 이전</button>
                         <button id="nextPageBtn" disabled>다음 ▶</button>
@@ -1399,6 +1585,14 @@ HTML_TEMPLATE = """
         const translationBody = document.getElementById('translationBody');
         const confirmBtn = document.getElementById('confirmBtn');
         const results = document.getElementById('results');
+
+        // 미리보기 토글 버튼
+        const showOriginalBtn = document.getElementById('showOriginal');
+        const showPreviewBtn = document.getElementById('showPreview');
+
+        // 미리보기 상태
+        let isPreviewMode = false;
+        let previewCache = {};  // 페이지별 미리보기 캐시
 
         // 설정 관련 요소
         const settingsBtn = document.getElementById('settingsBtn');
@@ -1610,8 +1804,12 @@ HTML_TEMPLATE = """
             currentPage = pageIdx;
             const page = pagesData[pageIdx];
 
-            // 이미지 표시
-            previewImg.src = 'data:image/png;base64,' + page.image;
+            // 미리보기 모드에 따라 이미지 표시
+            if (isPreviewMode) {
+                showPreviewImage(pageIdx);
+            } else {
+                previewImg.src = 'data:image/png;base64,' + page.image;
+            }
 
             // 페이지 정보
             pageInfo.textContent = `페이지 ${pageIdx + 1} / ${totalPages}`;
@@ -1632,6 +1830,77 @@ HTML_TEMPLATE = """
                 confirmBtn.classList.remove('confirmed');
             }
         }
+
+        // 미리보기 이미지 로드
+        async function showPreviewImage(pageIdx) {
+            const page = pagesData[pageIdx];
+
+            // 캐시에 있으면 바로 표시
+            if (previewCache[pageIdx]) {
+                previewImg.src = 'data:image/png;base64,' + previewCache[pageIdx];
+                return;
+            }
+
+            // 번역 데이터가 없으면 원본 표시
+            if (!page.translations || page.translations.length === 0) {
+                previewImg.src = 'data:image/png;base64,' + page.image;
+                return;
+            }
+
+            // 로딩 표시
+            showPreviewBtn.classList.add('loading');
+            showPreviewBtn.textContent = '⏳ 생성중...';
+
+            try {
+                const response = await fetch('/generate_preview', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        image: page.image,
+                        translations: page.translations
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    previewCache[pageIdx] = data.preview;
+                    previewImg.src = 'data:image/png;base64,' + data.preview;
+                } else {
+                    console.error('Preview generation failed:', data.error);
+                    previewImg.src = 'data:image/png;base64,' + page.image;
+                }
+            } catch (error) {
+                console.error('Preview error:', error);
+                previewImg.src = 'data:image/png;base64,' + page.image;
+            } finally {
+                showPreviewBtn.classList.remove('loading');
+                showPreviewBtn.textContent = '🔄 미리보기';
+            }
+        }
+
+        // 미리보기 캐시 초기화 (번역 수정 시)
+        function invalidatePreviewCache(pageIdx) {
+            delete previewCache[pageIdx];
+        }
+
+        // 원본/미리보기 토글
+        showOriginalBtn.addEventListener('click', () => {
+            if (!isPreviewMode) return;
+            isPreviewMode = false;
+            showOriginalBtn.classList.add('active');
+            showPreviewBtn.classList.remove('active');
+            const page = pagesData[currentPage];
+            previewImg.src = 'data:image/png;base64,' + page.image;
+        });
+
+        showPreviewBtn.addEventListener('click', () => {
+            if (isPreviewMode) return;
+            isPreviewMode = true;
+            showPreviewBtn.classList.add('active');
+            showOriginalBtn.classList.remove('active');
+            showPreviewImage(currentPage);
+        });
 
         // 번역 테이블 갱신
         function updateTranslationTable(page) {
@@ -1670,6 +1939,9 @@ HTML_TEMPLATE = """
                     pagesData[currentPage].confirmed = false;
                     confirmBtn.textContent = '✅ 확정';
                     confirmBtn.classList.remove('confirmed');
+
+                    // 미리보기 캐시 무효화
+                    invalidatePreviewCache(currentPage);
                 });
             });
         }
@@ -1723,6 +1995,9 @@ HTML_TEMPLATE = """
         // 모든 페이지 재번역 (언어 변경 시)
         async function retranslateAllPages() {
             if (pagesData.length === 0) return;
+
+            // 미리보기 캐시 전체 초기화
+            previewCache = {};
 
             status.className = 'status processing';
             status.innerHTML = '<span class="spinner"></span>언어 변경 중... 전체 페이지 재번역 중입니다';
@@ -1863,7 +2138,7 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    return render_template_string(HTML_TEMPLATE, version=VERSION)
 
 
 # 임시 저장소: 세션별 이미지 경로
@@ -1992,6 +2267,34 @@ def retranslate():
         return jsonify({"success": False, "error": str(e)})
 
 
+@app.route('/generate_preview', methods=['POST'])
+def generate_preview():
+    """번역된 이미지 미리보기 생성"""
+    try:
+        data = request.get_json()
+        image_base64 = data.get('image')
+        translations = data.get('translations', [])
+
+        if not image_base64:
+            return jsonify({"success": False, "error": "이미지가 없습니다"})
+
+        if not translations:
+            return jsonify({"success": False, "error": "번역 데이터가 없습니다"})
+
+        # 미리보기 이미지 생성
+        preview_base64 = generate_preview_image(image_base64, translations)
+
+        return jsonify({
+            "success": True,
+            "preview": preview_base64
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)})
+
+
 @app.route('/generate', methods=['POST'])
 def generate():
     """최종 번역 이미지 생성"""
@@ -2111,8 +2414,9 @@ def download_file(filename):
 
 if __name__ == '__main__':
     print("=" * 60)
-    print("PDF Translator - 의류 기술서 번역 앱")
+    print(f"PDF Translator v{VERSION} - 의류 기술서 번역 앱")
     print("=" * 60)
+    print(f"Version: {VERSION} ({VERSION_DATE})")
     print("Engine: PaddleOCR + VLM (qwen2.5vl)")
     print("Languages: English, Vietnamese, Chinese, Indonesian, Bengali")
     print("Port: 6008")
