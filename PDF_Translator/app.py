@@ -7,12 +7,12 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.4.5"
+VERSION = "1.5.0"
 VERSION_DATE = "2026-01-08"
 VERSION_NOTES = """
-v1.4.5 (2026-01-08)
-- ★ 진행 상황 표시: OCR/번역 단계별 실시간 진행률 표시
-- 경과 시간 표시
+v1.5.0 (2026-01-08)
+- ★ 세로 텍스트 지원: 높이>너비×2 → 글자를 세로로 배치
+- ★ 진행 상황 표시: OCR/번역 단계별 실시간 진행률 + 경과시간
 
 v1.4.4 (2026-01-08)
 - 선 보존: 마진 최소화 (15% → 1px)로 테이블 선 침범 방지
@@ -845,6 +845,44 @@ def get_text_color_for_background(bg_color):
         return (0, 0, 0)  # 밝은 배경 → 검정 텍스트
 
 
+def is_vertical_text(bbox):
+    """세로 텍스트 여부 판단 - 높이가 너비의 2배 이상이면 세로"""
+    xs = [p[0] for p in bbox]
+    ys = [p[1] for p in bbox]
+    box_width = max(xs) - min(xs)
+    box_height = max(ys) - min(ys)
+    return box_height > box_width * 2
+
+
+def draw_vertical_text(draw, text, x, y, font, fill, box_width, box_height):
+    """세로 텍스트 그리기 - 글자를 하나씩 세로로 배치"""
+    # 글자당 높이 계산
+    char_height = box_height / max(len(text), 1)
+    
+    # 폰트 크기 조정 (글자당 공간에 맞게)
+    font_size = min(int(char_height * 0.9), int(box_width * 0.9))
+    font_size = max(font_size, 6)  # 최소 6px
+    
+    try:
+        adjusted_font = ImageFont.truetype("arial.ttf", font_size)
+    except:
+        try:
+            adjusted_font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", font_size)
+        except:
+            adjusted_font = font
+    
+    # 각 글자를 세로로 배치
+    current_y = y
+    for char in text:
+        # 글자 중앙 정렬 (x축)
+        char_bbox = draw.textbbox((0, 0), char, font=adjusted_font)
+        char_width = char_bbox[2] - char_bbox[0]
+        char_x = x + (box_width - char_width) // 2
+        
+        draw.text((char_x, current_y), char, fill=fill, font=adjusted_font)
+        current_y += char_height
+
+
 def replace_text_in_image(image_path, translations, output_path):
     """이미지에서 한글 영역을 지우고 번역된 텍스트로 교체 - v1.4.2"""
     img = cv2.imread(image_path)
@@ -911,7 +949,11 @@ def replace_text_in_image(image_path, translations, output_path):
         # PIL은 RGB 순서이므로 BGR→RGB 변환
         text_color_rgb = (text_color[2], text_color[1], text_color[0]) if text_color == (255, 255, 255) else text_color
 
-        draw.text((x, y_adjusted), translated_text, fill=text_color_rgb, font=font)
+        # ★ 세로 텍스트 판정 및 처리 (v1.5.0)
+        if is_vertical_text(bbox):
+            draw_vertical_text(draw, translated_text, x, y, font, text_color_rgb, box_width, box_height)
+        else:
+            draw.text((x, y_adjusted), translated_text, fill=text_color_rgb, font=font)
 
     img_result.save(output_path)
     return output_path
@@ -944,6 +986,7 @@ def generate_preview_image(image_base64, translations):
 
         xs = [p[0] for p in bbox]
         ys = [p[1] for p in bbox]
+        box_width = max(xs) - min(xs)
         box_height = max(ys) - min(ys)
 
         x = int(min(xs))
@@ -978,7 +1021,11 @@ def generate_preview_image(image_base64, translations):
         text_color = get_text_color_for_background(bg_color)
         text_color_rgb = (text_color[2], text_color[1], text_color[0]) if text_color == (255, 255, 255) else text_color
 
-        draw.text((x, y_adjusted), translated_text, fill=text_color_rgb, font=font)
+        # ★ 세로 텍스트 판정 및 처리 (v1.5.0)
+        if is_vertical_text(bbox):
+            draw_vertical_text(draw, translated_text, x, y, font, text_color_rgb, box_width, box_height)
+        else:
+            draw.text((x, y_adjusted), translated_text, fill=text_color_rgb, font=font)
 
     # 결과를 base64로 반환
     buffer = io.BytesIO()
