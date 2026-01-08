@@ -7,17 +7,17 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.4.1"
+VERSION = "1.4.2"
 VERSION_DATE = "2026-01-08"
 VERSION_NOTES = """
-v1.4.1 (2026-01-08)
-- ★ 테이블 선 보존 개선: ROI 크기에 따른 동적 커널 + 가장자리 선 보호
-- ★ 텍스트 위치 수정: 세로 중앙 정렬로 변경 (위로 올라가는 문제 해결)
+v1.4.2 (2026-01-08)
+- ★ 텍스트 완전 삭제: Inpainting 대신 배경색으로 직접 덮어쓰기
+- ★ 어두운 배경 지원: 배경 밝기 감지 → 자동으로 흰색/검정 텍스트 선택
+- 배경색 샘플링 개선: bbox 외부에서 중간값 사용
 
-v1.4.0 (2026-01-08)
-- ★ OCR 좌표 정렬 문제 해결: BGR→RGB 변환 후 PaddleOCR에 전달
-- dt_polys (원본 detection 좌표) 사용으로 정확도 향상
-- OCRResult 객체 처리 개선 (새 PaddleOCR API 완전 지원)
+v1.4.1 (2026-01-08)
+- 테이블 선 보존 개선: ROI 크기에 따른 동적 커널 + 가장자리 선 보호
+- 텍스트 위치 수정: 세로 중앙 정렬로 변경 (위로 올라가는 문제 해결)
 
 v1.3.0 (2026-01-08)
 - 배경색 샘플링 방식 적용: bbox 주변 가장자리에서 배경색 감지
@@ -759,7 +759,7 @@ def get_background_color_from_edges(img, bbox, margin=10):
 
 
 def erase_text_region(img, bbox):
-    """텍스트 영역을 inpainting으로 지우기 (테이블 선 보존) - v1.4.1"""
+    """텍스트 영역을 배경색으로 완전히 덮어쓰기 - v1.4.2"""
     height, width = img.shape[:2]
 
     # bbox 경계 계산
@@ -768,10 +768,9 @@ def erase_text_region(img, bbox):
     x_max = int(max(p[0] for p in bbox))
     y_max = int(max(p[1] for p in bbox))
 
-    # 글자 높이에 비례한 마진 (작게 유지하여 선 침범 최소화)
+    # 글자 높이에 비례한 마진
     text_height = y_max - y_min
-    text_width = x_max - x_min
-    margin = max(2, int(text_height * 0.1))  # 최소 2픽셀, 글자 높이의 10%
+    margin = max(3, int(text_height * 0.15))  # 최소 3픽셀, 글자 높이의 15%
 
     # 마진 적용한 확장 영역
     x_min_ext = max(0, x_min - margin)
@@ -779,80 +778,84 @@ def erase_text_region(img, bbox):
     x_max_ext = min(width, x_max + margin)
     y_max_ext = min(height, y_max + margin)
 
-    # ROI 크기
-    roi_width = x_max_ext - x_min_ext
-    roi_height = y_max_ext - y_min_ext
+    # ★ 배경색 샘플링 (bbox 바깥 영역에서)
+    bg_color = sample_background_color(img, bbox, height, width)
 
-    # ROI 추출
-    roi = img[y_min_ext:y_max_ext, x_min_ext:x_max_ext].copy()
+    # ★ 텍스트 영역을 배경색으로 직접 덮어쓰기 (Inpainting 대신)
+    cv2.rectangle(img, (x_min_ext, y_min_ext), (x_max_ext, y_max_ext), bg_color, -1)
 
-    if roi.size == 0:
-        return img
+    return img, bg_color  # 배경색도 반환
 
-    # 그레이스케일 변환
-    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
 
-    # 텍스트 마스크 생성 (어두운 픽셀 = 텍스트)
-    _, text_mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+def sample_background_color(img, bbox, height, width):
+    """bbox 바깥 영역에서 배경색 샘플링"""
+    x_min = int(min(p[0] for p in bbox))
+    y_min = int(min(p[1] for p in bbox))
+    x_max = int(max(p[0] for p in bbox))
+    y_max = int(max(p[1] for p in bbox))
 
-    # ★ 수평/수직 선 감지 - ROI 크기에 따라 동적으로 커널 크기 조정
-    # 선 커널은 ROI의 절반 이상 길이여야 선으로 인식
-    h_kernel_size = max(10, roi_width // 3)  # 최소 10픽셀, ROI 너비의 1/3
-    v_kernel_size = max(10, roi_height // 3)  # 최소 10픽셀, ROI 높이의 1/3
+    box_height = y_max - y_min
+    sample_dist = max(3, min(8, box_height // 4))  # 샘플링 거리
 
-    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (h_kernel_size, 1))
-    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, v_kernel_size))
+    samples = []
 
-    horizontal_lines = cv2.morphologyEx(text_mask, cv2.MORPH_OPEN, horizontal_kernel, iterations=1)
-    vertical_lines = cv2.morphologyEx(text_mask, cv2.MORPH_OPEN, vertical_kernel, iterations=1)
+    # 상단 바깥
+    if y_min - sample_dist >= 0:
+        for x in range(max(0, x_min), min(width, x_max), 2):
+            samples.append(img[y_min - sample_dist, x])
 
-    # ★ 추가: 에지 근처의 선도 보존 (bbox 경계 근처 2픽셀 이내)
-    edge_margin = 2
-    edge_mask = np.zeros_like(text_mask)
+    # 하단 바깥
+    if y_max + sample_dist < height:
+        for x in range(max(0, x_min), min(width, x_max), 2):
+            samples.append(img[y_max + sample_dist, x])
 
-    # 상단 가장자리
-    if y_min_ext <= y_min:
-        edge_mask[0:edge_margin, :] = text_mask[0:edge_margin, :]
-    # 하단 가장자리
-    if y_max_ext >= y_max:
-        edge_mask[-edge_margin:, :] = text_mask[-edge_margin:, :]
-    # 좌측 가장자리
-    if x_min_ext <= x_min:
-        edge_mask[:, 0:edge_margin] = text_mask[:, 0:edge_margin]
-    # 우측 가장자리
-    if x_max_ext >= x_max:
-        edge_mask[:, -edge_margin:] = text_mask[:, -edge_margin:]
+    # 좌측 바깥
+    if x_min - sample_dist >= 0:
+        for y in range(max(0, y_min), min(height, y_max), 2):
+            samples.append(img[y, x_min - sample_dist])
 
-    # 선을 마스크에서 제거 (텍스트만 남김)
-    lines_mask = cv2.bitwise_or(horizontal_lines, vertical_lines)
-    lines_mask = cv2.bitwise_or(lines_mask, edge_mask)  # 에지도 보존
-    text_only_mask = cv2.bitwise_and(text_mask, cv2.bitwise_not(lines_mask))
+    # 우측 바깥
+    if x_max + sample_dist < width:
+        for y in range(max(0, y_min), min(height, y_max), 2):
+            samples.append(img[y, x_max + sample_dist])
 
-    # 텍스트 마스크 약간 확장 (글자 경계 포함)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    text_only_mask = cv2.dilate(text_only_mask, kernel, iterations=1)
+    if samples:
+        # 중간값 사용 (노이즈에 강함)
+        samples_array = np.array(samples)
+        bg_color = np.median(samples_array, axis=0).astype(np.uint8)
+        return tuple(map(int, bg_color))
 
-    # ★ 다시 한번 선 영역 제외 (확장 후에도 선이 침범되지 않도록)
-    text_only_mask = cv2.bitwise_and(text_only_mask, cv2.bitwise_not(lines_mask))
+    return (255, 255, 255)
 
-    # Inpainting으로 텍스트만 제거 (선은 유지)
-    roi_inpainted = cv2.inpaint(roi, text_only_mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
 
-    # 원본 이미지에 결과 적용
-    img[y_min_ext:y_max_ext, x_min_ext:x_max_ext] = roi_inpainted
+def get_text_color_for_background(bg_color):
+    """배경색에 따라 적절한 텍스트 색상 반환 (밝은 배경 → 검정, 어두운 배경 → 흰색)"""
+    # BGR to grayscale luminance
+    if isinstance(bg_color, (list, tuple, np.ndarray)):
+        # OpenCV BGR 순서
+        b, g, r = bg_color[0], bg_color[1], bg_color[2]
+        luminance = 0.299 * r + 0.587 * g + 0.114 * b
+    else:
+        luminance = bg_color
 
-    return img
+    # 밝기 임계값: 128 (중간값)
+    if luminance < 128:
+        return (255, 255, 255)  # 어두운 배경 → 흰색 텍스트
+    else:
+        return (0, 0, 0)  # 밝은 배경 → 검정 텍스트
 
 
 def replace_text_in_image(image_path, translations, output_path):
-    """이미지에서 한글 영역을 지우고 번역된 텍스트로 교체"""
+    """이미지에서 한글 영역을 지우고 번역된 텍스트로 교체 - v1.4.2"""
     img = cv2.imread(image_path)
     height, width = img.shape[:2]
 
-    # 1단계: 모든 텍스트 영역을 Inpainting으로 지우기
-    for item in translations:
+    # 1단계: 모든 텍스트 영역을 배경색으로 지우고, 배경색 저장
+    bg_colors = {}  # bbox별 배경색 저장
+    for i, item in enumerate(translations):
         bbox = item["bbox"]
-        img = erase_text_region(img, bbox)
+        img, bg_color = erase_text_region(img, bbox)
+        bg_colors[i] = bg_color
 
     # 2단계: PIL로 변환하여 번역 텍스트 삽입
     img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -861,7 +864,7 @@ def replace_text_in_image(image_path, translations, output_path):
     # 폰트 크기 (고정 폰트, 크기만 조절)
     font_sizes = [12, 11, 10, 9, 8, 7]
 
-    for item in translations:
+    for i, item in enumerate(translations):
         bbox = item["bbox"]
         translated_text = item["translated"]
 
@@ -896,31 +899,38 @@ def replace_text_in_image(image_path, translations, output_path):
             if selected_text_height <= box_height * 1.2:
                 break
 
-        # ★ 수정: 세로 중앙 정렬로 변경 (위로 올라가는 문제 해결)
-        # bbox 중앙에 텍스트 중앙이 오도록 배치
+        # 세로 중앙 정렬
         text_bbox_actual = draw.textbbox((0, 0), translated_text, font=font)
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
         y_center = int(min(ys)) + box_height // 2
         y_adjusted = y_center - actual_text_height // 2 - text_bbox_actual[1]
 
-        draw.text((x, y_adjusted), translated_text, fill=(0, 0, 0), font=font)
+        # ★ 배경색에 따라 텍스트 색상 결정 (어두운 배경 → 흰색 텍스트)
+        bg_color = bg_colors.get(i, (255, 255, 255))
+        text_color = get_text_color_for_background(bg_color)
+        # PIL은 RGB 순서이므로 BGR→RGB 변환
+        text_color_rgb = (text_color[2], text_color[1], text_color[0]) if text_color == (255, 255, 255) else text_color
+
+        draw.text((x, y_adjusted), translated_text, fill=text_color_rgb, font=font)
 
     img_result.save(output_path)
     return output_path
 
 
 def generate_preview_image(image_base64, translations):
-    """미리보기 이미지 생성 (메모리에서 처리)"""
+    """미리보기 이미지 생성 (메모리에서 처리) - v1.4.2"""
     # base64 이미지를 numpy 배열로 변환
     image_data = base64.b64decode(image_base64)
     nparr = np.frombuffer(image_data, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     height, width = img.shape[:2]
 
-    # 1단계: 모든 텍스트 영역을 Inpainting으로 지우기
-    for item in translations:
+    # 1단계: 모든 텍스트 영역을 배경색으로 지우고, 배경색 저장
+    bg_colors = {}
+    for i, item in enumerate(translations):
         bbox = item["bbox"]
-        img = erase_text_region(img, bbox)
+        img, bg_color = erase_text_region(img, bbox)
+        bg_colors[i] = bg_color
 
     # 2단계: PIL로 변환하여 번역 텍스트 삽입
     img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -928,7 +938,7 @@ def generate_preview_image(image_base64, translations):
 
     font_sizes = [12, 11, 10, 9, 8, 7]
 
-    for item in translations:
+    for i, item in enumerate(translations):
         bbox = item["bbox"]
         translated_text = item.get("translated", item.get("text", ""))
 
@@ -957,13 +967,18 @@ def generate_preview_image(image_base64, translations):
             if selected_text_height <= box_height * 1.2:
                 break
 
-        # ★ 수정: 세로 중앙 정렬로 변경 (위로 올라가는 문제 해결)
+        # 세로 중앙 정렬
         text_bbox_actual = draw.textbbox((0, 0), translated_text, font=font)
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
         y_center = int(min(ys)) + box_height // 2
         y_adjusted = y_center - actual_text_height // 2 - text_bbox_actual[1]
 
-        draw.text((x, y_adjusted), translated_text, fill=(0, 0, 0), font=font)
+        # ★ 배경색에 따라 텍스트 색상 결정
+        bg_color = bg_colors.get(i, (255, 255, 255))
+        text_color = get_text_color_for_background(bg_color)
+        text_color_rgb = (text_color[2], text_color[1], text_color[0]) if text_color == (255, 255, 255) else text_color
+
+        draw.text((x, y_adjusted), translated_text, fill=text_color_rgb, font=font)
 
     # 결과를 base64로 반환
     buffer = io.BytesIO()
