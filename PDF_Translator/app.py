@@ -7,12 +7,17 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.4.2"
+VERSION = "1.4.3"
 VERSION_DATE = "2026-01-08"
 VERSION_NOTES = """
+v1.4.3 (2026-01-08)
+- ★ 테이블 선 복원: 텍스트 지우기 전 선 감지 → 배경 덮기 → 선 다시 그리기
+- HoughLinesP + 경계 감지로 수평/수직 선 감지
+- 선 색상 자동 샘플링으로 원본 색상 유지
+
 v1.4.2 (2026-01-08)
-- ★ 텍스트 완전 삭제: Inpainting 대신 배경색으로 직접 덮어쓰기
-- ★ 어두운 배경 지원: 배경 밝기 감지 → 자동으로 흰색/검정 텍스트 선택
+- 텍스트 완전 삭제: Inpainting 대신 배경색으로 직접 덮어쓰기
+- 어두운 배경 지원: 배경 밝기 감지 → 자동으로 흰색/검정 텍스트 선택
 - 배경색 샘플링 개선: bbox 외부에서 중간값 사용
 
 v1.4.1 (2026-01-08)
@@ -758,8 +763,138 @@ def get_background_color_from_edges(img, bbox, margin=10):
     return (255, 255, 255)  # 기본값: 흰색
 
 
+def detect_lines_in_region(img, x_min, y_min, x_max, y_max):
+    """ROI 영역에서 수평/수직 선 감지 및 정보 반환 - v1.4.3"""
+    roi = img[y_min:y_max, x_min:x_max]
+    if roi.size == 0:
+        return []
+
+    roi_height, roi_width = roi.shape[:2]
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+    # 에지 감지
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+
+    lines_info = []
+
+    # HoughLinesP로 선 감지
+    lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=30, minLineLength=10, maxLineGap=3)
+
+    if lines is not None:
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+
+            # 수평선 (y 차이가 작음)
+            if abs(y2 - y1) <= 2:
+                # 선 색상 샘플링 (선 위치의 픽셀 색상)
+                sample_y = (y1 + y2) // 2
+                if 0 <= sample_y < roi_height:
+                    sample_x = (x1 + x2) // 2
+                    if 0 <= sample_x < roi_width:
+                        line_color = tuple(map(int, roi[sample_y, sample_x]))
+                        # 어두운 색만 선으로 인정 (밝기 < 200)
+                        if sum(line_color) / 3 < 200:
+                            lines_info.append({
+                                'type': 'horizontal',
+                                'x1': x_min + x1,
+                                'y1': y_min + y1,
+                                'x2': x_min + x2,
+                                'y2': y_min + y2,
+                                'color': line_color,
+                                'thickness': 1
+                            })
+
+            # 수직선 (x 차이가 작음)
+            elif abs(x2 - x1) <= 2:
+                sample_x = (x1 + x2) // 2
+                if 0 <= sample_x < roi_width:
+                    sample_y = (y1 + y2) // 2
+                    if 0 <= sample_y < roi_height:
+                        line_color = tuple(map(int, roi[sample_y, sample_x]))
+                        if sum(line_color) / 3 < 200:
+                            lines_info.append({
+                                'type': 'vertical',
+                                'x1': x_min + x1,
+                                'y1': y_min + y1,
+                                'x2': x_min + x2,
+                                'y2': y_min + y2,
+                                'color': line_color,
+                                'thickness': 1
+                            })
+
+    # Morphology 기반 추가 감지 (경계선)
+    # 상단 경계
+    if y_min > 0:
+        top_strip = gray[0:2, :]
+        if np.mean(top_strip) < 200:  # 어두운 영역 = 선
+            lines_info.append({
+                'type': 'horizontal',
+                'x1': x_min,
+                'y1': y_min,
+                'x2': x_max,
+                'y2': y_min,
+                'color': tuple(map(int, np.mean(roi[0:2, :], axis=(0,1)))),
+                'thickness': 1
+            })
+
+    # 하단 경계
+    if y_max < img.shape[0]:
+        bottom_strip = gray[-2:, :]
+        if np.mean(bottom_strip) < 200:
+            lines_info.append({
+                'type': 'horizontal',
+                'x1': x_min,
+                'y1': y_max,
+                'x2': x_max,
+                'y2': y_max,
+                'color': tuple(map(int, np.mean(roi[-2:, :], axis=(0,1)))),
+                'thickness': 1
+            })
+
+    # 좌측 경계
+    if x_min > 0:
+        left_strip = gray[:, 0:2]
+        if np.mean(left_strip) < 200:
+            lines_info.append({
+                'type': 'vertical',
+                'x1': x_min,
+                'y1': y_min,
+                'x2': x_min,
+                'y2': y_max,
+                'color': tuple(map(int, np.mean(roi[:, 0:2], axis=(0,1)))),
+                'thickness': 1
+            })
+
+    # 우측 경계
+    if x_max < img.shape[1]:
+        right_strip = gray[:, -2:]
+        if np.mean(right_strip) < 200:
+            lines_info.append({
+                'type': 'vertical',
+                'x1': x_max,
+                'y1': y_min,
+                'x2': x_max,
+                'y2': y_max,
+                'color': tuple(map(int, np.mean(roi[:, -2:], axis=(0,1)))),
+                'thickness': 1
+            })
+
+    return lines_info
+
+
+def draw_lines(img, lines_info):
+    """감지된 선들을 이미지에 다시 그리기"""
+    for line in lines_info:
+        cv2.line(img,
+                 (line['x1'], line['y1']),
+                 (line['x2'], line['y2']),
+                 line['color'],
+                 line['thickness'])
+    return img
+
+
 def erase_text_region(img, bbox):
-    """텍스트 영역을 배경색으로 완전히 덮어쓰기 - v1.4.2"""
+    """텍스트 영역을 배경색으로 덮고 선 복원 - v1.4.3"""
     height, width = img.shape[:2]
 
     # bbox 경계 계산
@@ -778,11 +913,18 @@ def erase_text_region(img, bbox):
     x_max_ext = min(width, x_max + margin)
     y_max_ext = min(height, y_max + margin)
 
-    # ★ 배경색 샘플링 (bbox 바깥 영역에서)
+    # ★ 1단계: 선 감지 (배경 덮기 전에!)
+    lines_info = detect_lines_in_region(img, x_min_ext, y_min_ext, x_max_ext, y_max_ext)
+
+    # ★ 2단계: 배경색 샘플링 (bbox 바깥 영역에서)
     bg_color = sample_background_color(img, bbox, height, width)
 
-    # ★ 텍스트 영역을 배경색으로 직접 덮어쓰기 (Inpainting 대신)
+    # ★ 3단계: 텍스트 영역을 배경색으로 덮어쓰기
     cv2.rectangle(img, (x_min_ext, y_min_ext), (x_max_ext, y_max_ext), bg_color, -1)
+
+    # ★ 4단계: 감지된 선 복원
+    if lines_info:
+        img = draw_lines(img, lines_info)
 
     return img, bg_color  # 배경색도 반환
 
