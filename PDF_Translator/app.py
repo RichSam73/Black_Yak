@@ -755,7 +755,7 @@ def get_background_color_from_edges(img, bbox, margin=10):
 
 
 def erase_text_region(img, bbox):
-    """텍스트 영역을 배경색으로 깨끗하게 지우기 (배경색 샘플링 방식)"""
+    """텍스트 영역을 inpainting으로 지우기 (테이블 선 보존)"""
     height, width = img.shape[:2]
 
     # bbox 경계 계산
@@ -764,9 +764,9 @@ def erase_text_region(img, bbox):
     x_max = int(max(p[0] for p in bbox))
     y_max = int(max(p[1] for p in bbox))
 
-    # 글자 높이에 비례한 마진
+    # 글자 높이에 비례한 마진 (작게 유지하여 선 침범 최소화)
     text_height = y_max - y_min
-    margin = max(5, int(text_height * 0.2))  # 최소 5픽셀, 글자 높이의 20%
+    margin = max(2, int(text_height * 0.1))  # 최소 2픽셀, 글자 높이의 10%
 
     # 마진 적용한 확장 영역
     x_min_ext = max(0, x_min - margin)
@@ -774,14 +774,39 @@ def erase_text_region(img, bbox):
     x_max_ext = min(width, x_max + margin)
     y_max_ext = min(height, y_max + margin)
 
-    # 배경색 샘플링 (텍스트에서 떨어진 곳에서)
-    bg_color = get_background_color_from_edges(img, bbox, margin=margin + 5)
+    # ROI 추출
+    roi = img[y_min_ext:y_max_ext, x_min_ext:x_max_ext].copy()
 
-    print(f"[erase] bbox: ({x_min},{y_min})-({x_max},{y_max}) bg_color: {bg_color}")
+    if roi.size == 0:
+        return img
 
-    # 배경색으로 사각형 채우기 (튜플을 int로 변환 - OpenCV 요구사항)
-    bg_color_int = (int(bg_color[0]), int(bg_color[1]), int(bg_color[2]))
-    cv2.rectangle(img, (x_min_ext, y_min_ext), (x_max_ext, y_max_ext), bg_color_int, -1)
+    # 그레이스케일 변환
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+    # 텍스트 마스크 생성 (어두운 픽셀 = 텍스트)
+    # 적응형 임계값으로 텍스트 감지 (선은 보통 텍스트보다 더 밝거나 일정함)
+    _, text_mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    # 수평/수직 선 감지 및 마스크에서 제외
+    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 1))
+    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 25))
+
+    horizontal_lines = cv2.morphologyEx(text_mask, cv2.MORPH_OPEN, horizontal_kernel, iterations=1)
+    vertical_lines = cv2.morphologyEx(text_mask, cv2.MORPH_OPEN, vertical_kernel, iterations=1)
+
+    # 선을 마스크에서 제거 (텍스트만 남김)
+    lines_mask = cv2.bitwise_or(horizontal_lines, vertical_lines)
+    text_only_mask = cv2.bitwise_and(text_mask, cv2.bitwise_not(lines_mask))
+
+    # 텍스트 마스크 약간 확장 (글자 경계 포함)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    text_only_mask = cv2.dilate(text_only_mask, kernel, iterations=1)
+
+    # Inpainting으로 텍스트만 제거 (선은 유지)
+    roi_inpainted = cv2.inpaint(roi, text_only_mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+
+    # 원본 이미지에 결과 적용
+    img[y_min_ext:y_max_ext, x_min_ext:x_max_ext] = roi_inpainted
 
     return img
 
@@ -819,6 +844,7 @@ def replace_text_in_image(image_path, translations, output_path):
         # 적절한 폰트 크기 선택
         font = None
         text_width = 0
+        text_y_offset = 0  # 폰트 baseline 오프셋
         for size in font_sizes:
             try:
                 font = ImageFont.truetype("arial.ttf", size)
@@ -832,13 +858,15 @@ def replace_text_in_image(image_path, translations, output_path):
             text_bbox = draw.textbbox((0, 0), translated_text, font=font)
             text_width = text_bbox[2] - text_bbox[0]
             text_height = text_bbox[3] - text_bbox[1]
+            text_y_offset = text_bbox[1]  # 폰트 상단 오프셋 (음수일 수 있음)
 
             # 높이가 원본 박스에 맞으면 OK (너비는 오른쪽으로 확장 가능)
             if text_height <= box_height * 1.2:
                 break
 
         # 텍스트 그리기 (왼쪽 정렬, 오른쪽으로 확장)
-        draw.text((x, y), translated_text, fill=(0, 0, 0), font=font)
+        # y 좌표에서 폰트 오프셋을 빼서 실제 텍스트가 bbox 상단에 맞춰지도록 보정
+        draw.text((x, y - text_y_offset), translated_text, fill=(0, 0, 0), font=font)
 
     img_result.save(output_path)
     return output_path
@@ -875,6 +903,7 @@ def generate_preview_image(image_base64, translations):
         y = int(min(ys))
 
         font = None
+        text_y_offset = 0  # 폰트 baseline 오프셋
         for size in font_sizes:
             try:
                 font = ImageFont.truetype("arial.ttf", size)
@@ -887,11 +916,13 @@ def generate_preview_image(image_base64, translations):
 
             text_bbox = draw.textbbox((0, 0), translated_text, font=font)
             text_height = text_bbox[3] - text_bbox[1]
+            text_y_offset = text_bbox[1]  # 폰트 상단 오프셋
 
             if text_height <= box_height * 1.2:
                 break
 
-        draw.text((x, y), translated_text, fill=(0, 0, 0), font=font)
+        # y 좌표에서 폰트 오프셋을 빼서 실제 텍스트가 bbox 상단에 맞춰지도록 보정
+        draw.text((x, y - text_y_offset), translated_text, fill=(0, 0, 0), font=font)
 
     # 결과를 base64로 반환
     buffer = io.BytesIO()

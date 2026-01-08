@@ -1,0 +1,19 @@
+Model: qwen2.5vl:latest
+Time: 17.11 seconds
+-------------------- OUTPUT --------------------
+```markdown
+| DIV | CODE | NAME | KIND | STD | DEMAND | SUP CD | SUP NM | PART USED | BLACK | CREAM | TEAL | NOTICE |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 메인로고 | 22LP-08 | 실리콘 매트 | 5cm | 1 | | 슐프린트 | 앞 가슴 | D/SILVER | BK/SILVER | D/SILVER | | |
+| 행거루프 | 23SS-행거루프 | | 요척 | | | 성원 | 에리안 | BLACK | BLACK | BLACK | | |
+| F/ZIP | N/#5 REV(O/E) | | #5 | 요척 | | 천신지퍼 | 앞지퍼 | A매칭 | A매칭 | A매칭 | | |
+| F/ZIP | DABLH | | #5 | 1 | | 천신지퍼 | 앞지퍼 | X6 | H3 | H3 | | |
+| F/ZIP | 23FW-B10 | | SIDE | 1 | | 성원 | 앞지퍼 | BLACK | G매칭 | G매칭 | | |
+| S/ZIP PKT. | N/#3 REV(C/E) | | #3 | 요척 | | 천신지퍼 | 사이드 포켓 | A매칭 | A매칭 | A매칭 | | |
+| S/ZIP PKT. | | 사이드 포켓 | | | | | | 동아금형 | 후드/밑단 | G매칭 | G매칭 | |
+| | #3 | 1 | X6 | | | | | | | | | |
+| DFBW | | | | | | | | | | | |
+| | | | | | | | | | | |
+| | | | | | |
+==================================================
+

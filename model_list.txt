@@ -1,0 +1,15 @@
+NAME                        ID              SIZE      MODIFIED     
+deepseek-ocr:latest         0e7b018b8a22    6.7 GB    18 hours ago    
+moondream:latest            55fc3abd3867    1.7 GB    18 hours ago    
+granite3.2-vision:2b        3be41a661804    2.4 GB    18 hours ago    
+qwen2.5vl:72b               05ea68274581    48 GB     2 days ago      
+qwen2.5vl:32b               3edc3a52fe98    21 GB     2 days ago      
+qwen2.5vl:latest            5ced39dfa4ba    6.0 GB    6 days ago      
+granite3.2-vision:latest    3be41a661804    2.4 GB    2 weeks ago     
+deepseek-r1:32b             edba8017331d    19 GB     2 weeks ago     
+llama3.2:latest             a80c4f17acd5    2.0 GB    3 weeks ago     
+gemma3:27b                  a418f5838eaf    17 GB     6 weeks ago     
+gemma2:latest               ff02c3702f32    5.4 GB    6 weeks ago     
+gpt-oss:20b                 17052f91a42e    13 GB     6 weeks ago     
+qwen2.5-coder:14b           9ec8897f747e    9.0 GB    6 weeks ago     
+llama3.2-vision:latest      6f2f9757ae97    7.8 GB    6 weeks ago     
