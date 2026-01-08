@@ -7,12 +7,15 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.4.4"
+VERSION = "1.4.5"
 VERSION_DATE = "2026-01-08"
 VERSION_NOTES = """
+v1.4.5 (2026-01-08)
+- ★ 진행 상황 표시: OCR/번역 단계별 실시간 진행률 표시
+- 경과 시간 표시
+
 v1.4.4 (2026-01-08)
-- ★ 선 보존: 마진 최소화 (15% → 1px)로 테이블 선 침범 방지
-- 불필요한 선 감지/복원 로직 제거 → 속도 개선
+- 선 보존: 마진 최소화 (15% → 1px)로 테이블 선 침범 방지
 
 v1.4.2 (2026-01-08)
 - 텍스트 완전 삭제: Inpainting 대신 배경색으로 직접 덮어쓰기
@@ -1904,12 +1907,25 @@ HTML_TEMPLATE = """
         });
 
         // 파일 로드 및 OCR 처리
+        let progressInterval = null;
+        
         async function loadAndProcessFile(file) {
             status.className = 'status processing';
-            status.innerHTML = '<span class="spinner"></span>파일 분석 중... OCR 처리 중입니다';
+            status.innerHTML = '<span class="spinner"></span>파일 분석 중... 시작 중';
             initialGuide.style.display = 'none';
             editorContainer.classList.remove('active');
             results.classList.remove('active');
+
+            // ★ 진행 상황 폴링 시작
+            progressInterval = setInterval(async () => {
+                try {
+                    const progRes = await fetch('/progress');
+                    const prog = await progRes.json();
+                    if (prog.stage) {
+                        status.innerHTML = `<span class="spinner"></span>${prog.stage} (${prog.current}/${prog.total}) - ${prog.detail} [${prog.elapsed}]`;
+                    }
+                } catch (e) {}
+            }, 500);
 
             const formData = new FormData();
             formData.append('file', file);
@@ -1925,6 +1941,12 @@ HTML_TEMPLATE = """
                     method: 'POST',
                     body: formData
                 });
+
+                // ★ 폴링 중지
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                    progressInterval = null;
+                }
 
                 const data = await response.json();
 
@@ -1948,6 +1970,11 @@ HTML_TEMPLATE = """
                     initialGuide.style.display = 'block';
                 }
             } catch (err) {
+                // ★ 에러 시에도 폴링 중지
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                    progressInterval = null;
+                }
                 status.className = 'status error';
                 status.textContent = `❌ 오류: ${err.message}`;
                 initialGuide.style.display = 'block';
@@ -2312,6 +2339,42 @@ def index():
 # 임시 저장소: 세션별 이미지 경로
 temp_image_paths = {}
 
+# ★ 진행 상황 추적 (v1.4.5)
+progress_status = {
+    "stage": "",           # 현재 단계
+    "current": 0,          # 현재 진행
+    "total": 0,            # 전체
+    "detail": "",          # 세부 정보
+    "start_time": None     # 시작 시간
+}
+
+def update_progress(stage, current, total, detail=""):
+    """진행 상황 업데이트"""
+    global progress_status
+    progress_status["stage"] = stage
+    progress_status["current"] = current
+    progress_status["total"] = total
+    progress_status["detail"] = detail
+    if current == 0:
+        progress_status["start_time"] = datetime.now()
+
+
+@app.route('/progress', methods=['GET'])
+def get_progress():
+    """진행 상황 조회 API"""
+    elapsed = ""
+    if progress_status["start_time"]:
+        delta = datetime.now() - progress_status["start_time"]
+        elapsed = f"{int(delta.total_seconds())}초 경과"
+    
+    return jsonify({
+        "stage": progress_status["stage"],
+        "current": progress_status["current"],
+        "total": progress_status["total"],
+        "detail": progress_status["detail"],
+        "elapsed": elapsed
+    })
+
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
@@ -2347,8 +2410,13 @@ def analyze():
 
         # 각 페이지 분석
         pages = []
+        total_pages = len(image_paths)
+        
         for i, img_path in enumerate(image_paths):
-            print(f"[Analyze {i+1}/{len(image_paths)}] {img_path}")
+            print(f"[Analyze {i+1}/{total_pages}] {img_path}")
+            
+            # ★ 진행 상황: OCR
+            update_progress("OCR", i+1, total_pages, f"페이지 {i+1}/{total_pages} OCR 처리 중...")
 
             # 이미지를 base64로 인코딩
             with open(img_path, "rb") as f:
@@ -2357,6 +2425,9 @@ def analyze():
             # OCR
             texts = get_ocr_results(img_path)
             print(f"  Found {len(texts)} Korean texts")
+
+            # ★ 진행 상황: 번역
+            update_progress("번역", i+1, total_pages, f"페이지 {i+1}/{total_pages} - {len(texts)}개 텍스트 번역 중...")
 
             # 번역 (선택된 AI 엔진 사용)
             translations = []
@@ -2369,6 +2440,9 @@ def analyze():
                 "translations": translations,
                 "confirmed": False
             })
+        
+        # ★ 진행 상황: 완료
+        update_progress("완료", total_pages, total_pages, "분석 완료!")
 
         return jsonify({
             "success": True,
