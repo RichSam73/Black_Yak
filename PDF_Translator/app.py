@@ -7,9 +7,27 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.1.0"
-VERSION_DATE = "2026-01-06"
+VERSION = "1.4.0"
+VERSION_DATE = "2026-01-08"
 VERSION_NOTES = """
+v1.4.0 (2026-01-08)
+- ★ OCR 좌표 정렬 문제 해결: BGR→RGB 변환 후 PaddleOCR에 전달
+- dt_polys (원본 detection 좌표) 사용으로 정확도 향상
+- OCRResult 객체 처리 개선 (새 PaddleOCR API 완전 지원)
+
+v1.3.0 (2026-01-08)
+- 배경색 샘플링 방식 적용: bbox 주변 가장자리에서 배경색 감지
+- 글자 높이에 비례한 동적 마진 (최소 5px, 높이의 20%)
+- 인페인팅 대신 배경색으로 자연스럽게 채우기
+
+v1.2.1 (2026-01-07)
+- 텍스트 지우기 단순화: 흰색으로 확실하게 덮어쓰기 (인페인팅 제거)
+- 마진 확대: 글자 높이의 15-20%로 충분히 덮음
+- 안정성 향상: 복잡한 인페인팅 대신 단순한 방식 채택
+
+v1.2.0 (2026-01-07)
+- 인페인팅 기술 시도 (문제 발생으로 롤백)
+
 v1.1.0 (2026-01-06)
 - 텍스트 지우기 개선: 글자에서 떨어진 영역에서 배경색 샘플링
 - 마진 확장: 글자 높이에 비례한 동적 마진으로 완전히 지움
@@ -142,7 +160,13 @@ def get_ocr_engine():
     global ocr_engine
     if ocr_engine is None:
         print("[init] PaddleOCR engine (korean)...")
-        ocr_engine = PaddleOCR(use_textline_orientation=True, lang="korean")
+        # 전처리 비활성화: bbox 좌표가 원본 이미지와 정확히 일치하도록 함
+        ocr_engine = PaddleOCR(
+            lang="korean",
+            use_doc_orientation_classify=False,  # 문서 방향 분류 끄기
+            use_doc_unwarping=False,             # 문서 왜곡 보정 끄기
+            use_textline_orientation=False       # 텍스트라인 방향 분류 끄기
+        )
         print("[init] PaddleOCR engine ready")
     return ocr_engine
 
@@ -168,31 +192,46 @@ def pdf_to_images(pdf_path, zoom=2.0):
 def get_ocr_results(image_path):
     """PaddleOCR로 텍스트와 위치 추출"""
     ocr = get_ocr_engine()
-    result = ocr.predict(image_path)
+
+    # ★ 핵심 수정: 이미지를 RGB numpy 배열로 변환하여 전달
+    # PaddleOCR은 RGB 형식을 기대하므로, 파일 경로 대신 RGB 배열 전달
+    img_bgr = cv2.imread(image_path)
+    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    result = ocr.predict(img_rgb)
 
     texts = []
     if result:
         for item in result:
-            if isinstance(item, dict):
+            rec_texts = []
+            rec_scores = []
+            dt_polys = []
+
+            # OCRResult 객체 처리 (새 PaddleOCR API)
+            if hasattr(item, 'rec_texts'):
+                rec_texts = item.rec_texts or []
+                rec_scores = item.rec_scores or []
+                # dt_polys 사용 (원본 detection 좌표 - 더 정확함)
+                dt_polys = item.dt_polys if hasattr(item, 'dt_polys') and item.dt_polys is not None else []
+            elif isinstance(item, dict):
                 rec_texts = item.get('rec_text', item.get('rec_texts', []))
                 rec_scores = item.get('rec_score', item.get('rec_scores', []))
                 dt_polys = item.get('dt_polys', [])
 
-                if isinstance(rec_texts, str):
-                    rec_texts = [rec_texts]
-                    rec_scores = [rec_scores]
-                    dt_polys = [dt_polys]
+            if isinstance(rec_texts, str):
+                rec_texts = [rec_texts]
+                rec_scores = [rec_scores]
+                dt_polys = [dt_polys]
 
-                for text, score, poly in zip(rec_texts, rec_scores, dt_polys):
-                    text_str = str(text)
-                    # 한글이 포함된 텍스트만 추출
-                    if any('\uac00' <= c <= '\ud7a3' for c in text_str):
-                        bbox = poly.tolist() if hasattr(poly, 'tolist') else poly
-                        texts.append({
-                            "bbox": bbox,
-                            "text": text_str,
-                            "confidence": float(score) if score else 1.0
-                        })
+            for text, score, poly in zip(rec_texts, rec_scores, dt_polys):
+                text_str = str(text)
+                # 한글이 포함된 텍스트만 추출
+                if any('\uac00' <= c <= '\ud7a3' for c in text_str):
+                    bbox = poly.tolist() if hasattr(poly, 'tolist') else poly
+                    texts.append({
+                        "bbox": bbox,
+                        "text": text_str,
+                        "confidence": float(score) if score else 1.0
+                    })
 
     return texts
 
@@ -671,8 +710,52 @@ def get_background_color(img, bbox, height, width):
     return bg_color
 
 
-def erase_text_region(img, bbox, bg_color):
-    """텍스트 영역을 배경색으로 지우기 (충분한 마진으로 완전히 지움)"""
+def get_background_color_from_edges(img, bbox, margin=10):
+    """bbox 주변 가장자리에서 배경색 샘플링"""
+    from collections import Counter
+
+    height, width = img.shape[:2]
+    x_min = int(min(p[0] for p in bbox))
+    y_min = int(min(p[1] for p in bbox))
+    x_max = int(max(p[0] for p in bbox))
+    y_max = int(max(p[1] for p in bbox))
+
+    edge_pixels = []
+
+    # 상단 가장자리 (margin 픽셀 위)
+    sample_y = max(0, y_min - margin)
+    for x in range(max(0, x_min), min(width, x_max)):
+        pixel = tuple(img[sample_y, x])
+        edge_pixels.append(pixel)
+
+    # 하단 가장자리 (margin 픽셀 아래)
+    sample_y = min(height - 1, y_max + margin)
+    for x in range(max(0, x_min), min(width, x_max)):
+        pixel = tuple(img[sample_y, x])
+        edge_pixels.append(pixel)
+
+    # 좌측 가장자리 (margin 픽셀 왼쪽)
+    sample_x = max(0, x_min - margin)
+    for y in range(max(0, y_min), min(height, y_max)):
+        pixel = tuple(img[y, sample_x])
+        edge_pixels.append(pixel)
+
+    # 우측 가장자리 (margin 픽셀 오른쪽)
+    sample_x = min(width - 1, x_max + margin)
+    for y in range(max(0, y_min), min(height, y_max)):
+        pixel = tuple(img[y, sample_x])
+        edge_pixels.append(pixel)
+
+    if edge_pixels:
+        # 가장 많이 등장하는 색상 선택
+        most_common = Counter(edge_pixels).most_common(1)[0][0]
+        return most_common
+
+    return (255, 255, 255)  # 기본값: 흰색
+
+
+def erase_text_region(img, bbox):
+    """텍스트 영역을 배경색으로 깨끗하게 지우기 (배경색 샘플링 방식)"""
     height, width = img.shape[:2]
 
     # bbox 경계 계산
@@ -681,20 +764,24 @@ def erase_text_region(img, bbox, bg_color):
     x_max = int(max(p[0] for p in bbox))
     y_max = int(max(p[1] for p in bbox))
 
-    box_height = y_max - y_min
+    # 글자 높이에 비례한 마진
+    text_height = y_max - y_min
+    margin = max(5, int(text_height * 0.2))  # 최소 5픽셀, 글자 높이의 20%
 
-    # 마진 계산: 글자 높이에 비례하여 확장 (최소 3픽셀, 최대 글자높이의 15%)
-    margin_x = max(3, int(box_height * 0.1))
-    margin_y = max(2, int(box_height * 0.15))
+    # 마진 적용한 확장 영역
+    x_min_ext = max(0, x_min - margin)
+    y_min_ext = max(0, y_min - margin)
+    x_max_ext = min(width, x_max + margin)
+    y_max_ext = min(height, y_max + margin)
 
-    # 영역을 확장하여 지우기
-    x1 = max(0, x_min - margin_x)
-    y1 = max(0, y_min - margin_y)
-    x2 = min(width, x_max + margin_x)
-    y2 = min(height, y_max + margin_y)
+    # 배경색 샘플링 (텍스트에서 떨어진 곳에서)
+    bg_color = get_background_color_from_edges(img, bbox, margin=margin + 5)
 
-    # 사각형으로 채우기
-    cv2.rectangle(img, (x1, y1), (x2, y2), bg_color.tolist(), -1)
+    print(f"[erase] bbox: ({x_min},{y_min})-({x_max},{y_max}) bg_color: {bg_color}")
+
+    # 배경색으로 사각형 채우기 (튜플을 int로 변환 - OpenCV 요구사항)
+    bg_color_int = (int(bg_color[0]), int(bg_color[1]), int(bg_color[2]))
+    cv2.rectangle(img, (x_min_ext, y_min_ext), (x_max_ext, y_max_ext), bg_color_int, -1)
 
     return img
 
@@ -704,17 +791,10 @@ def replace_text_in_image(image_path, translations, output_path):
     img = cv2.imread(image_path)
     height, width = img.shape[:2]
 
-    # 제목 영역 처리 (상단 25픽셀 이내)
-    title_items = [item for item in translations if min(p[1] for p in item["bbox"]) < 25]
-    if title_items:
-        title_y_max = max(max(p[1] for p in item["bbox"]) for item in title_items) + 5
-        cv2.rectangle(img, (0, 0), (width, int(title_y_max)), (255, 255, 255), -1)
-
-    # 1단계: 모든 한글 영역을 배경색으로 지우기
+    # 1단계: 모든 텍스트 영역을 Inpainting으로 지우기
     for item in translations:
         bbox = item["bbox"]
-        bg_color = get_background_color(img, bbox, height, width)
-        img = erase_text_region(img, bbox, bg_color)
+        img = erase_text_region(img, bbox)
 
     # 2단계: PIL로 변환하여 번역 텍스트 삽입
     img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -772,17 +852,10 @@ def generate_preview_image(image_base64, translations):
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     height, width = img.shape[:2]
 
-    # 제목 영역 처리
-    title_items = [item for item in translations if min(p[1] for p in item["bbox"]) < 25]
-    if title_items:
-        title_y_max = max(max(p[1] for p in item["bbox"]) for item in title_items) + 5
-        cv2.rectangle(img, (0, 0), (width, int(title_y_max)), (255, 255, 255), -1)
-
-    # 1단계: 모든 한글 영역을 배경색으로 지우기
+    # 1단계: 모든 텍스트 영역을 Inpainting으로 지우기
     for item in translations:
         bbox = item["bbox"]
-        bg_color = get_background_color(img, bbox, height, width)
-        img = erase_text_region(img, bbox, bg_color)
+        img = erase_text_region(img, bbox)
 
     # 2단계: PIL로 변환하여 번역 텍스트 삽입
     img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -1832,17 +1905,23 @@ HTML_TEMPLATE = """
         }
 
         // 미리보기 이미지 로드
-        async function showPreviewImage(pageIdx) {
+        async function showPreviewImage(pageIdx, forceRefresh = false) {
             const page = pagesData[pageIdx];
 
-            // 캐시에 있으면 바로 표시
-            if (previewCache[pageIdx]) {
+            console.log('[Preview Debug] pageIdx:', pageIdx);
+            console.log('[Preview Debug] translations:', page.translations);
+            console.log('[Preview Debug] translations length:', page.translations ? page.translations.length : 'undefined');
+
+            // 캐시에 있으면 바로 표시 (강제 새로고침이 아닌 경우)
+            if (!forceRefresh && previewCache[pageIdx]) {
+                console.log('[Preview Debug] Using cached preview');
                 previewImg.src = 'data:image/png;base64,' + previewCache[pageIdx];
                 return;
             }
 
             // 번역 데이터가 없으면 원본 표시
             if (!page.translations || page.translations.length === 0) {
+                console.log('[Preview Debug] No translations, showing original image');
                 previewImg.src = 'data:image/png;base64,' + page.image;
                 return;
             }
@@ -1894,12 +1973,17 @@ HTML_TEMPLATE = """
             previewImg.src = 'data:image/png;base64,' + page.image;
         });
 
-        showPreviewBtn.addEventListener('click', () => {
-            if (isPreviewMode) return;
+        showPreviewBtn.addEventListener('click', (e) => {
+            const forceRefresh = e.shiftKey;  // Shift+클릭으로 강제 새로고침
+            if (forceRefresh) {
+                console.log('[Preview Debug] Force refresh requested');
+                delete previewCache[currentPage];  // 캐시 삭제
+            }
+            if (isPreviewMode && !forceRefresh) return;
             isPreviewMode = true;
             showPreviewBtn.classList.add('active');
             showOriginalBtn.classList.remove('active');
-            showPreviewImage(currentPage);
+            showPreviewImage(currentPage, forceRefresh);
         });
 
         // 번역 테이블 갱신
@@ -2275,14 +2359,21 @@ def generate_preview():
         image_base64 = data.get('image')
         translations = data.get('translations', [])
 
+        print(f"[generate_preview] Received {len(translations)} translations")
+        for i, t in enumerate(translations[:3]):  # 처음 3개만 출력
+            print(f"  [{i}] bbox: {t.get('bbox', 'N/A')}, text: {t.get('text', 'N/A')[:20]}...")
+
         if not image_base64:
             return jsonify({"success": False, "error": "이미지가 없습니다"})
 
         if not translations:
+            print("[generate_preview] ERROR: No translations provided!")
             return jsonify({"success": False, "error": "번역 데이터가 없습니다"})
 
         # 미리보기 이미지 생성
+        print("[generate_preview] Calling generate_preview_image...")
         preview_base64 = generate_preview_image(image_base64, translations)
+        print("[generate_preview] Preview generated successfully")
 
         return jsonify({
             "success": True,
