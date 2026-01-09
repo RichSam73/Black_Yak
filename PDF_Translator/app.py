@@ -71,6 +71,7 @@ import base64
 import tempfile
 import re
 import requests
+from collections import Counter
 from datetime import datetime
 from flask import Flask, render_template_string, request, send_file, jsonify
 from PIL import Image, ImageDraw, ImageFont
@@ -1139,44 +1140,28 @@ def erase_text_region(img, bbox):
 
 
 def sample_background_color(img, bbox, height, width):
-    """bbox 바깥 영역에서 배경색 샘플링"""
+    """bbox 내부에서 가장 많이 등장하는 색상을 배경색으로 판단
+
+    원리: 텍스트보다 배경 픽셀이 더 많으므로 최빈값 = 배경색
+    """
     x_min = int(min(p[0] for p in bbox))
     y_min = int(min(p[1] for p in bbox))
     x_max = int(max(p[0] for p in bbox))
     y_max = int(max(p[1] for p in bbox))
 
-    box_height = y_max - y_min
-    sample_dist = max(3, min(8, box_height // 4))  # 샘플링 거리
-
+    # bbox 내부 픽셀 샘플링
     samples = []
-
-    # 상단 바깥
-    if y_min - sample_dist >= 0:
+    for y in range(max(0, y_min), min(height, y_max), 2):
         for x in range(max(0, x_min), min(width, x_max), 2):
-            samples.append(img[y_min - sample_dist, x])
-
-    # 하단 바깥
-    if y_max + sample_dist < height:
-        for x in range(max(0, x_min), min(width, x_max), 2):
-            samples.append(img[y_max + sample_dist, x])
-
-    # 좌측 바깥
-    if x_min - sample_dist >= 0:
-        for y in range(max(0, y_min), min(height, y_max), 2):
-            samples.append(img[y, x_min - sample_dist])
-
-    # 우측 바깥
-    if x_max + sample_dist < width:
-        for y in range(max(0, y_min), min(height, y_max), 2):
-            samples.append(img[y, x_max + sample_dist])
+            pixel = tuple(img[y, x].tolist())
+            samples.append(pixel)
 
     if samples:
-        # 중간값 사용 (노이즈에 강함)
-        samples_array = np.array(samples)
-        bg_color = np.median(samples_array, axis=0).astype(np.uint8)
-        return tuple(map(int, bg_color))
+        # 가장 많이 등장하는 색상 = 배경색
+        most_common = Counter(samples).most_common(1)[0][0]
+        return most_common
 
-    return (255, 255, 255)
+    return (255, 255, 255)  # 기본: 흰색
 
 
 def get_text_color_for_background(bg_color):
@@ -1407,8 +1392,10 @@ def replace_text_in_image(image_path, translations, output_path):
 
     # 3단계: 겹침 감지 - 왼쪽 텍스트가 오른쪽 셀을 침범하는지 체크
     needs_abbreviation = set()
+    print(f"\n[Overlap Detection - replace] Total texts: {len(text_render_info)}", flush=True)
     for i, info in enumerate(text_render_info):
         text_right_edge = info['x'] + info['text_width']
+        print(f"[#{i}] '{info['text'][:30]}' x={info['x']}, text_width={info['text_width']}, right={text_right_edge}, box_h={info['cell_bbox'][3]}", flush=True)
 
         for j, other_info in enumerate(text_render_info):
             if i == j:
@@ -1423,9 +1410,14 @@ def replace_text_in_image(image_path, translations, output_path):
                 other_y = other_info['cell_bbox'][1]
                 other_h = other_info['cell_bbox'][3]
 
-                if not (my_y + my_h <= other_y or other_y + other_h <= my_y):
+                y_overlap = not (my_y + my_h <= other_y or other_y + other_h <= my_y)
+                print(f"  → INVADES #{j} '{other_info['text'][:20]}' other_left={other_cell_left}, y_overlap={y_overlap}", flush=True)
+
+                if y_overlap:
                     needs_abbreviation.add(i)  # 침범한 쪽(왼쪽)을 약어로
+                    print(f"  ★ ABBREVIATE #{i}", flush=True)
                     break
+    print(f"[Overlap] needs_abbreviation: {needs_abbreviation}", flush=True)
 
     # 4단계: 실제 렌더링
     img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -1535,9 +1527,11 @@ def generate_preview_image(image_base64, translations):
 
     # 3단계: 겹침 감지 - 왼쪽 텍스트가 오른쪽 셀을 침범하는지 체크
     needs_abbreviation = set()
+    print(f"\n[Overlap Detection] Total texts: {len(text_render_info)}", flush=True)
     for i, info in enumerate(text_render_info):
         # 현재 텍스트의 실제 렌더링 영역 (x ~ x+text_width)
         text_right_edge = info['x'] + info['text_width']
+        print(f"[Overlap] #{i} '{info['text'][:25]}' x={info['x']}, w={info['text_width']}, right={text_right_edge}", flush=True)
 
         # 오른쪽에 있는 모든 셀과 비교
         for j, other_info in enumerate(text_render_info):
@@ -1554,9 +1548,13 @@ def generate_preview_image(image_base64, translations):
                 other_h = other_info['cell_bbox'][3]
 
                 # Y축 겹침 체크
-                if not (my_y + my_h <= other_y or other_y + other_h <= my_y):
+                y_overlap = not (my_y + my_h <= other_y or other_y + other_h <= my_y)
+                print(f"  → INVADES #{j} '{other_info['text'][:15]}' cell_left={other_cell_left}, y_overlap={y_overlap}", flush=True)
+                if y_overlap:
                     needs_abbreviation.add(i)  # 침범한 쪽(왼쪽)을 약어로
+                    print(f"  ★ ABBREVIATE #{i}", flush=True)
                     break
+    print(f"[Overlap] needs_abbreviation: {needs_abbreviation}", flush=True)
 
     # 4단계: 실제 렌더링
     img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
