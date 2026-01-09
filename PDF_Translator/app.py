@@ -71,7 +71,27 @@ app = Flask(__name__)
 OLLAMA_URL = "http://localhost:11434/api/generate"
 CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+
+# AI 모델 설정
+AI_MODELS = {
+    "ollama": {
+        "models": ["qwen2.5vl:latest", "llava:latest", "bakllava:latest"],
+        "default": "qwen2.5vl:latest"
+    },
+    "claude": {
+        "models": ["claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"],
+        "default": "claude-sonnet-4-20250514"
+    },
+    "openai": {
+        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
+        "default": "gpt-4o"
+    },
+    "gemini": {
+        "models": ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+        "default": "gemini-2.0-flash"
+    }
+}
 UPLOAD_FOLDER = tempfile.gettempdir()
 OUTPUT_FOLDER = os.path.join(os.path.dirname(__file__), "output")
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
@@ -251,8 +271,10 @@ def translate_with_dict(korean_text, target_lang):
     return result
 
 
-def translate_with_claude(image_path, texts, target_lang, api_key):
+def translate_with_claude(image_path, texts, target_lang, api_key, model=None):
     """Claude API로 이미지 컨텍스트와 함께 번역"""
+    if model is None:
+        model = AI_MODELS["claude"]["default"]
     lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
 
     # 이미지를 base64로 인코딩
@@ -282,7 +304,7 @@ Korean texts:
         }
 
         payload = {
-            "model": "claude-sonnet-4-20250514",
+            "model": model,
             "max_tokens": 4096,
             "messages": [
                 {
@@ -356,8 +378,10 @@ Korean texts:
     return translations
 
 
-def translate_with_openai(image_path, texts, target_lang, api_key):
+def translate_with_openai(image_path, texts, target_lang, api_key, model=None):
     """OpenAI GPT-4 Vision API로 이미지 컨텍스트와 함께 번역"""
+    if model is None:
+        model = AI_MODELS["openai"]["default"]
     lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
 
     # 이미지를 base64로 인코딩
@@ -386,7 +410,7 @@ Korean texts:
         }
 
         payload = {
-            "model": "gpt-4o",
+            "model": model,
             "max_tokens": 4096,
             "messages": [
                 {
@@ -458,8 +482,10 @@ Korean texts:
     return translations
 
 
-def translate_with_gemini(image_path, texts, target_lang, api_key):
+def translate_with_gemini(image_path, texts, target_lang, api_key, model=None):
     """Google Gemini API로 이미지 컨텍스트와 함께 번역"""
+    if model is None:
+        model = AI_MODELS["gemini"]["default"]
     lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
 
     # 이미지를 base64로 인코딩
@@ -482,8 +508,8 @@ Korean texts:
 {lang_config['prompt_lang']} translations (same numbering, SHORT answers only):"""
 
     try:
-        # Gemini API URL에 API 키 추가
-        url = f"{GEMINI_API_URL}?key={api_key}"
+        # Gemini API URL에 모델명과 API 키 추가
+        url = f"{GEMINI_API_URL}/{model}:generateContent?key={api_key}"
 
         headers = {
             "Content-Type": "application/json"
@@ -561,22 +587,24 @@ Korean texts:
     return translations
 
 
-def translate_with_vlm(image_path, texts, target_lang, ai_engine="ollama", api_key=None):
+def translate_with_vlm(image_path, texts, target_lang, ai_engine="ollama", api_key=None, model=None):
     """VLM으로 이미지 컨텍스트와 함께 번역 (Ollama, Claude, GPT-4, Gemini)"""
 
     # Claude API 선택 시
     if ai_engine == "claude" and api_key:
-        return translate_with_claude(image_path, texts, target_lang, api_key)
+        return translate_with_claude(image_path, texts, target_lang, api_key, model)
 
     # OpenAI GPT-4 API 선택 시
     if ai_engine == "openai" and api_key:
-        return translate_with_openai(image_path, texts, target_lang, api_key)
+        return translate_with_openai(image_path, texts, target_lang, api_key, model)
 
     # Google Gemini API 선택 시
     if ai_engine == "gemini" and api_key:
-        return translate_with_gemini(image_path, texts, target_lang, api_key)
+        return translate_with_gemini(image_path, texts, target_lang, api_key, model)
 
-    # 기본: Ollama (기존 코드)
+    # 기본: Ollama
+    if model is None:
+        model = AI_MODELS["ollama"]["default"]
     lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
 
     # 이미지를 base64로 인코딩
@@ -602,7 +630,7 @@ Korean texts:
         response = requests.post(
             OLLAMA_URL,
             json={
-                "model": "qwen2.5vl:latest",
+                "model": model,
                 "prompt": prompt,
                 "images": [image_data],
                 "stream": False
@@ -1695,6 +1723,14 @@ HTML_TEMPLATE = """
                         </p>
                     </div>
 
+                    <div class="setting-group" id="modelGroup">
+                        <label>모델 선택</label>
+                        <select id="modelSelect">
+                            <!-- JavaScript로 동적 생성 -->
+                        </select>
+                        <p class="setting-hint" id="modelHint">선택한 AI 엔진에서 사용할 모델을 선택하세요.</p>
+                    </div>
+
                     <div class="setting-info">
                         <h4>AI별 특징</h4>
                         <ul>
@@ -1813,10 +1849,53 @@ HTML_TEMPLATE = """
         const apiKeyLabel = document.getElementById('apiKeyLabel');
         const apiKeyHint = document.getElementById('apiKeyHint');
         const toggleApiKey = document.getElementById('toggleApiKey');
+        const modelSelect = document.getElementById('modelSelect');
+        const modelHint = document.getElementById('modelHint');
 
         // AI 설정 상태 (localStorage에서 로드)
         let currentAiEngine = localStorage.getItem('pdf_translator_ai_engine') || 'ollama';
+        let currentModel = localStorage.getItem('pdf_translator_model') || '';
         let apiKeys = JSON.parse(localStorage.getItem('pdf_translator_api_keys') || '{}');
+
+        // AI 모델 정보
+        const aiModels = {
+            ollama: {
+                models: ['qwen2.5vl:latest', 'llava:latest', 'bakllava:latest'],
+                default: 'qwen2.5vl:latest',
+                hints: {
+                    'qwen2.5vl:latest': '다국어 지원, Vision 강력 (권장)',
+                    'llava:latest': '경량 모델, 빠른 속도',
+                    'bakllava:latest': 'LLaVA 기반, 균형잡힌 성능'
+                }
+            },
+            claude: {
+                models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'],
+                default: 'claude-sonnet-4-20250514',
+                hints: {
+                    'claude-sonnet-4-20250514': '최신 모델, 고성능 (권장)',
+                    'claude-3-5-sonnet-20241022': '안정적인 성능',
+                    'claude-3-haiku-20240307': '빠르고 저렴'
+                }
+            },
+            openai: {
+                models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
+                default: 'gpt-4o',
+                hints: {
+                    'gpt-4o': '최신 멀티모달, 고성능 (권장)',
+                    'gpt-4o-mini': '저렴하고 빠름',
+                    'gpt-4-turbo': '안정적, Vision 지원'
+                }
+            },
+            gemini: {
+                models: ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+                default: 'gemini-2.0-flash',
+                hints: {
+                    'gemini-2.0-flash': '최신 모델, 빠르고 저렴 (권장)',
+                    'gemini-1.5-flash': '빠른 속도, 비용 효율',
+                    'gemini-1.5-pro': '고성능, 복잡한 작업용'
+                }
+            }
+        };
 
         // API 키 힌트 정보
         const apiKeyInfo = {
@@ -1841,6 +1920,7 @@ HTML_TEMPLATE = """
         function initSettings() {
             aiEngineSelect.value = currentAiEngine;
             updateApiKeyVisibility();
+            updateModelOptions();
         }
 
         // API 키 입력 필드 표시/숨김
@@ -1856,6 +1936,45 @@ HTML_TEMPLATE = """
                 apiKeyInput.placeholder = info.placeholder;
                 apiKeyInput.value = apiKeys[engine] || '';
             }
+        }
+
+        // 모델 선택 옵션 업데이트
+        function updateModelOptions() {
+            const engine = aiEngineSelect.value;
+            const modelInfo = aiModels[engine];
+
+            // 기존 옵션 제거
+            modelSelect.innerHTML = '';
+
+            // 새 옵션 추가
+            modelInfo.models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                if (model === modelInfo.default) {
+                    option.textContent += ' (기본)';
+                }
+                modelSelect.appendChild(option);
+            });
+
+            // 저장된 모델이 있으면 선택, 없으면 기본값
+            const savedModel = localStorage.getItem(`pdf_translator_model_${engine}`);
+            if (savedModel && modelInfo.models.includes(savedModel)) {
+                modelSelect.value = savedModel;
+            } else {
+                modelSelect.value = modelInfo.default;
+            }
+
+            // 힌트 업데이트
+            updateModelHint();
+        }
+
+        // 모델 힌트 업데이트
+        function updateModelHint() {
+            const engine = aiEngineSelect.value;
+            const model = modelSelect.value;
+            const hint = aiModels[engine].hints[model] || '';
+            modelHint.textContent = hint;
         }
 
         // 설정 모달 열기
@@ -1875,7 +1994,13 @@ HTML_TEMPLATE = """
         });
 
         // AI 엔진 변경 시
-        aiEngineSelect.addEventListener('change', updateApiKeyVisibility);
+        aiEngineSelect.addEventListener('change', () => {
+            updateApiKeyVisibility();
+            updateModelOptions();
+        });
+
+        // 모델 변경 시
+        modelSelect.addEventListener('change', updateModelHint);
 
         // API 키 표시/숨김 토글
         toggleApiKey.addEventListener('click', () => {
@@ -1891,10 +2016,13 @@ HTML_TEMPLATE = """
         // 설정 저장
         saveSettings.addEventListener('click', () => {
             const engine = aiEngineSelect.value;
+            const model = modelSelect.value;
             currentAiEngine = engine;
+            currentModel = model;
 
             // localStorage에 저장
             localStorage.setItem('pdf_translator_ai_engine', engine);
+            localStorage.setItem(`pdf_translator_model_${engine}`, model);
 
             // API 키 저장 (Ollama 제외)
             if (engine !== 'ollama' && apiKeyInput.value) {
@@ -1904,7 +2032,7 @@ HTML_TEMPLATE = """
 
             closeModal();
             status.className = 'status success';
-            status.textContent = `✅ AI 엔진이 ${getEngineName(engine)}(으)로 설정되었습니다.`;
+            status.textContent = `✅ ${getEngineName(engine)} - ${model} 설정 완료`;
         });
 
         // 엔진 이름 반환
@@ -1922,6 +2050,13 @@ HTML_TEMPLATE = """
         function getCurrentApiKey() {
             if (currentAiEngine === 'ollama') return null;
             return apiKeys[currentAiEngine] || null;
+        }
+
+        // 현재 모델 가져오기
+        function getCurrentModel() {
+            const savedModel = localStorage.getItem(`pdf_translator_model_${currentAiEngine}`);
+            if (savedModel) return savedModel;
+            return aiModels[currentAiEngine]?.default || null;
         }
 
         // 파일 선택 버튼
@@ -1978,6 +2113,7 @@ HTML_TEMPLATE = """
             formData.append('file', file);
             formData.append('target_lang', targetLang.value);
             formData.append('ai_engine', currentAiEngine);
+            formData.append('model', getCurrentModel());
             const apiKey = getCurrentApiKey();
             if (apiKey) {
                 formData.append('api_key', apiKey);
@@ -2256,6 +2392,7 @@ HTML_TEMPLATE = """
                             page_idx: i,
                             target_lang: targetLang.value,
                             ai_engine: currentAiEngine,
+                            model: getCurrentModel(),
                             api_key: getCurrentApiKey(),
                             image: pagesData[i].image,
                             texts: pagesData[i].translations.map(t => ({
@@ -2434,8 +2571,9 @@ def analyze():
         target_lang = request.form.get('target_lang', 'english')
         ai_engine = request.form.get('ai_engine', 'ollama')
         api_key = request.form.get('api_key', None)
+        model = request.form.get('model', None)
 
-        print(f"[AI Engine] {ai_engine}")
+        print(f"[AI Engine] {ai_engine}, [Model] {model}")
 
         if file.filename == '':
             return jsonify({"success": False, "error": "파일이 선택되지 않았습니다"})
@@ -2479,7 +2617,7 @@ def analyze():
             # 번역 (선택된 AI 엔진 사용)
             translations = []
             if texts:
-                translations = translate_with_vlm(img_path, texts, target_lang, ai_engine, api_key)
+                translations = translate_with_vlm(img_path, texts, target_lang, ai_engine, api_key, model)
 
             pages.append({
                 "image": image_base64,
@@ -2511,10 +2649,11 @@ def retranslate():
         target_lang = data.get('target_lang', 'english')
         ai_engine = data.get('ai_engine', 'ollama')
         api_key = data.get('api_key', None)
+        model = data.get('model', None)
         image_base64 = data.get('image', None)
         texts = data.get('texts', [])
 
-        print(f"[Retranslate] AI Engine: {ai_engine}, Target: {target_lang}")
+        print(f"[Retranslate] AI Engine: {ai_engine}, Model: {model}, Target: {target_lang}")
 
         # 이미지가 있고 AI 엔진을 사용하는 경우 VLM으로 번역
         if image_base64 and texts:
@@ -2527,7 +2666,7 @@ def retranslate():
             try:
                 # VLM으로 번역 (선택된 AI 엔진 사용)
                 text_items = [{"text": item['text'], "bbox": item['bbox']} for item in texts]
-                translations = translate_with_vlm(temp_img_path, text_items, target_lang, ai_engine, api_key)
+                translations = translate_with_vlm(temp_img_path, text_items, target_lang, ai_engine, api_key, model)
             finally:
                 # 임시 파일 삭제
                 try:
