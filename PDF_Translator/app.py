@@ -1406,10 +1406,16 @@ def replace_text_in_image(image_path, translations, output_path):
         # ★ 현재 텍스트 bbox 계산 (렌더링 예정 위치)
         current_text_bbox = (x, y_adjusted, text_width, actual_text_height)
 
-        # ★ 겹침 감지: 이전 렌더링된 텍스트와 겹치는지 확인
+        # ★ 원본 OCR 영역 (셀 경계)
+        original_cell_bbox = (x, y, box_width, box_height)
+
+        # ★ 겹침 감지: 양방향 체크
+        # 1) 내 텍스트가 이전 텍스트와 겹치는지
+        # 2) 이전 텍스트가 내 원본 영역(셀)을 침범했는지
         has_overlap = False
         for prev_bbox in rendered_bboxes:
-            if check_bbox_overlap(current_text_bbox, prev_bbox):
+            # 내가 남을 침범 OR 남이 나를 침범
+            if check_bbox_overlap(current_text_bbox, prev_bbox) or check_bbox_overlap(original_cell_bbox, prev_bbox):
                 has_overlap = True
                 break
 
@@ -1512,13 +1518,19 @@ def generate_preview_image(image_base64, translations):
         y_center = int(min(ys)) + box_height // 2
         y_adjusted = y_center - actual_text_height // 2 - text_bbox_actual[1]
 
-        # ★ 현재 텍스트 bbox 계산
+        # ★ 현재 텍스트 bbox 계산 (렌더링 예정 위치)
         current_text_bbox = (x, y_adjusted, text_width, actual_text_height)
 
-        # ★ 겹침 감지
+        # ★ 원본 OCR 영역 (셀 경계)
+        original_cell_bbox = (x, y, box_width, box_height)
+
+        # ★ 겹침 감지: 양방향 체크
+        # 1) 내 텍스트가 이전 텍스트와 겹치는지
+        # 2) 이전 텍스트가 내 원본 영역(셀)을 침범했는지
         has_overlap = False
         for prev_bbox in rendered_bboxes:
-            if check_bbox_overlap(current_text_bbox, prev_bbox):
+            # 내가 남을 침범 OR 남이 나를 침범
+            if check_bbox_overlap(current_text_bbox, prev_bbox) or check_bbox_overlap(original_cell_bbox, prev_bbox):
                 has_overlap = True
                 break
 
