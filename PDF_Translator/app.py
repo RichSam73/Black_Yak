@@ -7,9 +7,14 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.5.0"
-VERSION_DATE = "2026-01-08"
+VERSION = "1.6.0"
+VERSION_DATE = "2026-01-09"
 VERSION_NOTES = """
+v1.6.0 (2026-01-09)
+- ★ Gemini 배치 번역: 모든 페이지 텍스트를 1회 API 호출로 번역 (Free Tier 최적화)
+- AI 모델 선택: Gemini 2.0 Flash, GPT-4o, GPT-4o-mini 지원
+- API 키 입력 필드 추가
+
 v1.5.0 (2026-01-08)
 - ★ 세로 텍스트 지원: 높이>너비×2 → 글자를 세로로 배치
 - ★ 진행 상황 표시: OCR/번역 단계별 실시간 진행률 + 경과시간
@@ -480,6 +485,131 @@ Korean texts:
             translations.append({**item, "translated": translated})
 
     return translations
+
+
+def translate_batch_with_gemini(all_pages_texts, target_lang, api_key, model=None):
+    """Google Gemini API로 모든 페이지의 텍스트를 한 번에 번역 (배치 모드)
+
+    Args:
+        all_pages_texts: [{page_idx: int, texts: [{text, bbox}, ...]}, ...]
+        target_lang: 번역 대상 언어
+        api_key: Gemini API 키
+        model: Gemini 모델명
+
+    Returns:
+        {page_idx: [translated_texts], ...}
+    """
+    if model is None:
+        model = AI_MODELS["gemini"]["default"]
+    lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
+
+    # 모든 페이지의 텍스트를 하나의 리스트로 합침 (페이지 구분 포함)
+    all_korean = []
+    page_text_counts = []  # 각 페이지별 텍스트 개수
+
+    for page_data in all_pages_texts:
+        page_texts = page_data["texts"]
+        page_text_counts.append(len(page_texts))
+        for item in page_texts:
+            all_korean.append(item["text"])
+
+    if not all_korean:
+        return {page_data["page_idx"]: [] for page_data in all_pages_texts}
+
+    # 전체 텍스트를 번호로 조인
+    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(all_korean)])
+
+    prompt = f"""This is a garment/clothing technical specification document (tech pack).
+Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
+Keep translations SHORT and professional. Only respond with numbered translations in {lang_config['prompt_lang']}.
+There are {len(all_korean)} items total from multiple pages. Translate ALL of them.
+
+Korean texts:
+{korean_joined}
+
+{lang_config['prompt_lang']} translations (same numbering 1-{len(all_korean)}, SHORT answers only):"""
+
+    try:
+        url = f"{GEMINI_API_URL}/{model}:generateContent?key={api_key}"
+
+        headers = {"Content-Type": "application/json"}
+
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"maxOutputTokens": 8192}
+        }
+
+        print(f"[Batch Translation] Sending {len(all_korean)} texts to Gemini...")
+
+        response = requests.post(url, headers=headers, json=payload, timeout=180)
+
+        if response.status_code == 200:
+            result = response.json()
+            response_text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+
+            # 응답 파싱
+            lines = response_text.split("\n")
+            trans_dict = {}
+            for line in lines:
+                line = line.strip()
+                if line and line[0].isdigit():
+                    parts = line.split(".", 1)
+                    if len(parts) == 2:
+                        try:
+                            idx = int(parts[0]) - 1
+                            trans = parts[1].strip()
+                            if 0 <= idx < len(all_korean):
+                                trans_dict[idx] = trans
+                        except ValueError:
+                            continue
+
+            print(f"[Batch Translation] Got {len(trans_dict)}/{len(all_korean)} translations")
+
+            # 페이지별로 결과 분배
+            result_by_page = {}
+            current_idx = 0
+
+            for page_data in all_pages_texts:
+                page_idx = page_data["page_idx"]
+                page_texts = page_data["texts"]
+                page_translations = []
+
+                for item in page_texts:
+                    if current_idx in trans_dict:
+                        translated = trans_dict[current_idx]
+                    else:
+                        translated = translate_with_dict(item["text"], target_lang)
+
+                    page_translations.append({
+                        **item,
+                        "translated": translated
+                    })
+                    current_idx += 1
+
+                result_by_page[page_idx] = page_translations
+
+            return result_by_page
+        else:
+            print(f"Gemini Batch API error: {response.status_code} - {response.text}")
+            # fallback: 사전 번역
+            return _fallback_batch_translation(all_pages_texts, target_lang)
+
+    except Exception as e:
+        print(f"Gemini Batch API error: {e}")
+        return _fallback_batch_translation(all_pages_texts, target_lang)
+
+
+def _fallback_batch_translation(all_pages_texts, target_lang):
+    """배치 번역 실패 시 사전 번역으로 fallback"""
+    result_by_page = {}
+    for page_data in all_pages_texts:
+        page_idx = page_data["page_idx"]
+        page_translations = []
+        for item in page_data["texts"]:
+            translated = translate_with_dict(item["text"], target_lang)
+            page_translations.append({**item, "translated": translated})
+        result_by_page[page_idx] = page_translations
+    return result_by_page
 
 
 def translate_with_gemini(image_path, texts, target_lang, api_key, model=None):
@@ -2593,13 +2723,15 @@ def analyze():
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         temp_image_paths[session_id] = image_paths
 
-        # 각 페이지 분석
+        # 각 페이지 분석 (2단계: OCR 먼저, 번역은 배치로)
         pages = []
         total_pages = len(image_paths)
-        
+        all_pages_data = []  # OCR 결과 임시 저장
+
+        # ===== 1단계: 모든 페이지 OCR =====
         for i, img_path in enumerate(image_paths):
-            print(f"[Analyze {i+1}/{total_pages}] {img_path}")
-            
+            print(f"[OCR {i+1}/{total_pages}] {img_path}")
+
             # ★ 진행 상황: OCR
             update_progress("OCR", i+1, total_pages, f"페이지 {i+1}/{total_pages} OCR 처리 중...")
 
@@ -2611,21 +2743,51 @@ def analyze():
             texts = get_ocr_results(img_path)
             print(f"  Found {len(texts)} Korean texts")
 
-            # ★ 진행 상황: 번역
-            update_progress("번역", i+1, total_pages, f"페이지 {i+1}/{total_pages} - {len(texts)}개 텍스트 번역 중...")
-
-            # 번역 (선택된 AI 엔진 사용)
-            translations = []
-            if texts:
-                translations = translate_with_vlm(img_path, texts, target_lang, ai_engine, api_key, model)
-
-            pages.append({
-                "image": image_base64,
-                "image_path": img_path,
-                "translations": translations,
-                "confirmed": False
+            all_pages_data.append({
+                "page_idx": i,
+                "img_path": img_path,
+                "image_base64": image_base64,
+                "texts": texts
             })
-        
+
+        # ===== 2단계: 배치 번역 (1회 API 호출) =====
+        total_texts = sum(len(p["texts"]) for p in all_pages_data)
+        update_progress("번역", 1, 1, f"전체 {total_texts}개 텍스트 일괄 번역 중... (1회 API 호출)")
+        print(f"[Batch Translation] Total {total_texts} texts from {total_pages} pages")
+
+        # Gemini 배치 번역 사용 (Free Tier 최적화)
+        if ai_engine == "gemini" and api_key and total_texts > 0:
+            batch_input = [{"page_idx": p["page_idx"], "texts": p["texts"]} for p in all_pages_data]
+            translations_by_page = translate_batch_with_gemini(batch_input, target_lang, api_key, model)
+
+            # 결과 조합
+            for page_data in all_pages_data:
+                page_idx = page_data["page_idx"]
+                translations = translations_by_page.get(page_idx, [])
+                pages.append({
+                    "image": page_data["image_base64"],
+                    "image_path": page_data["img_path"],
+                    "translations": translations,
+                    "confirmed": False
+                })
+        else:
+            # 기존 방식: 페이지별 번역 (Ollama, OpenAI 등)
+            for page_data in all_pages_data:
+                update_progress("번역", page_data["page_idx"]+1, total_pages,
+                               f"페이지 {page_data['page_idx']+1}/{total_pages} - {len(page_data['texts'])}개 텍스트 번역 중...")
+
+                translations = []
+                if page_data["texts"]:
+                    translations = translate_with_vlm(page_data["img_path"], page_data["texts"],
+                                                      target_lang, ai_engine, api_key, model)
+
+                pages.append({
+                    "image": page_data["image_base64"],
+                    "image_path": page_data["img_path"],
+                    "translations": translations,
+                    "confirmed": False
+                })
+
         # ★ 진행 상황: 완료
         update_progress("완료", total_pages, total_pages, "분석 완료!")
 
