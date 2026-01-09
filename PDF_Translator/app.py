@@ -2821,7 +2821,12 @@ HTML_TEMPLATE = """
                     const progRes = await fetch('/progress');
                     const prog = await progRes.json();
                     if (prog.stage) {
-                        status.innerHTML = `<span class="spinner"></span>${prog.stage} (${prog.current}/${prog.total}) - ${prog.detail} [${prog.elapsed}]`;
+                        // "완료" 상태면 스피너 없이 표시
+                        if (prog.stage === '완료') {
+                            status.innerHTML = `✅ ${prog.stage} (${prog.current}/${prog.total}) - ${prog.detail}`;
+                        } else {
+                            status.innerHTML = `<span class="spinner"></span>${prog.stage} (${prog.current}/${prog.total}) - ${prog.detail} [${prog.elapsed}]`;
+                        }
                     }
                 } catch (e) {}
             }, 500);
