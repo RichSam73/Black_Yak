@@ -268,10 +268,65 @@ def translate_with_dict(korean_text, target_lang):
     return result
 
 
+def apply_dict_preprocess(korean_text, target_lang):
+    """AI 번역 전 사전 용어를 플레이스홀더로 대체 (Placeholder 방식)
+
+    Args:
+        korean_text: 원본 한글 텍스트
+        target_lang: 대상 언어 (english, vietnamese 등)
+
+    Returns:
+        tuple: (플레이스홀더가 적용된 텍스트, 플레이스홀더 매핑 딕셔너리)
+
+    Example:
+        "23SS 행거루프 요척" → ("23SS 행거루프 <<TERM_1>>", {"<<TERM_1>>": "Consumption"})
+    """
+    if target_lang not in GARMENT_DICT:
+        return korean_text, {}
+
+    result = korean_text
+    placeholder_map = {}  # {"<<TERM_1>>": "Consumption", ...}
+    dict_terms = GARMENT_DICT[target_lang]
+
+    # 긴 용어부터 처리 (복합어 우선: "후드탈부착" > "후드")
+    sorted_terms = sorted(dict_terms.items(), key=lambda x: len(x[0]), reverse=True)
+
+    term_idx = 1
+    for korean_term, translation in sorted_terms:
+        if korean_term in result:
+            placeholder = f"<<TERM_{term_idx}>>"
+            result = result.replace(korean_term, placeholder)
+            placeholder_map[placeholder] = translation
+            term_idx += 1
+
+    return result, placeholder_map
+
+
+def restore_placeholders(translated_text, placeholder_map):
+    """번역 결과에서 플레이스홀더를 사전 번역으로 복원
+
+    Args:
+        translated_text: AI가 번역한 텍스트 (플레이스홀더 포함)
+        placeholder_map: 플레이스홀더 → 사전 번역 매핑
+
+    Returns:
+        str: 플레이스홀더가 사전 번역으로 대체된 최종 텍스트
+
+    Example:
+        ("23SS Hanger Loop <<TERM_1>>", {"<<TERM_1>>": "Consumption"})
+        → "23SS Hanger Loop Consumption"
+    """
+    result = translated_text
+    for placeholder, translation in placeholder_map.items():
+        result = result.replace(placeholder, translation)
+    return result
+
+
 def apply_dict_postprocess(translated_text, original_korean, target_lang):
-    """AI 번역 결과에 사전 용어 후처리 적용
+    """AI 번역 결과에 사전 용어 후처리 적용 (레거시 - 백업용)
 
     원본 한글에서 사전 용어가 있으면, 번역 결과에서 해당 부분을 사전 번역으로 교체
+    Note: Placeholder 방식(apply_dict_preprocess + restore_placeholders)이 더 권장됨
     """
     if target_lang not in GARMENT_DICT:
         return translated_text
@@ -294,7 +349,7 @@ def apply_dict_postprocess(translated_text, original_korean, target_lang):
 
 
 def translate_with_claude(image_path, texts, target_lang, api_key, model=None):
-    """Claude API로 이미지 컨텍스트와 함께 번역"""
+    """Claude API로 이미지 컨텍스트와 함께 번역 (Placeholder 방식 적용)"""
     print(f"[Claude] translate_with_claude called - texts: {len(texts)}, model: {model}", flush=True)
     if model is None:
         model = AI_MODELS["claude"]["default"]
@@ -309,7 +364,18 @@ def translate_with_claude(image_path, texts, target_lang, api_key, model=None):
 
     # 모든 한글 텍스트를 한 번에 번역 요청
     korean_list = [item["text"] for item in texts]
-    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(korean_list)])
+
+    # ★ Placeholder 전처리: 사전 용어를 플레이스홀더로 대체
+    preprocessed_list = []
+    placeholder_maps = []  # 각 텍스트별 플레이스홀더 매핑 저장
+    for korean_text in korean_list:
+        processed_text, pmap = apply_dict_preprocess(korean_text, target_lang)
+        preprocessed_list.append(processed_text)
+        placeholder_maps.append(pmap)
+        if pmap:
+            print(f"[Claude] Preprocess: '{korean_text}' → '{processed_text}' (placeholders: {len(pmap)})", flush=True)
+
+    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(preprocessed_list)])
 
     prompt = f"""This is a garment/clothing technical specification image (tech pack).
 Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
@@ -320,6 +386,7 @@ RULES:
 - Use format: "1. translation" (number + dot + space + translation)
 - Do NOT skip any item
 - Do NOT use markdown formatting like **bold**
+- IMPORTANT: Keep <<TERM_N>> placeholders exactly as they are (do not translate them)
 
 Korean texts:
 {korean_joined}
@@ -390,12 +457,14 @@ Korean texts:
 
             print(f"[Claude] Parsed {len(trans_dict)}/{len(korean_list)} translations", flush=True)
 
-            # 결과 매핑 + 사전 후처리
+            # 결과 매핑 + 플레이스홀더 복원
             for i, item in enumerate(texts):
                 if i in trans_dict:
                     translated = trans_dict[i]
-                    # 사전 후처리 적용
-                    translated = apply_dict_postprocess(translated, item["text"], target_lang)
+                    # ★ 플레이스홀더를 사전 번역으로 복원
+                    if placeholder_maps[i]:
+                        translated = restore_placeholders(translated, placeholder_maps[i])
+                        print(f"[Claude] Restored placeholders for item {i+1}: {translated[:50]}...", flush=True)
                 else:
                     translated = translate_with_dict(item["text"], target_lang)
 
@@ -420,7 +489,7 @@ Korean texts:
 
 
 def translate_with_openai(image_path, texts, target_lang, api_key, model=None):
-    """OpenAI GPT-4 Vision API로 이미지 컨텍스트와 함께 번역"""
+    """OpenAI GPT-4 Vision API로 이미지 컨텍스트와 함께 번역 (Placeholder 방식 적용)"""
     if model is None:
         model = AI_MODELS["openai"]["default"]
     lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
@@ -433,7 +502,16 @@ def translate_with_openai(image_path, texts, target_lang, api_key, model=None):
 
     # 모든 한글 텍스트를 한 번에 번역 요청
     korean_list = [item["text"] for item in texts]
-    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(korean_list)])
+
+    # ★ Placeholder 전처리: 사전 용어를 플레이스홀더로 대체
+    preprocessed_list = []
+    placeholder_maps = []
+    for korean_text in korean_list:
+        processed_text, pmap = apply_dict_preprocess(korean_text, target_lang)
+        preprocessed_list.append(processed_text)
+        placeholder_maps.append(pmap)
+
+    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(preprocessed_list)])
 
     prompt = f"""This is a garment/clothing technical specification image (tech pack).
 Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
@@ -444,6 +522,7 @@ RULES:
 - Use format: "1. translation" (number + dot + space + translation)
 - Do NOT skip any item
 - Do NOT use markdown formatting like **bold**
+- IMPORTANT: Keep <<TERM_N>> placeholders exactly as they are (do not translate them)
 
 Korean texts:
 {korean_joined}
@@ -502,12 +581,13 @@ Korean texts:
                         if idx < len(korean_list):
                             trans_dict[idx] = trans
 
-            # 결과 매핑 + 사전 후처리
+            # 결과 매핑 + 플레이스홀더 복원
             for i, item in enumerate(texts):
                 if i in trans_dict:
                     translated = trans_dict[i]
-                    # 사전 후처리 적용
-                    translated = apply_dict_postprocess(translated, item["text"], target_lang)
+                    # ★ 플레이스홀더를 사전 번역으로 복원
+                    if placeholder_maps[i]:
+                        translated = restore_placeholders(translated, placeholder_maps[i])
                 else:
                     translated = translate_with_dict(item["text"], target_lang)
 
@@ -532,7 +612,7 @@ Korean texts:
 
 
 def translate_batch_with_gemini(all_pages_texts, target_lang, api_key, model=None):
-    """Google Gemini API로 모든 페이지의 텍스트를 한 번에 번역 (배치 모드)
+    """Google Gemini API로 모든 페이지의 텍스트를 한 번에 번역 (배치 모드, Placeholder 방식)
 
     Args:
         all_pages_texts: [{page_idx: int, texts: [{text, bbox}, ...]}, ...]
@@ -549,13 +629,17 @@ def translate_batch_with_gemini(all_pages_texts, target_lang, api_key, model=Non
 
     # 모든 페이지의 텍스트를 하나의 리스트로 합침 (페이지 구분 포함)
     all_korean = []
+    all_placeholder_maps = []  # ★ 각 텍스트별 플레이스홀더 매핑
     page_text_counts = []  # 각 페이지별 텍스트 개수
 
     for page_data in all_pages_texts:
         page_texts = page_data["texts"]
         page_text_counts.append(len(page_texts))
         for item in page_texts:
-            all_korean.append(item["text"])
+            # ★ Placeholder 전처리
+            processed_text, pmap = apply_dict_preprocess(item["text"], target_lang)
+            all_korean.append(processed_text)
+            all_placeholder_maps.append(pmap)
 
     if not all_korean:
         return {page_data["page_idx"]: [] for page_data in all_pages_texts}
@@ -567,6 +651,7 @@ def translate_batch_with_gemini(all_pages_texts, target_lang, api_key, model=Non
 Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
 Keep translations SHORT and professional. Only respond with numbered translations in {lang_config['prompt_lang']}.
 There are {len(all_korean)} items total from multiple pages. Translate ALL of them.
+IMPORTANT: Keep <<TERM_N>> placeholders exactly as they are (do not translate them).
 
 Korean texts:
 {korean_joined}
@@ -624,8 +709,9 @@ Korean texts:
                 for item in page_texts:
                     if current_idx in trans_dict:
                         translated = trans_dict[current_idx]
-                        # 사전 후처리 적용
-                        translated = apply_dict_postprocess(translated, item["text"], target_lang)
+                        # ★ 플레이스홀더를 사전 번역으로 복원
+                        if all_placeholder_maps[current_idx]:
+                            translated = restore_placeholders(translated, all_placeholder_maps[current_idx])
                     else:
                         translated = translate_with_dict(item["text"], target_lang)
 
@@ -662,7 +748,7 @@ def _fallback_batch_translation(all_pages_texts, target_lang):
 
 
 def translate_with_gemini(image_path, texts, target_lang, api_key, model=None):
-    """Google Gemini API로 이미지 컨텍스트와 함께 번역"""
+    """Google Gemini API로 이미지 컨텍스트와 함께 번역 (Placeholder 방식 적용)"""
     if model is None:
         model = AI_MODELS["gemini"]["default"]
     lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
@@ -675,7 +761,16 @@ def translate_with_gemini(image_path, texts, target_lang, api_key, model=None):
 
     # 모든 한글 텍스트를 한 번에 번역 요청
     korean_list = [item["text"] for item in texts]
-    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(korean_list)])
+
+    # ★ Placeholder 전처리: 사전 용어를 플레이스홀더로 대체
+    preprocessed_list = []
+    placeholder_maps = []
+    for korean_text in korean_list:
+        processed_text, pmap = apply_dict_preprocess(korean_text, target_lang)
+        preprocessed_list.append(processed_text)
+        placeholder_maps.append(pmap)
+
+    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(preprocessed_list)])
 
     prompt = f"""This is a garment/clothing technical specification image (tech pack).
 Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
@@ -686,6 +781,7 @@ RULES:
 - Use format: "1. translation" (number + dot + space + translation)
 - Do NOT skip any item
 - Do NOT use markdown formatting like **bold**
+- IMPORTANT: Keep <<TERM_N>> placeholders exactly as they are (do not translate them)
 
 Korean texts:
 {korean_joined}
@@ -745,12 +841,13 @@ Korean texts:
                         if idx < len(korean_list):
                             trans_dict[idx] = trans
 
-            # 결과 매핑 + 사전 후처리
+            # 결과 매핑 + 플레이스홀더 복원
             for i, item in enumerate(texts):
                 if i in trans_dict:
                     translated = trans_dict[i]
-                    # 사전 후처리 적용
-                    translated = apply_dict_postprocess(translated, item["text"], target_lang)
+                    # ★ 플레이스홀더를 사전 번역으로 복원
+                    if placeholder_maps[i]:
+                        translated = restore_placeholders(translated, placeholder_maps[i])
                 else:
                     translated = translate_with_dict(item["text"], target_lang)
 
@@ -789,7 +886,7 @@ def translate_with_vlm(image_path, texts, target_lang, ai_engine="ollama", api_k
     if ai_engine == "gemini" and api_key:
         return translate_with_gemini(image_path, texts, target_lang, api_key, model)
 
-    # 기본: Ollama
+    # 기본: Ollama (Placeholder 방식 적용)
     if model is None:
         model = AI_MODELS["ollama"]["default"]
     lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
@@ -802,7 +899,16 @@ def translate_with_vlm(image_path, texts, target_lang, ai_engine="ollama", api_k
 
     # 모든 한글 텍스트를 한 번에 번역 요청
     korean_list = [item["text"] for item in texts]
-    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(korean_list)])
+
+    # ★ Placeholder 전처리: 사전 용어를 플레이스홀더로 대체
+    preprocessed_list = []
+    placeholder_maps = []
+    for korean_text in korean_list:
+        processed_text, pmap = apply_dict_preprocess(korean_text, target_lang)
+        preprocessed_list.append(processed_text)
+        placeholder_maps.append(pmap)
+
+    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(preprocessed_list)])
 
     prompt = f"""This is a garment/clothing technical specification image (tech pack).
 Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
@@ -813,6 +919,7 @@ RULES:
 - Use format: "1. translation" (number + dot + space + translation)
 - Do NOT skip any item
 - Do NOT use markdown formatting like **bold**
+- IMPORTANT: Keep <<TERM_N>> placeholders exactly as they are (do not translate them)
 
 Korean texts:
 {korean_joined}
@@ -851,12 +958,13 @@ Korean texts:
                     if idx < len(korean_list):
                         trans_dict[idx] = trans
 
-            # 결과 매핑 + 사전 후처리
+            # 결과 매핑 + 플레이스홀더 복원
             for i, item in enumerate(texts):
                 if i in trans_dict:
                     translated = trans_dict[i]
-                    # 사전 후처리 적용
-                    translated = apply_dict_postprocess(translated, item["text"], target_lang)
+                    # ★ 플레이스홀더를 사전 번역으로 복원
+                    if placeholder_maps[i]:
+                        translated = restore_placeholders(translated, placeholder_maps[i])
                 else:
                     translated = translate_with_dict(item["text"], target_lang)
 
