@@ -1370,7 +1370,7 @@ def replace_text_in_image(image_path, translations, output_path):
             text_width = text_bbox_size[2] - text_bbox_size[0]
             selected_text_height = text_bbox_size[3] - text_bbox_size[1]
 
-            if selected_text_height <= box_height * 1.2:
+            if selected_text_height <= box_height * 0.75:  # 셀 높이의 75% (위아래 여백 확보)
                 break
 
         text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
@@ -1513,7 +1513,7 @@ def generate_preview_image(image_base64, translations):
             text_width = text_bbox_size[2] - text_bbox_size[0]
             selected_text_height = text_bbox_size[3] - text_bbox_size[1]
 
-            if selected_text_height <= box_height * 1.2:
+            if selected_text_height <= box_height * 0.75:  # 셀 높이의 75% (위아래 여백 확보)
                 break
 
         text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
