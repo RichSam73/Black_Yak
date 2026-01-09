@@ -1377,6 +1377,8 @@ def replace_text_in_image(image_path, translations, output_path):
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
         y_center = int(min(ys)) + box_height // 2
         y_adjusted = y_center - actual_text_height // 2 - text_bbox_actual[1]
+        # 셀 상단을 침범하지 않도록 제한
+        y_adjusted = max(int(min(ys)), y_adjusted)
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
@@ -1512,6 +1514,8 @@ def generate_preview_image(image_base64, translations):
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
         y_center = int(min(ys)) + box_height // 2
         y_adjusted = y_center - actual_text_height // 2 - text_bbox_actual[1]
+        # 셀 상단을 침범하지 않도록 제한
+        y_adjusted = max(int(min(ys)), y_adjusted)
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
