@@ -1375,11 +1375,11 @@ def replace_text_in_image(image_path, translations, output_path):
 
         text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
-        # 중앙 정렬 (폰트 offset 제외)
-        y_center = int(min(ys)) + box_height // 2
-        y_adjusted = y_center - actual_text_height // 2
-        # 셀 경계 내로 제한
-        y_adjusted = max(int(min(ys)), min(y_adjusted, int(max(ys)) - actual_text_height))
+        text_top_offset = text_bbox_actual[1]  # textbbox의 top offset (글리프 상단까지 거리)
+
+        # Y축 상단 정렬: OCR bbox의 top에 텍스트 상단을 맞춤
+        # anchor="lt" 사용 시 text_top_offset만큼 보정 필요
+        y_adjusted = int(min(ys)) - text_top_offset
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
@@ -1514,11 +1514,11 @@ def generate_preview_image(image_base64, translations):
 
         text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
-        # 중앙 정렬 (폰트 offset 제외)
-        y_center = int(min(ys)) + box_height // 2
-        y_adjusted = y_center - actual_text_height // 2
-        # 셀 경계 내로 제한
-        y_adjusted = max(int(min(ys)), min(y_adjusted, int(max(ys)) - actual_text_height))
+        text_top_offset = text_bbox_actual[1]  # textbbox의 top offset (글리프 상단까지 거리)
+
+        # Y축 상단 정렬: OCR bbox의 top에 텍스트 상단을 맞춤
+        # anchor="lt" 사용 시 text_top_offset만큼 보정 필요
+        y_adjusted = int(min(ys)) - text_top_offset
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
