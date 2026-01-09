@@ -37,6 +37,7 @@ nul
 # Test files
 test_*.png
 *.json
+!PDF_Translator/garment_dict.json
 
 # Agent files
 .agent/

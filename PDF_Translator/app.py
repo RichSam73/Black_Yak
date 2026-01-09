@@ -7,9 +7,21 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 VERSION_DATE = "2026-01-09"
 VERSION_NOTES = """
+v1.7.0 (2026-01-09)
+- ★ 용어 사전 관리 기능: 의류 전문 용어 추가/수정/삭제 가능
+- ★ 사전 후처리: AI 번역 후 사전 용어로 자동 교정 (일관성 향상)
+- 📖 버튼 클릭으로 사전 관리 모달 오픈
+- 언어별 탭 전환, 검색 기능, 실시간 저장
+- JSON 파일(garment_dict.json)로 사전 데이터 분리
+
+v1.6.1 (2026-01-09)
+- Claude Opus 4.5 모델 추가
+- 번역 프롬프트 강화: 모든 항목 번역 필수 규칙 적용
+- 파싱 로직 개선: 다양한 번호 형식 지원 (1., 1), **1.**, 1:)
+
 v1.6.0 (2026-01-09)
 - ★ Gemini 배치 번역: 모든 페이지 텍스트를 1회 API 호출로 번역 (Free Tier 최적화)
 - AI 모델 선택: Gemini 2.0 Flash, GPT-4o, GPT-4o-mini 지원
@@ -131,59 +143,38 @@ LANGUAGE_CONFIG = {
     }
 }
 
-# 의류 전문 용어 사전 (한글 → 다국어)
-GARMENT_DICT = {
-    "english": {
-        "남성": "Men's", "여성": "Women's", "자켓": "Jacket", "다운자켓": "Down Jacket",
-        "후드": "Hood", "에리": "Collar", "봉제": "Sewing", "작업": "Work",
-        "원단": "Fabric", "안감": "Lining", "겉감": "Shell", "소매": "Sleeve",
-        "밑단": "Hem", "어깨": "Shoulder", "가슴": "Chest", "허리": "Waist",
-        "지퍼": "Zipper", "스토퍼": "Stopper", "고리": "Loop", "테이프": "Tape",
-        "앞판": "Front Panel", "뒷판": "Back Panel", "로고": "LOGO",
-        "벨크로": "Velcro", "밴드": "Band", "아일렛": "Eyelet", "스트링": "String",
-        "주머니": "Pocket", "포켓": "Pocket", "메인": "Main", "라벨": "Label"
-    },
-    "vietnamese": {
-        "남성": "Nam", "여성": "Nữ", "자켓": "Áo khoác", "다운자켓": "Áo phao",
-        "후드": "Mũ trùm", "에리": "Cổ áo", "봉제": "May", "작업": "Công việc",
-        "원단": "Vải", "안감": "Lót", "겉감": "Vỏ ngoài", "소매": "Tay áo",
-        "밑단": "Gấu áo", "어깨": "Vai", "가슴": "Ngực", "허리": "Eo",
-        "지퍼": "Khóa kéo", "스토퍼": "Nút chặn", "고리": "Vòng", "테이프": "Băng dính",
-        "앞판": "Thân trước", "뒷판": "Thân sau", "로고": "Logo",
-        "벨크로": "Velcro", "밴드": "Dây đai", "아일렛": "Lỗ xỏ dây", "스트링": "Dây rút",
-        "주머니": "Túi", "포켓": "Túi", "메인": "Chính", "라벨": "Nhãn"
-    },
-    "chinese": {
-        "남성": "男士", "여성": "女士", "자켓": "夹克", "다운자켓": "羽绒服",
-        "후드": "连帽", "에리": "领子", "봉제": "缝纫", "작업": "工作",
-        "원단": "面料", "안감": "里料", "겉감": "外层", "소매": "袖子",
-        "밑단": "下摆", "어깨": "肩部", "가슴": "胸部", "허리": "腰部",
-        "지퍼": "拉链", "스토퍼": "止扣", "고리": "环扣", "테이프": "胶带",
-        "앞판": "前片", "뒷판": "后片", "로고": "标志",
-        "벨크로": "魔术贴", "밴드": "松紧带", "아일렛": "鸡眼", "스트링": "抽绳",
-        "주머니": "口袋", "포켓": "口袋", "메인": "主要", "라벨": "标签"
-    },
-    "indonesian": {
-        "남성": "Pria", "여성": "Wanita", "자켓": "Jaket", "다운자켓": "Jaket Bulu",
-        "후드": "Tudung", "에리": "Kerah", "봉제": "Jahit", "작업": "Kerja",
-        "원단": "Kain", "안감": "Lapisan Dalam", "겉감": "Lapisan Luar", "소매": "Lengan",
-        "밑단": "Keliman", "어깨": "Bahu", "가슴": "Dada", "허리": "Pinggang",
-        "지퍼": "Ritsleting", "스토퍼": "Penghenti", "고리": "Lingkaran", "테이프": "Pita",
-        "앞판": "Panel Depan", "뒷판": "Panel Belakang", "로고": "Logo",
-        "벨크로": "Velcro", "밴드": "Pita Elastis", "아일렛": "Lubang Tali", "스트링": "Tali Serut",
-        "주머니": "Saku", "포켓": "Saku", "메인": "Utama", "라벨": "Label"
-    },
-    "bengali": {
-        "남성": "পুরুষ", "여성": "মহিলা", "자켓": "জ্যাকেট", "다운자켓": "ডাউন জ্যাকেট",
-        "후드": "হুড", "에리": "কলার", "봉제": "সেলাই", "작업": "কাজ",
-        "원단": "কাপড়", "안감": "আস্তরণ", "겉감": "বাইরের স্তর", "소매": "হাতা",
-        "밑단": "নিচের প্রান্ত", "어깨": "কাঁধ", "가슴": "বুক", "허리": "কোমর",
-        "지퍼": "জিপার", "스토퍼": "স্টপার", "고리": "লুপ", "테이프": "টেপ",
-        "앞판": "সামনের প্যানেল", "뒷판": "পিছনের প্যানেল", "로고": "লোগো",
-        "벨크로": "ভেলক্রো", "밴드": "ব্যান্ড", "아일렛": "আইলেট", "스트링": "স্ট্রিং",
-        "주머니": "পকেট", "포켓": "পকেট", "메인": "প্রধান", "라벨": "লেবেল"
+# 의류 전문 용어 사전 파일 경로
+GARMENT_DICT_FILE = os.path.join(os.path.dirname(__file__), "garment_dict.json")
+
+def load_garment_dict():
+    """JSON 파일에서 용어 사전 로드"""
+    try:
+        if os.path.exists(GARMENT_DICT_FILE):
+            with open(GARMENT_DICT_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"[Warning] Failed to load garment_dict.json: {e}")
+    # 기본 사전 반환 (파일 없을 경우)
+    return {
+        "english": {"남성": "Men's", "여성": "Women's"},
+        "vietnamese": {"남성": "Nam", "여성": "Nữ"},
+        "chinese": {"남성": "男士", "여성": "女士"},
+        "indonesian": {"남성": "Pria", "여성": "Wanita"},
+        "bengali": {"남성": "পুরুষ", "여성": "মহিলা"}
     }
-}
+
+def save_garment_dict(data):
+    """용어 사전을 JSON 파일로 저장"""
+    try:
+        with open(GARMENT_DICT_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"[Error] Failed to save garment_dict.json: {e}")
+        return False
+
+# 용어 사전 로드 (전역)
+GARMENT_DICT = load_garment_dict()
 
 # OCR 엔진 초기화 (싱글톤)
 ocr_engine = None
@@ -269,11 +260,36 @@ def get_ocr_results(image_path):
 
 
 def translate_with_dict(korean_text, target_lang):
-    """사전 기반 번역"""
+    """사전 기반 번역 (fallback용)"""
     result = korean_text
     if target_lang in GARMENT_DICT:
         for kor, trans in GARMENT_DICT[target_lang].items():
             result = result.replace(kor, trans)
+    return result
+
+
+def apply_dict_postprocess(translated_text, original_korean, target_lang):
+    """AI 번역 결과에 사전 용어 후처리 적용
+
+    원본 한글에서 사전 용어가 있으면, 번역 결과에서 해당 부분을 사전 번역으로 교체
+    """
+    if target_lang not in GARMENT_DICT:
+        return translated_text
+
+    result = translated_text
+    dict_terms = GARMENT_DICT[target_lang]
+
+    # 긴 용어부터 처리 (복합어 우선)
+    sorted_terms = sorted(dict_terms.items(), key=lambda x: len(x[0]), reverse=True)
+
+    for korean_term, correct_translation in sorted_terms:
+        if korean_term in original_korean:
+            # 원본에 해당 용어가 있으면, 번역 결과에서 잘못된 번역을 교체
+            # 단, 이미 올바른 번역이 있으면 건너뜀
+            if correct_translation not in result:
+                # 흔한 오번역 패턴들을 사전 번역으로 교체
+                result = result.replace(korean_term, correct_translation)
+
     return result
 
 
@@ -374,10 +390,12 @@ Korean texts:
 
             print(f"[Claude] Parsed {len(trans_dict)}/{len(korean_list)} translations", flush=True)
 
-            # 결과 매핑
+            # 결과 매핑 + 사전 후처리
             for i, item in enumerate(texts):
                 if i in trans_dict:
                     translated = trans_dict[i]
+                    # 사전 후처리 적용
+                    translated = apply_dict_postprocess(translated, item["text"], target_lang)
                 else:
                     translated = translate_with_dict(item["text"], target_lang)
 
@@ -484,10 +502,12 @@ Korean texts:
                         if idx < len(korean_list):
                             trans_dict[idx] = trans
 
-            # 결과 매핑
+            # 결과 매핑 + 사전 후처리
             for i, item in enumerate(texts):
                 if i in trans_dict:
                     translated = trans_dict[i]
+                    # 사전 후처리 적용
+                    translated = apply_dict_postprocess(translated, item["text"], target_lang)
                 else:
                     translated = translate_with_dict(item["text"], target_lang)
 
@@ -604,6 +624,8 @@ Korean texts:
                 for item in page_texts:
                     if current_idx in trans_dict:
                         translated = trans_dict[current_idx]
+                        # 사전 후처리 적용
+                        translated = apply_dict_postprocess(translated, item["text"], target_lang)
                     else:
                         translated = translate_with_dict(item["text"], target_lang)
 
@@ -723,10 +745,12 @@ Korean texts:
                         if idx < len(korean_list):
                             trans_dict[idx] = trans
 
-            # 결과 매핑
+            # 결과 매핑 + 사전 후처리
             for i, item in enumerate(texts):
                 if i in trans_dict:
                     translated = trans_dict[i]
+                    # 사전 후처리 적용
+                    translated = apply_dict_postprocess(translated, item["text"], target_lang)
                 else:
                     translated = translate_with_dict(item["text"], target_lang)
 
@@ -827,10 +851,12 @@ Korean texts:
                     if idx < len(korean_list):
                         trans_dict[idx] = trans
 
-            # 결과 매핑
+            # 결과 매핑 + 사전 후처리
             for i, item in enumerate(texts):
                 if i in trans_dict:
                     translated = trans_dict[i]
+                    # 사전 후처리 적용
+                    translated = apply_dict_postprocess(translated, item["text"], target_lang)
                 else:
                     translated = translate_with_dict(item["text"], target_lang)
 
@@ -1358,6 +1384,20 @@ HTML_TEMPLATE = """
             background: #6c757d;
             color: white;
         }
+        .dict-btn {
+            padding: 3px 8px;
+            border: 2px solid #28a745;
+            border-radius: 10px;
+            background: white;
+            color: #28a745;
+            cursor: pointer;
+            font-size: 0.7em;
+            transition: all 0.3s;
+        }
+        .dict-btn:hover {
+            background: #28a745;
+            color: white;
+        }
         input[type="file"] { display: none; }
 
         /* 모달 스타일 */
@@ -1756,6 +1796,126 @@ HTML_TEMPLATE = """
             background: #fffde7;
         }
 
+        /* 용어 사전 모달 스타일 */
+        .dict-modal {
+            width: 700px;
+            max-height: 80vh;
+        }
+        .dict-tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .dict-tab {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 20px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: all 0.2s;
+        }
+        .dict-tab:hover {
+            border-color: #667eea;
+        }
+        .dict-tab.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        .dict-add-form {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .dict-add-form input {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 0.95em;
+        }
+        .dict-add-form input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .dict-search {
+            margin-bottom: 10px;
+        }
+        .dict-search input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 0.95em;
+        }
+        .dict-search input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .dict-table-wrapper {
+            max-height: 350px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .dict-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .dict-table th, .dict-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .dict-table th {
+            background: #f8f9fa;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+        .dict-table tr:hover {
+            background: #f8f9fa;
+        }
+        .dict-table .actions {
+            display: flex;
+            gap: 5px;
+        }
+        .dict-table .edit-btn, .dict-table .delete-btn, .dict-table .save-btn, .dict-table .cancel-btn {
+            padding: 4px 8px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+        .dict-table .edit-btn {
+            background: #ffc107;
+            color: #333;
+        }
+        .dict-table .delete-btn {
+            background: #dc3545;
+            color: white;
+        }
+        .dict-table .save-btn {
+            background: #28a745;
+            color: white;
+        }
+        .dict-table .cancel-btn {
+            background: #6c757d;
+            color: white;
+        }
+        .dict-table .edit-input {
+            width: 100%;
+            padding: 5px;
+            border: 2px solid #667eea;
+            border-radius: 4px;
+        }
+        .dict-count {
+            color: #666;
+            font-size: 0.9em;
+        }
+
         /* 상태 메시지 */
         .status {
             text-align: center;
@@ -1862,6 +2022,7 @@ HTML_TEMPLATE = """
             <button type="button" class="lang-btn" data-lang="bengali">🇧🇩BN</button>
             <button type="button" class="file-select-btn" id="fileSelectBtn">📁 파일선택</button>
             <button type="button" class="translate-btn" id="translateBtn" disabled>🚀 번역</button>
+            <button type="button" class="dict-btn" id="dictBtn" title="용어 사전 관리">📖</button>
             <button type="button" class="settings-btn" id="settingsBtn">⚙️</button>
         </div>
 
@@ -1916,6 +2077,50 @@ HTML_TEMPLATE = """
                 <div class="modal-footer">
                     <button type="button" class="btn-secondary" id="cancelSettings">취소</button>
                     <button type="button" class="btn-primary" id="saveSettings">저장</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 용어 사전 모달 -->
+        <div class="modal-overlay" id="dictModal">
+            <div class="modal-content dict-modal">
+                <div class="modal-header">
+                    <h2>📖 용어 사전 관리</h2>
+                    <button class="modal-close" id="closeDict">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="dict-tabs">
+                        <button class="dict-tab active" data-lang="english">🇺🇸 영어</button>
+                        <button class="dict-tab" data-lang="vietnamese">🇻🇳 베트남어</button>
+                        <button class="dict-tab" data-lang="chinese">🇨🇳 중국어</button>
+                        <button class="dict-tab" data-lang="indonesian">🇮🇩 인도네시아어</button>
+                        <button class="dict-tab" data-lang="bengali">🇧🇩 벵골어</button>
+                    </div>
+                    <div class="dict-add-form">
+                        <input type="text" id="dictKorean" placeholder="한글 용어">
+                        <input type="text" id="dictTranslation" placeholder="번역">
+                        <button type="button" class="btn-primary" id="addTermBtn">➕ 추가</button>
+                    </div>
+                    <div class="dict-search">
+                        <input type="text" id="dictSearch" placeholder="🔍 검색...">
+                    </div>
+                    <div class="dict-table-wrapper">
+                        <table class="dict-table">
+                            <thead>
+                                <tr>
+                                    <th>한글</th>
+                                    <th>번역</th>
+                                    <th>작업</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dictBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <span class="dict-count" id="dictCount">총 0개 용어</span>
+                    <button type="button" class="btn-secondary" id="closeDictBtn">닫기</button>
                 </div>
             </div>
         </div>
@@ -2682,6 +2887,181 @@ HTML_TEMPLATE = """
 
             translateBtn.disabled = false;
         });
+
+        // ============================================================================
+        // 용어 사전 관리
+        // ============================================================================
+        const dictBtn = document.getElementById('dictBtn');
+        const dictModal = document.getElementById('dictModal');
+        const closeDict = document.getElementById('closeDict');
+        const closeDictBtn = document.getElementById('closeDictBtn');
+        const dictTabs = document.querySelectorAll('.dict-tab');
+        const dictBody = document.getElementById('dictBody');
+        const dictKorean = document.getElementById('dictKorean');
+        const dictTranslation = document.getElementById('dictTranslation');
+        const addTermBtn = document.getElementById('addTermBtn');
+        const dictSearch = document.getElementById('dictSearch');
+        const dictCount = document.getElementById('dictCount');
+
+        let currentDictLang = 'english';
+        let dictData = {};
+
+        // 모달 열기
+        dictBtn.addEventListener('click', async () => {
+            dictModal.classList.add('active');
+            await loadDictionary();
+        });
+
+        // 모달 닫기
+        closeDict.addEventListener('click', () => dictModal.classList.remove('active'));
+        closeDictBtn.addEventListener('click', () => dictModal.classList.remove('active'));
+        dictModal.addEventListener('click', (e) => {
+            if (e.target === dictModal) dictModal.classList.remove('active');
+        });
+
+        // 탭 전환
+        dictTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                dictTabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentDictLang = tab.dataset.lang;
+                renderDictTable();
+            });
+        });
+
+        // 사전 로드
+        async function loadDictionary() {
+            try {
+                const res = await fetch('/api/dictionary');
+                dictData = await res.json();
+                renderDictTable();
+            } catch (err) {
+                console.error('Failed to load dictionary:', err);
+            }
+        }
+
+        // 테이블 렌더링
+        function renderDictTable() {
+            const langDict = dictData[currentDictLang] || {};
+            const searchTerm = dictSearch.value.toLowerCase();
+
+            const entries = Object.entries(langDict)
+                .filter(([kr, trans]) =>
+                    kr.toLowerCase().includes(searchTerm) ||
+                    trans.toLowerCase().includes(searchTerm)
+                )
+                .sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+
+            dictBody.innerHTML = entries.map(([korean, translation]) => `
+                <tr data-korean="${korean}">
+                    <td class="korean-cell">${korean}</td>
+                    <td class="trans-cell">${translation}</td>
+                    <td class="actions">
+                        <button class="edit-btn" onclick="editTerm('${korean}')">✏️</button>
+                        <button class="delete-btn" onclick="deleteTerm('${korean}')">🗑️</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            dictCount.textContent = `총 ${entries.length}개 용어`;
+        }
+
+        // 검색
+        dictSearch.addEventListener('input', renderDictTable);
+
+        // 용어 추가
+        addTermBtn.addEventListener('click', async () => {
+            const korean = dictKorean.value.trim();
+            const translation = dictTranslation.value.trim();
+
+            if (!korean || !translation) {
+                alert('한글 용어와 번역을 모두 입력하세요.');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/dictionary/${currentDictLang}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ korean, translation })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    dictKorean.value = '';
+                    dictTranslation.value = '';
+                    await loadDictionary();
+                } else {
+                    alert('추가 실패: ' + data.error);
+                }
+            } catch (err) {
+                alert('오류: ' + err.message);
+            }
+        });
+
+        // 용어 수정
+        window.editTerm = function(korean) {
+            const row = document.querySelector(`tr[data-korean="${korean}"]`);
+            const transCell = row.querySelector('.trans-cell');
+            const actionsCell = row.querySelector('.actions');
+            const currentTrans = transCell.textContent;
+
+            transCell.innerHTML = `<input type="text" class="edit-input" value="${currentTrans}">`;
+            actionsCell.innerHTML = `
+                <button class="save-btn" onclick="saveTerm('${korean}')">💾</button>
+                <button class="cancel-btn" onclick="renderDictTable()">✖️</button>
+            `;
+            transCell.querySelector('input').focus();
+        };
+
+        // 용어 저장
+        window.saveTerm = async function(korean) {
+            const row = document.querySelector(`tr[data-korean="${korean}"]`);
+            const input = row.querySelector('.edit-input');
+            const translation = input.value.trim();
+
+            if (!translation) {
+                alert('번역을 입력하세요.');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/dictionary/${currentDictLang}/${encodeURIComponent(korean)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ translation })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    await loadDictionary();
+                } else {
+                    alert('수정 실패: ' + data.error);
+                }
+            } catch (err) {
+                alert('오류: ' + err.message);
+            }
+        };
+
+        // 용어 삭제
+        window.deleteTerm = async function(korean) {
+            if (!confirm(`"${korean}" 용어를 삭제하시겠습니까?`)) return;
+
+            try {
+                const res = await fetch(`/api/dictionary/${currentDictLang}/${encodeURIComponent(korean)}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    await loadDictionary();
+                } else {
+                    alert('삭제 실패: ' + data.error);
+                }
+            } catch (err) {
+                alert('오류: ' + err.message);
+            }
+        };
     </script>
 </body>
 </html>
@@ -3054,6 +3434,114 @@ def download_file(filename):
         as_attachment=True,
         download_name=filename
     )
+
+
+# ============================================================================
+# 용어 사전 API
+# ============================================================================
+
+@app.route('/api/dictionary', methods=['GET'])
+def get_dictionary():
+    """전체 용어 사전 조회"""
+    global GARMENT_DICT
+    GARMENT_DICT = load_garment_dict()  # 최신 데이터 로드
+    return jsonify(GARMENT_DICT)
+
+@app.route('/api/dictionary/<language>', methods=['GET'])
+def get_dictionary_by_language(language):
+    """특정 언어의 용어 사전 조회"""
+    global GARMENT_DICT
+    GARMENT_DICT = load_garment_dict()
+    if language in GARMENT_DICT:
+        return jsonify(GARMENT_DICT[language])
+    return jsonify({"error": f"Language '{language}' not found"}), 404
+
+@app.route('/api/dictionary/<language>', methods=['POST'])
+def add_term(language):
+    """용어 추가 (한글: 번역)"""
+    global GARMENT_DICT
+    GARMENT_DICT = load_garment_dict()
+
+    data = request.json
+    korean = data.get('korean', '').strip()
+    translation = data.get('translation', '').strip()
+
+    if not korean or not translation:
+        return jsonify({"error": "korean and translation are required"}), 400
+
+    if language not in GARMENT_DICT:
+        return jsonify({"error": f"Language '{language}' not found"}), 404
+
+    GARMENT_DICT[language][korean] = translation
+
+    if save_garment_dict(GARMENT_DICT):
+        return jsonify({"success": True, "korean": korean, "translation": translation})
+    return jsonify({"error": "Failed to save dictionary"}), 500
+
+@app.route('/api/dictionary/<language>/<korean>', methods=['PUT'])
+def update_term(language, korean):
+    """용어 수정"""
+    global GARMENT_DICT
+    GARMENT_DICT = load_garment_dict()
+
+    data = request.json
+    translation = data.get('translation', '').strip()
+
+    if not translation:
+        return jsonify({"error": "translation is required"}), 400
+
+    if language not in GARMENT_DICT:
+        return jsonify({"error": f"Language '{language}' not found"}), 404
+
+    if korean not in GARMENT_DICT[language]:
+        return jsonify({"error": f"Term '{korean}' not found"}), 404
+
+    GARMENT_DICT[language][korean] = translation
+
+    if save_garment_dict(GARMENT_DICT):
+        return jsonify({"success": True, "korean": korean, "translation": translation})
+    return jsonify({"error": "Failed to save dictionary"}), 500
+
+@app.route('/api/dictionary/<language>/<korean>', methods=['DELETE'])
+def delete_term(language, korean):
+    """용어 삭제"""
+    global GARMENT_DICT
+    GARMENT_DICT = load_garment_dict()
+
+    if language not in GARMENT_DICT:
+        return jsonify({"error": f"Language '{language}' not found"}), 404
+
+    if korean not in GARMENT_DICT[language]:
+        return jsonify({"error": f"Term '{korean}' not found"}), 404
+
+    del GARMENT_DICT[language][korean]
+
+    if save_garment_dict(GARMENT_DICT):
+        return jsonify({"success": True, "deleted": korean})
+    return jsonify({"error": "Failed to save dictionary"}), 500
+
+@app.route('/api/dictionary/bulk', methods=['POST'])
+def bulk_add_terms():
+    """여러 언어에 동시에 용어 추가"""
+    global GARMENT_DICT
+    GARMENT_DICT = load_garment_dict()
+
+    data = request.json
+    korean = data.get('korean', '').strip()
+    translations = data.get('translations', {})  # {language: translation}
+
+    if not korean:
+        return jsonify({"error": "korean is required"}), 400
+
+    updated = []
+    for lang, trans in translations.items():
+        if lang in GARMENT_DICT and trans.strip():
+            GARMENT_DICT[lang][korean] = trans.strip()
+            updated.append(lang)
+
+    if updated and save_garment_dict(GARMENT_DICT):
+        return jsonify({"success": True, "korean": korean, "updated_languages": updated})
+    return jsonify({"error": "No valid translations provided or save failed"}), 400
 
 
 if __name__ == '__main__':
