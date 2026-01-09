@@ -143,6 +143,23 @@ LANGUAGE_CONFIG = {
     }
 }
 
+# 약어 매핑 사전 (긴 텍스트 → 짧은 약어)
+ABBREVIATIONS = {
+    "Garment Matching": "G.M",
+    "G Matching": "G.M",
+    "Accessory Matching": "A.M",
+    "A Matching": "A.M",
+    "Consumption": "Cons.",
+    "NaturalZipper": "Nat.Zip",
+    "Natural Zipper": "Nat.Zip",
+    "FrontZipper": "Fr.Zip",
+    "Front Zipper": "Fr.Zip",
+    "SidePocket": "Side Pkt",
+    "Side Pocket": "Side Pkt",
+    "Factory Handling": "Fact.Hdl",
+    "Hood/Hem": "Hd/Hm",
+}
+
 # 의류 전문 용어 사전 파일 경로
 GARMENT_DICT_FILE = os.path.join(os.path.dirname(__file__), "garment_dict.json")
 
@@ -1179,6 +1196,110 @@ def get_text_color_for_background(bg_color):
         return (0, 0, 0)  # 밝은 배경 → 검정 텍스트
 
 
+def check_bbox_overlap(bbox1, bbox2):
+    """두 bbox가 겹치는지 확인
+
+    Args:
+        bbox1: (x, y, width, height) 형태의 튜플
+        bbox2: (x, y, width, height) 형태의 튜플
+
+    Returns:
+        bool: 겹치면 True
+    """
+    x1, y1, w1, h1 = bbox1
+    x2, y2, w2, h2 = bbox2
+
+    # 겹침 없음 조건 (하나라도 만족하면 겹치지 않음)
+    if x1 + w1 <= x2 or x2 + w2 <= x1:  # 좌우로 분리
+        return False
+    if y1 + h1 <= y2 or y2 + h2 <= y1:  # 상하로 분리
+        return False
+    return True
+
+
+def abbreviate_text(text, used_abbreviations):
+    """긴 텍스트를 약어로 축약
+
+    Args:
+        text: 원본 텍스트
+        used_abbreviations: 사용된 약어 추적용 set (수정됨)
+
+    Returns:
+        str: 축약된 텍스트
+    """
+    result = text
+    for full_text, abbr in ABBREVIATIONS.items():
+        if full_text in result:
+            result = result.replace(full_text, abbr)
+            used_abbreviations.add((abbr, full_text))  # (약어, 원문) 저장
+    return result
+
+
+def find_bottom_empty_area(image_height, all_bboxes, required_height=25):
+    """이미지 하단에서 빈 공간 찾기
+
+    Args:
+        image_height: 이미지 전체 높이
+        all_bboxes: 모든 텍스트 bbox 리스트 [(x, y, w, h), ...]
+        required_height: 필요한 최소 높이 (기본 25px)
+
+    Returns:
+        int or None: 범례를 넣을 y좌표, 공간 없으면 None
+    """
+    if not all_bboxes:
+        return image_height - required_height - 5
+
+    # 모든 bbox 중 가장 아래 y좌표 찾기
+    max_y = 0
+    for bbox in all_bboxes:
+        y = bbox[1] + bbox[3]  # y + height
+        if y > max_y:
+            max_y = y
+
+    # 하단 여백이 required_height 이상이면 사용 가능
+    if image_height - max_y >= required_height + 10:  # 10px 추가 마진
+        return max_y + 5  # 마지막 텍스트 아래 5px
+
+    return None  # 공간 없음
+
+
+def render_legend(draw, used_abbreviations, image_width, legend_y, font_size=8):
+    """범례를 이미지 하단 중앙에 렌더링
+
+    Args:
+        draw: PIL ImageDraw 객체
+        used_abbreviations: {(약어, 원문), ...} set
+        image_width: 이미지 너비
+        legend_y: 범례를 넣을 y좌표
+        font_size: 폰트 크기 (기본 8)
+    """
+    if not used_abbreviations:
+        return
+
+    # 범례 텍스트 생성: "* G.M=Garment Matching, A.M=Accessory Matching"
+    legend_parts = [f"{abbr}={full}" for abbr, full in sorted(used_abbreviations)]
+    legend_text = "* " + ", ".join(legend_parts)
+
+    # 폰트 로드
+    try:
+        font = ImageFont.truetype("arial.ttf", font_size)
+    except:
+        try:
+            font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", font_size)
+        except:
+            font = ImageFont.load_default()
+
+    # 텍스트 너비 계산
+    text_bbox = draw.textbbox((0, 0), legend_text, font=font)
+    text_width = text_bbox[2] - text_bbox[0]
+
+    # 중앙 정렬
+    x = (image_width - text_width) // 2
+
+    # 회색으로 작게 렌더링
+    draw.text((x, legend_y), legend_text, fill=(128, 128, 128), font=font)
+
+
 def is_vertical_text(bbox):
     """세로 텍스트 여부 판단 - 높이가 너비의 2배 이상이면 세로"""
     xs = [p[0] for p in bbox]
@@ -1218,7 +1339,7 @@ def draw_vertical_text(draw, text, x, y, font, fill, box_width, box_height):
 
 
 def replace_text_in_image(image_path, translations, output_path):
-    """이미지에서 한글 영역을 지우고 번역된 텍스트로 교체 - v1.4.2"""
+    """이미지에서 한글 영역을 지우고 번역된 텍스트로 교체 - v1.8.0 (겹침 감지 + 약어)"""
     img = cv2.imread(image_path)
     height, width = img.shape[:2]
 
@@ -1235,6 +1356,11 @@ def replace_text_in_image(image_path, translations, output_path):
 
     # 폰트 크기 (고정 폰트, 크기만 조절)
     font_sizes = [12, 11, 10, 9, 8, 7]
+
+    # ★ 겹침 감지용: 렌더링된 텍스트 bbox 추적
+    rendered_bboxes = []  # [(x, y, w, h), ...]
+    used_abbreviations = set()  # 사용된 약어 추적
+    all_text_bboxes = []  # 범례 위치 계산용
 
     for i, item in enumerate(translations):
         bbox = item["bbox"]
@@ -1263,9 +1389,9 @@ def replace_text_in_image(image_path, translations, output_path):
                     font = ImageFont.load_default()
                     break
 
-            text_bbox = draw.textbbox((0, 0), translated_text, font=font)
-            text_width = text_bbox[2] - text_bbox[0]
-            selected_text_height = text_bbox[3] - text_bbox[1]
+            text_bbox_size = draw.textbbox((0, 0), translated_text, font=font)
+            text_width = text_bbox_size[2] - text_bbox_size[0]
+            selected_text_height = text_bbox_size[3] - text_bbox_size[1]
 
             # 높이가 원본 박스에 맞으면 OK (너비는 오른쪽으로 확장 가능)
             if selected_text_height <= box_height * 1.2:
@@ -1277,6 +1403,25 @@ def replace_text_in_image(image_path, translations, output_path):
         y_center = int(min(ys)) + box_height // 2
         y_adjusted = y_center - actual_text_height // 2 - text_bbox_actual[1]
 
+        # ★ 현재 텍스트 bbox 계산 (렌더링 예정 위치)
+        current_text_bbox = (x, y_adjusted, text_width, actual_text_height)
+
+        # ★ 겹침 감지: 이전 렌더링된 텍스트와 겹치는지 확인
+        has_overlap = False
+        for prev_bbox in rendered_bboxes:
+            if check_bbox_overlap(current_text_bbox, prev_bbox):
+                has_overlap = True
+                break
+
+        # ★ 겹치면 약어로 변환
+        display_text = translated_text
+        if has_overlap:
+            display_text = abbreviate_text(translated_text, used_abbreviations)
+            # 약어로 변환 후 너비 재계산
+            text_bbox_abbr = draw.textbbox((0, 0), display_text, font=font)
+            text_width = text_bbox_abbr[2] - text_bbox_abbr[0]
+            current_text_bbox = (x, y_adjusted, text_width, actual_text_height)
+
         # ★ 배경색에 따라 텍스트 색상 결정 (어두운 배경 → 흰색 텍스트)
         bg_color = bg_colors.get(i, (255, 255, 255))
         text_color = get_text_color_for_background(bg_color)
@@ -1285,16 +1430,26 @@ def replace_text_in_image(image_path, translations, output_path):
 
         # ★ 세로 텍스트 판정 및 처리 (v1.5.0)
         if is_vertical_text(bbox):
-            draw_vertical_text(draw, translated_text, x, y, font, text_color_rgb, box_width, box_height)
+            draw_vertical_text(draw, display_text, x, y, font, text_color_rgb, box_width, box_height)
         else:
-            draw.text((x, y_adjusted), translated_text, fill=text_color_rgb, font=font)
+            draw.text((x, y_adjusted), display_text, fill=text_color_rgb, font=font)
+
+        # 렌더링된 bbox 기록
+        rendered_bboxes.append(current_text_bbox)
+        all_text_bboxes.append(current_text_bbox)
+
+    # ★ 범례 렌더링 (약어 사용 시)
+    if used_abbreviations:
+        legend_y = find_bottom_empty_area(height, all_text_bboxes)
+        if legend_y is not None:
+            render_legend(draw, used_abbreviations, width, legend_y)
 
     img_result.save(output_path)
     return output_path
 
 
 def generate_preview_image(image_base64, translations):
-    """미리보기 이미지 생성 (메모리에서 처리) - v1.4.2"""
+    """미리보기 이미지 생성 (메모리에서 처리) - v1.8.0 (겹침 감지 + 약어)"""
     # base64 이미지를 numpy 배열로 변환
     image_data = base64.b64decode(image_base64)
     nparr = np.frombuffer(image_data, np.uint8)
@@ -1314,6 +1469,11 @@ def generate_preview_image(image_base64, translations):
 
     font_sizes = [12, 11, 10, 9, 8, 7]
 
+    # ★ 겹침 감지용: 렌더링된 텍스트 bbox 추적
+    rendered_bboxes = []
+    used_abbreviations = set()
+    all_text_bboxes = []
+
     for i, item in enumerate(translations):
         bbox = item["bbox"]
         translated_text = item.get("translated", item.get("text", ""))
@@ -1327,6 +1487,7 @@ def generate_preview_image(image_base64, translations):
         y = int(min(ys))
 
         font = None
+        text_width = 0
         selected_text_height = 0
         for size in font_sizes:
             try:
@@ -1338,8 +1499,9 @@ def generate_preview_image(image_base64, translations):
                     font = ImageFont.load_default()
                     break
 
-            text_bbox = draw.textbbox((0, 0), translated_text, font=font)
-            selected_text_height = text_bbox[3] - text_bbox[1]
+            text_bbox_size = draw.textbbox((0, 0), translated_text, font=font)
+            text_width = text_bbox_size[2] - text_bbox_size[0]
+            selected_text_height = text_bbox_size[3] - text_bbox_size[1]
 
             if selected_text_height <= box_height * 1.2:
                 break
@@ -1350,6 +1512,24 @@ def generate_preview_image(image_base64, translations):
         y_center = int(min(ys)) + box_height // 2
         y_adjusted = y_center - actual_text_height // 2 - text_bbox_actual[1]
 
+        # ★ 현재 텍스트 bbox 계산
+        current_text_bbox = (x, y_adjusted, text_width, actual_text_height)
+
+        # ★ 겹침 감지
+        has_overlap = False
+        for prev_bbox in rendered_bboxes:
+            if check_bbox_overlap(current_text_bbox, prev_bbox):
+                has_overlap = True
+                break
+
+        # ★ 겹치면 약어로 변환
+        display_text = translated_text
+        if has_overlap:
+            display_text = abbreviate_text(translated_text, used_abbreviations)
+            text_bbox_abbr = draw.textbbox((0, 0), display_text, font=font)
+            text_width = text_bbox_abbr[2] - text_bbox_abbr[0]
+            current_text_bbox = (x, y_adjusted, text_width, actual_text_height)
+
         # ★ 배경색에 따라 텍스트 색상 결정
         bg_color = bg_colors.get(i, (255, 255, 255))
         text_color = get_text_color_for_background(bg_color)
@@ -1357,9 +1537,19 @@ def generate_preview_image(image_base64, translations):
 
         # ★ 세로 텍스트 판정 및 처리 (v1.5.0)
         if is_vertical_text(bbox):
-            draw_vertical_text(draw, translated_text, x, y, font, text_color_rgb, box_width, box_height)
+            draw_vertical_text(draw, display_text, x, y, font, text_color_rgb, box_width, box_height)
         else:
-            draw.text((x, y_adjusted), translated_text, fill=text_color_rgb, font=font)
+            draw.text((x, y_adjusted), display_text, fill=text_color_rgb, font=font)
+
+        # 렌더링된 bbox 기록
+        rendered_bboxes.append(current_text_bbox)
+        all_text_bboxes.append(current_text_bbox)
+
+    # ★ 범례 렌더링 (약어 사용 시)
+    if used_abbreviations:
+        legend_y = find_bottom_empty_area(height, all_text_bboxes)
+        if legend_y is not None:
+            render_legend(draw, used_abbreviations, width, legend_y)
 
     # 결과를 base64로 반환
     buffer = io.BytesIO()
