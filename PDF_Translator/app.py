@@ -1419,14 +1419,13 @@ def replace_text_in_image(image_path, translations, output_path):
                 has_overlap = True
                 break
 
+        # ★ 원본 텍스트 bbox 저장 (다음 셀 비교용)
+        original_text_bbox = current_text_bbox
+
         # ★ 겹치면 약어로 변환
         display_text = translated_text
         if has_overlap:
             display_text = abbreviate_text(translated_text, used_abbreviations)
-            # 약어로 변환 후 너비 재계산
-            text_bbox_abbr = draw.textbbox((0, 0), display_text, font=font)
-            text_width = text_bbox_abbr[2] - text_bbox_abbr[0]
-            current_text_bbox = (x, y_adjusted, text_width, actual_text_height)
 
         # ★ 배경색에 따라 텍스트 색상 결정 (어두운 배경 → 흰색 텍스트)
         bg_color = bg_colors.get(i, (255, 255, 255))
@@ -1440,8 +1439,8 @@ def replace_text_in_image(image_path, translations, output_path):
         else:
             draw.text((x, y_adjusted), display_text, fill=text_color_rgb, font=font)
 
-        # 렌더링된 bbox 기록
-        rendered_bboxes.append(current_text_bbox)
+        # 렌더링된 bbox 기록 (★ 원본 텍스트 bbox 사용 - 다음 셀 겹침 감지용)
+        rendered_bboxes.append(original_text_bbox)
         all_text_bboxes.append(current_text_bbox)
 
     # ★ 범례 렌더링 (약어 사용 시)
@@ -1534,13 +1533,13 @@ def generate_preview_image(image_base64, translations):
                 has_overlap = True
                 break
 
+        # ★ 원본 텍스트 bbox 저장 (다음 셀 비교용)
+        original_text_bbox = current_text_bbox
+
         # ★ 겹치면 약어로 변환
         display_text = translated_text
         if has_overlap:
             display_text = abbreviate_text(translated_text, used_abbreviations)
-            text_bbox_abbr = draw.textbbox((0, 0), display_text, font=font)
-            text_width = text_bbox_abbr[2] - text_bbox_abbr[0]
-            current_text_bbox = (x, y_adjusted, text_width, actual_text_height)
 
         # ★ 배경색에 따라 텍스트 색상 결정
         bg_color = bg_colors.get(i, (255, 255, 255))
@@ -1553,8 +1552,8 @@ def generate_preview_image(image_base64, translations):
         else:
             draw.text((x, y_adjusted), display_text, fill=text_color_rgb, font=font)
 
-        # 렌더링된 bbox 기록
-        rendered_bboxes.append(current_text_bbox)
+        # 렌더링된 bbox 기록 (★ 원본 텍스트 bbox 사용 - 다음 셀 겹침 감지용)
+        rendered_bboxes.append(original_text_bbox)
         all_text_bboxes.append(current_text_bbox)
 
     # ★ 범례 렌더링 (약어 사용 시)
