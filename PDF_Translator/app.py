@@ -57,6 +57,7 @@ import io
 import json
 import base64
 import tempfile
+import re
 import requests
 from datetime import datetime
 from flask import Flask, render_template_string, request, send_file, jsonify
@@ -85,7 +86,7 @@ AI_MODELS = {
         "default": "qwen2.5vl:latest"
     },
     "claude": {
-        "models": ["claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"],
+        "models": ["claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"],
         "default": "claude-sonnet-4-20250514"
     },
     "openai": {
@@ -278,8 +279,10 @@ def translate_with_dict(korean_text, target_lang):
 
 def translate_with_claude(image_path, texts, target_lang, api_key, model=None):
     """Claude API로 이미지 컨텍스트와 함께 번역"""
+    print(f"[Claude] translate_with_claude called - texts: {len(texts)}, model: {model}", flush=True)
     if model is None:
         model = AI_MODELS["claude"]["default"]
+    print(f"[Claude] Using model: {model}", flush=True)
     lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
 
     # 이미지를 base64로 인코딩
@@ -293,13 +296,19 @@ def translate_with_claude(image_path, texts, target_lang, api_key, model=None):
     korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(korean_list)])
 
     prompt = f"""This is a garment/clothing technical specification image (tech pack).
-Translate the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
-Keep translations SHORT and professional. Only respond with numbered translations in {lang_config['prompt_lang']}.
+Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
+
+RULES:
+- Translate EVERY item, even if it contains English or numbers
+- Keep translations SHORT and professional
+- Use format: "1. translation" (number + dot + space + translation)
+- Do NOT skip any item
+- Do NOT use markdown formatting like **bold**
 
 Korean texts:
 {korean_joined}
 
-{lang_config['prompt_lang']} translations (same numbering, SHORT answers only):"""
+{lang_config['prompt_lang']} translations (translate ALL {len(korean_list)} items):"""
 
     try:
         headers = {
@@ -332,29 +341,38 @@ Korean texts:
             ]
         }
 
+        print(f"[Claude] Calling API: {CLAUDE_API_URL}", flush=True)
         response = requests.post(
             CLAUDE_API_URL,
             headers=headers,
             json=payload,
             timeout=120
         )
+        print(f"[Claude] API response status: {response.status_code}", flush=True)
 
         if response.status_code == 200:
             result = response.json()
             response_text = result.get("content", [{}])[0].get("text", "").strip()
+            print(f"[Claude] Raw response:\n{response_text}", flush=True)
 
-            # 응답 파싱
+            # 응답 파싱 (정규표현식으로 다양한 형식 지원)
+            import re
             lines = response_text.split("\n")
             trans_dict = {}
             for line in lines:
                 line = line.strip()
-                if line and line[0].isdigit():
-                    parts = line.split(".", 1)
-                    if len(parts) == 2:
-                        idx = int(parts[0]) - 1
-                        trans = parts[1].strip()
-                        if idx < len(korean_list):
-                            trans_dict[idx] = trans
+                if not line:
+                    continue
+                # 다양한 번호 형식 지원: "1. text", "1) text", "**1.** text", "1: text"
+                match = re.match(r'^[*]*(\d+)[.*)\]:]+\s*[*]*\s*(.+)', line)
+                if match:
+                    idx = int(match.group(1)) - 1
+                    trans = match.group(2).strip()
+                    if idx < len(korean_list):
+                        trans_dict[idx] = trans
+                        print(f"[Claude] Parsed {idx+1}: {trans[:30]}...", flush=True)
+
+            print(f"[Claude] Parsed {len(trans_dict)}/{len(korean_list)} translations", flush=True)
 
             # 결과 매핑
             for i, item in enumerate(texts):
@@ -368,14 +386,14 @@ Korean texts:
                     "translated": translated
                 })
         else:
-            print(f"Claude API error: {response.status_code} - {response.text}")
+            print(f"[Claude] API error: {response.status_code} - {response.text}", flush=True)
             # fallback: 사전 번역
             for item in texts:
                 translated = translate_with_dict(item["text"], target_lang)
                 translations.append({**item, "translated": translated})
 
     except Exception as e:
-        print(f"Claude API error: {e}")
+        print(f"[Claude] Exception: {e}", flush=True)
         for item in texts:
             translated = translate_with_dict(item["text"], target_lang)
             translations.append({**item, "translated": translated})
@@ -400,13 +418,19 @@ def translate_with_openai(image_path, texts, target_lang, api_key, model=None):
     korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(korean_list)])
 
     prompt = f"""This is a garment/clothing technical specification image (tech pack).
-Translate the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
-Keep translations SHORT and professional. Only respond with numbered translations in {lang_config['prompt_lang']}.
+Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
+
+RULES:
+- Translate EVERY item, even if it contains English or numbers
+- Keep translations SHORT and professional
+- Use format: "1. translation" (number + dot + space + translation)
+- Do NOT skip any item
+- Do NOT use markdown formatting like **bold**
 
 Korean texts:
 {korean_joined}
 
-{lang_config['prompt_lang']} translations (same numbering, SHORT answers only):"""
+{lang_config['prompt_lang']} translations (translate ALL {len(korean_list)} items):"""
 
     try:
         headers = {
@@ -539,7 +563,7 @@ Korean texts:
             "generationConfig": {"maxOutputTokens": 8192}
         }
 
-        print(f"[Batch Translation] Sending {len(all_korean)} texts to Gemini...")
+        print(f"[Batch Translation] Sending {len(all_korean)} texts to Gemini...", flush=True)
 
         response = requests.post(url, headers=headers, json=payload, timeout=180)
 
@@ -547,23 +571,26 @@ Korean texts:
             result = response.json()
             response_text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
 
-            # 응답 파싱
+            # 디버깅: 원본 응답 일부 출력
+            print(f"[Batch Translation] Response preview (first 500 chars):\n{response_text[:500]}", flush=True)
+
+            # 응답 파싱 (정규표현식으로 다양한 형식 지원: 1. 1) **1.** 등)
             lines = response_text.split("\n")
             trans_dict = {}
             for line in lines:
                 line = line.strip()
-                if line and line[0].isdigit():
-                    parts = line.split(".", 1)
-                    if len(parts) == 2:
-                        try:
-                            idx = int(parts[0]) - 1
-                            trans = parts[1].strip()
-                            if 0 <= idx < len(all_korean):
-                                trans_dict[idx] = trans
-                        except ValueError:
-                            continue
+                # 다양한 번호 형식 지원: "1.", "1)", "**1.**", "1 .", "1:", "- 1." 등
+                match = re.match(r'^[\*\-\s]*(\d+)[\.\)\:\*\s]+(.+)', line)
+                if match:
+                    try:
+                        idx = int(match.group(1)) - 1
+                        trans = match.group(2).strip().strip('*').strip()
+                        if 0 <= idx < len(all_korean) and trans:
+                            trans_dict[idx] = trans
+                    except ValueError:
+                        continue
 
-            print(f"[Batch Translation] Got {len(trans_dict)}/{len(all_korean)} translations")
+            print(f"[Batch Translation] Got {len(trans_dict)}/{len(all_korean)} translations", flush=True)
 
             # 페이지별로 결과 분배
             result_by_page = {}
@@ -590,12 +617,12 @@ Korean texts:
 
             return result_by_page
         else:
-            print(f"Gemini Batch API error: {response.status_code} - {response.text}")
+            print(f"Gemini Batch API error: {response.status_code} - {response.text}", flush=True)
             # fallback: 사전 번역
             return _fallback_batch_translation(all_pages_texts, target_lang)
 
     except Exception as e:
-        print(f"Gemini Batch API error: {e}")
+        print(f"Gemini Batch API error: {e}", flush=True)
         return _fallback_batch_translation(all_pages_texts, target_lang)
 
 
@@ -629,13 +656,19 @@ def translate_with_gemini(image_path, texts, target_lang, api_key, model=None):
     korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(korean_list)])
 
     prompt = f"""This is a garment/clothing technical specification image (tech pack).
-Translate the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
-Keep translations SHORT and professional. Only respond with numbered translations in {lang_config['prompt_lang']}.
+Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
+
+RULES:
+- Translate EVERY item, even if it contains English or numbers
+- Keep translations SHORT and professional
+- Use format: "1. translation" (number + dot + space + translation)
+- Do NOT skip any item
+- Do NOT use markdown formatting like **bold**
 
 Korean texts:
 {korean_joined}
 
-{lang_config['prompt_lang']} translations (same numbering, SHORT answers only):"""
+{lang_config['prompt_lang']} translations (translate ALL {len(korean_list)} items):"""
 
     try:
         # Gemini API URL에 모델명과 API 키 추가
@@ -748,13 +781,19 @@ def translate_with_vlm(image_path, texts, target_lang, ai_engine="ollama", api_k
     korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(korean_list)])
 
     prompt = f"""This is a garment/clothing technical specification image (tech pack).
-Translate the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
-Keep translations SHORT and professional. Only respond with numbered translations in {lang_config['prompt_lang']}.
+Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
+
+RULES:
+- Translate EVERY item, even if it contains English or numbers
+- Keep translations SHORT and professional
+- Use format: "1. translation" (number + dot + space + translation)
+- Do NOT skip any item
+- Do NOT use markdown formatting like **bold**
 
 Korean texts:
 {korean_joined}
 
-{lang_config['prompt_lang']} translations (same numbering, SHORT answers only):"""
+{lang_config['prompt_lang']} translations (translate ALL {len(korean_list)} items):"""
 
     try:
         response = requests.post(
@@ -772,18 +811,21 @@ Korean texts:
             result = response.json()
             response_text = result.get("response", "").strip()
 
-            # 응답 파싱
+            # 응답 파싱 (정규표현식으로 다양한 형식 지원)
+            import re
             lines = response_text.split("\n")
             trans_dict = {}
             for line in lines:
                 line = line.strip()
-                if line and line[0].isdigit():
-                    parts = line.split(".", 1)
-                    if len(parts) == 2:
-                        idx = int(parts[0]) - 1
-                        trans = parts[1].strip()
-                        if idx < len(korean_list):
-                            trans_dict[idx] = trans
+                if not line:
+                    continue
+                # 다양한 번호 형식 지원: "1. text", "1) text", "**1.** text", "1: text"
+                match = re.match(r'^[*]*(\d+)[.*)\]:]+\s*[*]*\s*(.+)', line)
+                if match:
+                    idx = int(match.group(1)) - 1
+                    trans = match.group(2).strip()
+                    if idx < len(korean_list):
+                        trans_dict[idx] = trans
 
             # 결과 매핑
             for i, item in enumerate(texts):
@@ -1999,10 +2041,11 @@ HTML_TEMPLATE = """
                 }
             },
             claude: {
-                models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'],
+                models: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'],
                 default: 'claude-sonnet-4-20250514',
                 hints: {
-                    'claude-sonnet-4-20250514': '최신 모델, 고성능 (권장)',
+                    'claude-opus-4-20250514': 'Opus 4.5 - 최고 성능 (비용 높음)',
+                    'claude-sonnet-4-20250514': 'Sonnet 4 - 고성능 (권장)',
                     'claude-3-5-sonnet-20241022': '안정적인 성능',
                     'claude-3-haiku-20240307': '빠르고 저렴'
                 }
@@ -2162,7 +2205,7 @@ HTML_TEMPLATE = """
 
             closeModal();
             status.className = 'status success';
-            status.textContent = `✅ ${getEngineName(engine)} - ${model} 설정 완료`;
+            status.innerHTML = `✅ ${getEngineName(engine)} - ${model} 설정 완료`;
         });
 
         // 엔진 이름 반환
@@ -2269,7 +2312,7 @@ HTML_TEMPLATE = """
                     currentPage = 0;
 
                     status.className = 'status success';
-                    status.textContent = `✅ ${totalPages}페이지 분석 완료! 번역을 편집하세요.`;
+                    status.innerHTML = `✅ ${totalPages}페이지 분석 완료! 번역을 편집하세요.`;
 
                     // 에디터 표시
                     editorContainer.classList.add('active');
@@ -2279,7 +2322,7 @@ HTML_TEMPLATE = """
                     showPage(0);
                 } else {
                     status.className = 'status error';
-                    status.textContent = `❌ 오류: ${data.error}`;
+                    status.innerHTML = `❌ 오류: ${data.error}`;
                     initialGuide.style.display = 'block';
                 }
             } catch (err) {
@@ -2289,7 +2332,7 @@ HTML_TEMPLATE = """
                     progressInterval = null;
                 }
                 status.className = 'status error';
-                status.textContent = `❌ 오류: ${err.message}`;
+                status.innerHTML = `❌ 오류: ${err.message}`;
                 initialGuide.style.display = 'block';
             }
         }
@@ -2497,7 +2540,7 @@ HTML_TEMPLATE = """
             });
 
             status.className = 'status success';
-            status.textContent = `✅ 페이지 ${currentPage + 1} 번역 확정됨`;
+            status.innerHTML = `✅ 페이지 ${currentPage + 1} 번역 확정됨`;
         });
 
         // 모든 페이지 재번역 (언어 변경 시)
@@ -2542,10 +2585,10 @@ HTML_TEMPLATE = """
                 // 현재 페이지 다시 표시
                 showPage(currentPage);
                 status.className = 'status success';
-                status.textContent = `✅ 전체 ${pagesData.length}페이지 재번역 완료`;
+                status.innerHTML = `✅ 전체 ${pagesData.length}페이지 재번역 완료`;
             } catch (err) {
                 status.className = 'status error';
-                status.textContent = `❌ 재번역 오류: ${err.message}`;
+                status.innerHTML = `❌ 재번역 오류: ${err.message}`;
             }
         }
 
@@ -2617,7 +2660,7 @@ HTML_TEMPLATE = """
 
                 if (data.success) {
                     status.className = 'status success';
-                    status.textContent = `✅ 번역 완료! ${data.files.length}개 파일 생성됨`;
+                    status.innerHTML = `✅ 번역 완료! ${data.files.length}개 파일 생성됨`;
 
                     // 결과 표시
                     editorContainer.classList.remove('active');
@@ -2630,11 +2673,11 @@ HTML_TEMPLATE = """
                     `).join('');
                 } else {
                     status.className = 'status error';
-                    status.textContent = `❌ 오류: ${data.error}`;
+                    status.innerHTML = `❌ 오류: ${data.error}`;
                 }
             } catch (err) {
                 status.className = 'status error';
-                status.textContent = `❌ 오류: ${err.message}`;
+                status.innerHTML = `❌ 오류: ${err.message}`;
             }
 
             translateBtn.disabled = false;
@@ -2703,7 +2746,9 @@ def analyze():
         api_key = request.form.get('api_key', None)
         model = request.form.get('model', None)
 
-        print(f"[AI Engine] {ai_engine}, [Model] {model}")
+        print(f"[AI Engine] {ai_engine}, [Model] {model}", flush=True)
+        print(f"[Debug] ai_engine raw: '{request.form.get('ai_engine')}' -> parsed: '{ai_engine}'", flush=True)
+        print(f"[Debug] api_key present: {bool(api_key)}, length: {len(api_key) if api_key else 0}", flush=True)
 
         if file.filename == '':
             return jsonify({"success": False, "error": "파일이 선택되지 않았습니다"})
@@ -2730,7 +2775,7 @@ def analyze():
 
         # ===== 1단계: 모든 페이지 OCR =====
         for i, img_path in enumerate(image_paths):
-            print(f"[OCR {i+1}/{total_pages}] {img_path}")
+            print(f"[OCR {i+1}/{total_pages}] {img_path}", flush=True)
 
             # ★ 진행 상황: OCR
             update_progress("OCR", i+1, total_pages, f"페이지 {i+1}/{total_pages} OCR 처리 중...")
@@ -2741,7 +2786,7 @@ def analyze():
 
             # OCR
             texts = get_ocr_results(img_path)
-            print(f"  Found {len(texts)} Korean texts")
+            print(f"  Found {len(texts)} Korean texts", flush=True)
 
             all_pages_data.append({
                 "page_idx": i,
@@ -2753,9 +2798,11 @@ def analyze():
         # ===== 2단계: 배치 번역 (1회 API 호출) =====
         total_texts = sum(len(p["texts"]) for p in all_pages_data)
         update_progress("번역", 1, 1, f"전체 {total_texts}개 텍스트 일괄 번역 중... (1회 API 호출)")
-        print(f"[Batch Translation] Total {total_texts} texts from {total_pages} pages")
+        print(f"[Batch Translation] Total {total_texts} texts from {total_pages} pages", flush=True)
 
         # Gemini 배치 번역 사용 (Free Tier 최적화)
+        print(f"[Debug] Batch condition check: ai_engine=='{ai_engine}', api_key={bool(api_key)}, total_texts={total_texts}", flush=True)
+        print(f"[Debug] Will use batch? {ai_engine == 'gemini' and api_key and total_texts > 0}", flush=True)
         if ai_engine == "gemini" and api_key and total_texts > 0:
             batch_input = [{"page_idx": p["page_idx"], "texts": p["texts"]} for p in all_pages_data]
             translations_by_page = translate_batch_with_gemini(batch_input, target_lang, api_key, model)
