@@ -1384,8 +1384,8 @@ def replace_text_in_image(image_path, translations, output_path):
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
-        # 겹침 감지용: OCR bbox가 아닌 실제 렌더링 영역 사용
-        cell_bbox = (x, y_adjusted, box_width, actual_text_height)
+        # 겹침 감지용: OCR bbox 사용 (같은 행 판단을 위해 원본 좌표 사용)
+        cell_bbox = (x, int(min(ys)), box_width, box_height)
 
         text_render_info.append({
             'x': x, 'y': y, 'y_adjusted': y_adjusted,
@@ -1524,8 +1524,8 @@ def generate_preview_image(image_base64, translations):
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
-        # 겹침 감지용: OCR bbox가 아닌 실제 렌더링 영역 사용
-        cell_bbox = (x, y_adjusted, box_width, actual_text_height)
+        # 겹침 감지용: OCR bbox 사용 (같은 행 판단을 위해 원본 좌표 사용)
+        cell_bbox = (x, int(min(ys)), box_width, box_height)
 
         text_render_info.append({
             'x': x, 'y': y, 'y_adjusted': y_adjusted,
