@@ -1339,28 +1339,23 @@ def draw_vertical_text(draw, text, x, y, font, fill, box_width, box_height):
 
 
 def replace_text_in_image(image_path, translations, output_path):
-    """이미지에서 한글 영역을 지우고 번역된 텍스트로 교체 - v1.8.0 (겹침 감지 + 약어)"""
+    """이미지에서 한글 영역을 지우고 번역된 텍스트로 교체 - v1.8.1 (침범한 쪽 약어 처리)"""
     img = cv2.imread(image_path)
     height, width = img.shape[:2]
 
     # 1단계: 모든 텍스트 영역을 배경색으로 지우고, 배경색 저장
-    bg_colors = {}  # bbox별 배경색 저장
+    bg_colors = {}
     for i, item in enumerate(translations):
         bbox = item["bbox"]
         img, bg_color = erase_text_region(img, bbox)
         bg_colors[i] = bg_color
 
-    # 2단계: PIL로 변환하여 번역 텍스트 삽입
-    img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-    draw = ImageDraw.Draw(img_result)
-
-    # 폰트 크기 (고정 폰트, 크기만 조절)
+    # 2단계: 텍스트 정보 사전 계산 (겹침 감지용)
     font_sizes = [12, 11, 10, 9, 8, 7]
+    text_render_info = []
 
-    # ★ 겹침 감지용: 렌더링된 텍스트 bbox 추적
-    rendered_bboxes = []  # [(x, y, w, h), ...]
-    used_abbreviations = set()  # 사용된 약어 추적
-    all_text_bboxes = []  # 범례 위치 계산용
+    img_pil_temp = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw_temp = ImageDraw.Draw(img_pil_temp)
 
     for i, item in enumerate(translations):
         bbox = item["bbox"]
@@ -1371,14 +1366,11 @@ def replace_text_in_image(image_path, translations, output_path):
         box_width = max(xs) - min(xs)
         box_height = max(ys) - min(ys)
 
-        # 왼쪽 상단에서 시작 (왼쪽 정렬)
         x = int(min(xs))
         y = int(min(ys))
 
-        # 적절한 폰트 크기 선택
         font = None
         text_width = 0
-        selected_text_height = 0
         for size in font_sizes:
             try:
                 font = ImageFont.truetype("arial.ttf", size)
@@ -1389,59 +1381,77 @@ def replace_text_in_image(image_path, translations, output_path):
                     font = ImageFont.load_default()
                     break
 
-            text_bbox_size = draw.textbbox((0, 0), translated_text, font=font)
+            text_bbox_size = draw_temp.textbbox((0, 0), translated_text, font=font)
             text_width = text_bbox_size[2] - text_bbox_size[0]
             selected_text_height = text_bbox_size[3] - text_bbox_size[1]
 
-            # 높이가 원본 박스에 맞으면 OK (너비는 오른쪽으로 확장 가능)
             if selected_text_height <= box_height * 1.2:
                 break
 
-        # 세로 중앙 정렬
-        text_bbox_actual = draw.textbbox((0, 0), translated_text, font=font)
+        text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font)
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
         y_center = int(min(ys)) + box_height // 2
         y_adjusted = y_center - actual_text_height // 2 - text_bbox_actual[1]
 
-        # ★ 현재 텍스트 bbox 계산 (렌더링 예정 위치)
-        current_text_bbox = (x, y_adjusted, text_width, actual_text_height)
-
-        # ★ 원본 OCR 영역 (셀 경계)
-        original_cell_bbox = (x, y, box_width, box_height)
-
-        # ★ 겹침 감지: 양방향 체크
-        # 1) 내 텍스트가 이전 텍스트와 겹치는지
-        # 2) 이전 텍스트가 내 원본 영역(셀)을 침범했는지
-        has_overlap = False
-        for prev_bbox in rendered_bboxes:
-            # 내가 남을 침범 OR 남이 나를 침범
-            if check_bbox_overlap(current_text_bbox, prev_bbox) or check_bbox_overlap(original_cell_bbox, prev_bbox):
-                has_overlap = True
-                break
-
-        # ★ 원본 텍스트 bbox 저장 (다음 셀 비교용)
-        original_text_bbox = current_text_bbox
-
-        # ★ 겹치면 약어로 변환
-        display_text = translated_text
-        if has_overlap:
-            display_text = abbreviate_text(translated_text, used_abbreviations)
-
-        # ★ 배경색에 따라 텍스트 색상 결정 (어두운 배경 → 흰색 텍스트)
         bg_color = bg_colors.get(i, (255, 255, 255))
-        text_color = get_text_color_for_background(bg_color)
-        # PIL은 RGB 순서이므로 BGR→RGB 변환
+        is_vertical = is_vertical_text(bbox)
+        cell_bbox = (x, y, box_width, box_height)
+
+        text_render_info.append({
+            'x': x, 'y': y, 'y_adjusted': y_adjusted,
+            'text': translated_text, 'font': font,
+            'text_width': text_width, 'text_height': actual_text_height,
+            'cell_bbox': cell_bbox, 'bg_color': bg_color,
+            'is_vertical': is_vertical, 'bbox': bbox
+        })
+
+    # 3단계: 겹침 감지 - 왼쪽 텍스트가 오른쪽 셀을 침범하는지 체크
+    needs_abbreviation = set()
+    for i, info in enumerate(text_render_info):
+        text_right_edge = info['x'] + info['text_width']
+
+        for j, other_info in enumerate(text_render_info):
+            if i == j:
+                continue
+            other_cell_left = other_info['cell_bbox'][0]
+
+            # 현재 텍스트가 오른쪽 셀의 시작점을 침범했는지
+            if text_right_edge > other_cell_left and info['x'] < other_cell_left:
+                # Y축 겹침 체크 (같은 행인지)
+                my_y = info['cell_bbox'][1]
+                my_h = info['cell_bbox'][3]
+                other_y = other_info['cell_bbox'][1]
+                other_h = other_info['cell_bbox'][3]
+
+                if not (my_y + my_h <= other_y or other_y + other_h <= my_y):
+                    needs_abbreviation.add(i)  # 침범한 쪽(왼쪽)을 약어로
+                    break
+
+    # 4단계: 실제 렌더링
+    img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img_result)
+
+    used_abbreviations = set()
+    all_text_bboxes = []
+
+    for i, info in enumerate(text_render_info):
+        display_text = info['text']
+
+        if i in needs_abbreviation:
+            display_text = abbreviate_text(info['text'], used_abbreviations)
+
+        text_color = get_text_color_for_background(info['bg_color'])
         text_color_rgb = (text_color[2], text_color[1], text_color[0]) if text_color == (255, 255, 255) else text_color
 
-        # ★ 세로 텍스트 판정 및 처리 (v1.5.0)
-        if is_vertical_text(bbox):
-            draw_vertical_text(draw, display_text, x, y, font, text_color_rgb, box_width, box_height)
+        if info['is_vertical']:
+            draw_vertical_text(draw, display_text, info['x'], info['y'], info['font'],
+                             text_color_rgb, info['cell_bbox'][2], info['cell_bbox'][3])
         else:
-            draw.text((x, y_adjusted), display_text, fill=text_color_rgb, font=font)
+            draw.text((info['x'], info['y_adjusted']), display_text, fill=text_color_rgb, font=info['font'])
 
-        # 렌더링된 bbox 기록 (★ 원본 텍스트 bbox 사용 - 다음 셀 겹침 감지용)
-        rendered_bboxes.append(original_text_bbox)
-        all_text_bboxes.append(current_text_bbox)
+        text_bbox_new = draw.textbbox((0, 0), display_text, font=info['font'])
+        new_width = text_bbox_new[2] - text_bbox_new[0]
+        all_text_bboxes.append((info['x'], info['y_adjusted'], new_width, info['text_height']))
 
     # ★ 범례 렌더링 (약어 사용 시)
     if used_abbreviations:
@@ -1468,16 +1478,12 @@ def generate_preview_image(image_base64, translations):
         img, bg_color = erase_text_region(img, bbox)
         bg_colors[i] = bg_color
 
-    # 2단계: PIL로 변환하여 번역 텍스트 삽입
-    img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-    draw = ImageDraw.Draw(img_result)
-
+    # 2단계: 텍스트 정보 사전 계산 (겹침 감지용)
     font_sizes = [12, 11, 10, 9, 8, 7]
+    text_render_info = []  # [(x, y_adjusted, text, font, text_width, height, cell_bbox, bg_color, is_vertical)]
 
-    # ★ 겹침 감지용: 렌더링된 텍스트 bbox 추적
-    rendered_bboxes = []
-    used_abbreviations = set()
-    all_text_bboxes = []
+    img_pil_temp = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw_temp = ImageDraw.Draw(img_pil_temp)
 
     for i, item in enumerate(translations):
         bbox = item["bbox"]
@@ -1493,7 +1499,6 @@ def generate_preview_image(image_base64, translations):
 
         font = None
         text_width = 0
-        selected_text_height = 0
         for size in font_sizes:
             try:
                 font = ImageFont.truetype("arial.ttf", size)
@@ -1504,57 +1509,82 @@ def generate_preview_image(image_base64, translations):
                     font = ImageFont.load_default()
                     break
 
-            text_bbox_size = draw.textbbox((0, 0), translated_text, font=font)
+            text_bbox_size = draw_temp.textbbox((0, 0), translated_text, font=font)
             text_width = text_bbox_size[2] - text_bbox_size[0]
             selected_text_height = text_bbox_size[3] - text_bbox_size[1]
 
             if selected_text_height <= box_height * 1.2:
                 break
 
-        # 세로 중앙 정렬
-        text_bbox_actual = draw.textbbox((0, 0), translated_text, font=font)
+        text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font)
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
         y_center = int(min(ys)) + box_height // 2
         y_adjusted = y_center - actual_text_height // 2 - text_bbox_actual[1]
 
-        # ★ 현재 텍스트 bbox 계산 (렌더링 예정 위치)
-        current_text_bbox = (x, y_adjusted, text_width, actual_text_height)
-
-        # ★ 원본 OCR 영역 (셀 경계)
-        original_cell_bbox = (x, y, box_width, box_height)
-
-        # ★ 겹침 감지: 양방향 체크
-        # 1) 내 텍스트가 이전 텍스트와 겹치는지
-        # 2) 이전 텍스트가 내 원본 영역(셀)을 침범했는지
-        has_overlap = False
-        for prev_bbox in rendered_bboxes:
-            # 내가 남을 침범 OR 남이 나를 침범
-            if check_bbox_overlap(current_text_bbox, prev_bbox) or check_bbox_overlap(original_cell_bbox, prev_bbox):
-                has_overlap = True
-                break
-
-        # ★ 원본 텍스트 bbox 저장 (다음 셀 비교용)
-        original_text_bbox = current_text_bbox
-
-        # ★ 겹치면 약어로 변환
-        display_text = translated_text
-        if has_overlap:
-            display_text = abbreviate_text(translated_text, used_abbreviations)
-
-        # ★ 배경색에 따라 텍스트 색상 결정
         bg_color = bg_colors.get(i, (255, 255, 255))
-        text_color = get_text_color_for_background(bg_color)
+        is_vertical = is_vertical_text(bbox)
+        cell_bbox = (x, y, box_width, box_height)
+
+        text_render_info.append({
+            'x': x, 'y': y, 'y_adjusted': y_adjusted,
+            'text': translated_text, 'font': font,
+            'text_width': text_width, 'text_height': actual_text_height,
+            'cell_bbox': cell_bbox, 'bg_color': bg_color,
+            'is_vertical': is_vertical, 'bbox': bbox
+        })
+
+    # 3단계: 겹침 감지 - 왼쪽 텍스트가 오른쪽 셀을 침범하는지 체크
+    needs_abbreviation = set()
+    for i, info in enumerate(text_render_info):
+        # 현재 텍스트의 실제 렌더링 영역 (x ~ x+text_width)
+        text_right_edge = info['x'] + info['text_width']
+
+        # 오른쪽에 있는 모든 셀과 비교
+        for j, other_info in enumerate(text_render_info):
+            if i == j:
+                continue
+            other_cell_left = other_info['cell_bbox'][0]
+
+            # 현재 텍스트가 오른쪽 셀의 시작점을 침범했는지
+            if text_right_edge > other_cell_left and info['x'] < other_cell_left:
+                # Y축도 겹치는지 확인 (같은 행인지)
+                my_y = info['cell_bbox'][1]
+                my_h = info['cell_bbox'][3]
+                other_y = other_info['cell_bbox'][1]
+                other_h = other_info['cell_bbox'][3]
+
+                # Y축 겹침 체크
+                if not (my_y + my_h <= other_y or other_y + other_h <= my_y):
+                    needs_abbreviation.add(i)  # 침범한 쪽(왼쪽)을 약어로
+                    break
+
+    # 4단계: 실제 렌더링
+    img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img_result)
+
+    used_abbreviations = set()
+    all_text_bboxes = []
+
+    for i, info in enumerate(text_render_info):
+        display_text = info['text']
+
+        # 침범한 텍스트는 약어로 변환
+        if i in needs_abbreviation:
+            display_text = abbreviate_text(info['text'], used_abbreviations)
+
+        text_color = get_text_color_for_background(info['bg_color'])
         text_color_rgb = (text_color[2], text_color[1], text_color[0]) if text_color == (255, 255, 255) else text_color
 
-        # ★ 세로 텍스트 판정 및 처리 (v1.5.0)
-        if is_vertical_text(bbox):
-            draw_vertical_text(draw, display_text, x, y, font, text_color_rgb, box_width, box_height)
+        if info['is_vertical']:
+            draw_vertical_text(draw, display_text, info['x'], info['y'], info['font'],
+                             text_color_rgb, info['cell_bbox'][2], info['cell_bbox'][3])
         else:
-            draw.text((x, y_adjusted), display_text, fill=text_color_rgb, font=font)
+            draw.text((info['x'], info['y_adjusted']), display_text, fill=text_color_rgb, font=info['font'])
 
-        # 렌더링된 bbox 기록 (★ 원본 텍스트 bbox 사용 - 다음 셀 겹침 감지용)
-        rendered_bboxes.append(original_text_bbox)
-        all_text_bboxes.append(current_text_bbox)
+        # bbox 기록
+        text_bbox_new = draw.textbbox((0, 0), display_text, font=info['font'])
+        new_width = text_bbox_new[2] - text_bbox_new[0]
+        all_text_bboxes.append((info['x'], info['y_adjusted'], new_width, info['text_height']))
 
     # ★ 범례 렌더링 (약어 사용 시)
     if used_abbreviations:
