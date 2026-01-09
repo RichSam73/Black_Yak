@@ -1377,9 +1377,10 @@ def replace_text_in_image(image_path, translations, output_path):
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
         text_top_offset = text_bbox_actual[1]  # textbbox의 top offset (글리프 상단까지 거리)
 
-        # Y축 상단 정렬: OCR bbox의 top에 텍스트 상단을 맞춤
-        # anchor="lt" 사용 시 text_top_offset만큼 보정 필요
-        y_adjusted = int(min(ys)) - text_top_offset
+        # Y축 중앙 정렬: 셀 중앙에 텍스트 중앙을 맞춤
+        cell_top = int(min(ys))
+        cell_center = cell_top + box_height // 2
+        y_adjusted = cell_center - actual_text_height // 2 - text_top_offset
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
@@ -1516,9 +1517,10 @@ def generate_preview_image(image_base64, translations):
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
         text_top_offset = text_bbox_actual[1]  # textbbox의 top offset (글리프 상단까지 거리)
 
-        # Y축 상단 정렬: OCR bbox의 top에 텍스트 상단을 맞춤
-        # anchor="lt" 사용 시 text_top_offset만큼 보정 필요
-        y_adjusted = int(min(ys)) - text_top_offset
+        # Y축 중앙 정렬: 셀 중앙에 텍스트 중앙을 맞춤
+        cell_top = int(min(ys))
+        cell_center = cell_top + box_height // 2
+        y_adjusted = cell_center - actual_text_height // 2 - text_top_offset
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
