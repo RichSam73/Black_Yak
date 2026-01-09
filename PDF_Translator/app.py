@@ -1366,23 +1366,25 @@ def replace_text_in_image(image_path, translations, output_path):
                     font = ImageFont.load_default()
                     break
 
-            text_bbox_size = draw_temp.textbbox((0, 0), translated_text, font=font)
+            text_bbox_size = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
             text_width = text_bbox_size[2] - text_bbox_size[0]
             selected_text_height = text_bbox_size[3] - text_bbox_size[1]
 
             if selected_text_height <= box_height * 1.2:
                 break
 
-        text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font)
+        text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
+        # 중앙 정렬 (폰트 offset 제외)
         y_center = int(min(ys)) + box_height // 2
-        y_adjusted = y_center - actual_text_height // 2 - text_bbox_actual[1]
-        # 셀 상단을 침범하지 않도록 제한
-        y_adjusted = max(int(min(ys)), y_adjusted)
+        y_adjusted = y_center - actual_text_height // 2
+        # 셀 경계 내로 제한
+        y_adjusted = max(int(min(ys)), min(y_adjusted, int(max(ys)) - actual_text_height))
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
-        cell_bbox = (x, y, box_width, box_height)
+        # 겹침 감지용: OCR bbox가 아닌 실제 렌더링 영역 사용
+        cell_bbox = (x, y_adjusted, box_width, actual_text_height)
 
         text_render_info.append({
             'x': x, 'y': y, 'y_adjusted': y_adjusted,
@@ -1441,7 +1443,7 @@ def replace_text_in_image(image_path, translations, output_path):
             draw_vertical_text(draw, display_text, info['x'], info['y'], info['font'],
                              text_color_rgb, info['cell_bbox'][2], info['cell_bbox'][3])
         else:
-            draw.text((info['x'], info['y_adjusted']), display_text, fill=text_color_rgb, font=info['font'])
+            draw.text((info['x'], info['y_adjusted']), display_text, fill=text_color_rgb, font=info['font'], anchor="lt")
 
         text_bbox_new = draw.textbbox((0, 0), display_text, font=info['font'])
         new_width = text_bbox_new[2] - text_bbox_new[0]
@@ -1503,23 +1505,25 @@ def generate_preview_image(image_base64, translations):
                     font = ImageFont.load_default()
                     break
 
-            text_bbox_size = draw_temp.textbbox((0, 0), translated_text, font=font)
+            text_bbox_size = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
             text_width = text_bbox_size[2] - text_bbox_size[0]
             selected_text_height = text_bbox_size[3] - text_bbox_size[1]
 
             if selected_text_height <= box_height * 1.2:
                 break
 
-        text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font)
+        text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
+        # 중앙 정렬 (폰트 offset 제외)
         y_center = int(min(ys)) + box_height // 2
-        y_adjusted = y_center - actual_text_height // 2 - text_bbox_actual[1]
-        # 셀 상단을 침범하지 않도록 제한
-        y_adjusted = max(int(min(ys)), y_adjusted)
+        y_adjusted = y_center - actual_text_height // 2
+        # 셀 경계 내로 제한
+        y_adjusted = max(int(min(ys)), min(y_adjusted, int(max(ys)) - actual_text_height))
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
-        cell_bbox = (x, y, box_width, box_height)
+        # 겹침 감지용: OCR bbox가 아닌 실제 렌더링 영역 사용
+        cell_bbox = (x, y_adjusted, box_width, actual_text_height)
 
         text_render_info.append({
             'x': x, 'y': y, 'y_adjusted': y_adjusted,
@@ -1581,7 +1585,7 @@ def generate_preview_image(image_base64, translations):
             draw_vertical_text(draw, display_text, info['x'], info['y'], info['font'],
                              text_color_rgb, info['cell_bbox'][2], info['cell_bbox'][3])
         else:
-            draw.text((info['x'], info['y_adjusted']), display_text, fill=text_color_rgb, font=info['font'])
+            draw.text((info['x'], info['y_adjusted']), display_text, fill=text_color_rgb, font=info['font'], anchor="lt")
 
         # bbox 기록
         text_bbox_new = draw.textbbox((0, 0), display_text, font=info['font'])
