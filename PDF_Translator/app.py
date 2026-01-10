@@ -80,6 +80,7 @@ import requests
 import logging
 from collections import Counter
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed  # 병렬 처리용
 from flask import Flask, render_template_string, request, send_file, jsonify
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
@@ -310,6 +311,68 @@ def get_ocr_results(image_path):
                 })
 
     return texts
+
+
+def get_ocr_results_batch(image_paths):
+    """배치 OCR - 여러 이미지를 한번에 처리 (속도 향상)
+    
+    Args:
+        image_paths: 이미지 경로 리스트
+        
+    Returns:
+        list: 각 이미지별 OCR 결과 리스트
+    """
+    ocr = get_ocr_engine()
+    
+    # 모든 이미지를 RGB numpy 배열로 변환
+    images_rgb = []
+    for img_path in image_paths:
+        img_bgr = cv2.imread(img_path)
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        images_rgb.append(img_rgb)
+    
+    # 배치 OCR 실행
+    print(f"[Batch OCR] Processing {len(images_rgb)} images at once...", flush=True)
+    results = ocr.predict(images_rgb)
+    
+    # 결과 파싱
+    all_texts = []
+    for page_idx, result in enumerate(results if results else []):
+        texts = []
+        rec_texts = []
+        rec_scores = []
+        dt_polys = []
+        
+        # OCRResult 객체 처리
+        if hasattr(result, 'rec_texts'):
+            rec_texts = result.rec_texts or []
+            rec_scores = result.rec_scores or []
+            dt_polys = result.dt_polys if hasattr(result, 'dt_polys') and result.dt_polys is not None else []
+        elif isinstance(result, dict):
+            rec_texts = result.get('rec_text', result.get('rec_texts', []))
+            rec_scores = result.get('rec_score', result.get('rec_scores', []))
+            dt_polys = result.get('dt_polys', [])
+        
+        if isinstance(rec_texts, str):
+            rec_texts = [rec_texts]
+            rec_scores = [rec_scores]
+            dt_polys = [dt_polys]
+        
+        for text, score, poly in zip(rec_texts, rec_scores, dt_polys):
+            text_str = str(text)
+            has_korean = any('\uac00' <= c <= '\ud7a3' for c in text_str)
+            bbox = poly.tolist() if hasattr(poly, 'tolist') else poly
+            texts.append({
+                "bbox": bbox,
+                "text": text_str,
+                "confidence": float(score) if score else 1.0,
+                "has_korean": has_korean
+            })
+        
+        all_texts.append(texts)
+        print(f"  [Page {page_idx+1}] Found {len(texts)} texts", flush=True)
+    
+    return all_texts
 
 
 def translate_with_dict(korean_text, target_lang):
@@ -1026,6 +1089,56 @@ Korean texts:
             translations.append({**item, "translated": translated})
 
     return translations
+
+
+def translate_pages_parallel(pages_data, target_lang, ai_engine, api_key, model, max_workers=3):
+    """병렬 번역 - 여러 페이지를 동시에 번역 (Claude, OpenAI용)
+    
+    Args:
+        pages_data: [{"page_idx": 0, "img_path": "...", "texts": [...]}, ...]
+        target_lang: 대상 언어
+        ai_engine: AI 엔진 (claude, openai)
+        api_key: API 키
+        model: 모델명
+        max_workers: 동시 처리 스레드 수 (기본 3, API rate limit 고려)
+        
+    Returns:
+        dict: {page_idx: translations, ...}
+    """
+    results = {}
+    
+    def translate_single_page(page_data):
+        """단일 페이지 번역 (스레드에서 실행)"""
+        page_idx = page_data["page_idx"]
+        img_path = page_data["img_path"]
+        texts = page_data["texts"]
+        
+        if not texts:
+            return page_idx, []
+        
+        try:
+            translations = translate_with_vlm(img_path, texts, target_lang, ai_engine, api_key, model)
+            print(f"  [Parallel] Page {page_idx+1} done - {len(translations)} texts", flush=True)
+            return page_idx, translations
+        except Exception as e:
+            print(f"  [Parallel] Page {page_idx+1} ERROR: {e}", flush=True)
+            # 에러 시 원본 텍스트 반환
+            return page_idx, [{"bbox": t["bbox"], "text": t["text"], "translated": t["text"], 
+                             "has_korean": t.get("has_korean", True)} for t in texts]
+    
+    print(f"[Parallel Translation] Starting {len(pages_data)} pages with {max_workers} workers...", flush=True)
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # 모든 페이지 번역 작업 제출
+        futures = {executor.submit(translate_single_page, pd): pd["page_idx"] for pd in pages_data}
+        
+        # 완료되는 순서대로 결과 수집
+        for future in as_completed(futures):
+            page_idx, translations = future.result()
+            results[page_idx] = translations
+    
+    print(f"[Parallel Translation] All {len(results)} pages completed", flush=True)
+    return results
 
 
 def translate_with_vlm(image_path, texts, target_lang, ai_engine="ollama", api_key=None, model=None):
@@ -3835,7 +3948,7 @@ def get_progress():
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    """파일 업로드 + OCR + 초기 번역"""
+    """파일 업로드 + OCR + 초기 번역 (배치 OCR + 병렬 번역 최적화)"""
     try:
         if 'file' not in request.files:
             return jsonify({"success": False, "error": "파일이 없습니다"})
@@ -3868,46 +3981,41 @@ def analyze():
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         temp_image_paths[session_id] = image_paths
 
-        # 각 페이지 분석 (2단계: OCR 먼저, 번역은 배치로)
         pages = []
         total_pages = len(image_paths)
-        all_pages_data = []  # OCR 결과 임시 저장
+        all_pages_data = []
 
-        # ===== 1단계: 모든 페이지 OCR =====
-        for i, img_path in enumerate(image_paths):
-            print(f"[OCR {i+1}/{total_pages}] {img_path}", flush=True)
-
-            # ★ 진행 상황: OCR
-            update_progress("OCR", i+1, total_pages, f"페이지 {i+1}/{total_pages} OCR 처리 중...")
-
-            # 이미지를 base64로 인코딩
+        # ===== 1단계: 배치 OCR (모든 페이지 한번에) =====
+        update_progress("OCR", 1, total_pages, f"전체 {total_pages}개 페이지 일괄 OCR 처리 중...")
+        print(f"[Batch OCR] Processing {total_pages} pages at once...", flush=True)
+        
+        all_ocr_results = get_ocr_results_batch(image_paths)
+        
+        # OCR 결과와 이미지 정보 결합
+        for i, (img_path, texts) in enumerate(zip(image_paths, all_ocr_results)):
             with open(img_path, "rb") as f:
                 image_base64 = base64.b64encode(f.read()).decode()
-
-            # OCR
-            texts = get_ocr_results(img_path)
-            print(f"  Found {len(texts)} Korean texts", flush=True)
-
+            
             all_pages_data.append({
                 "page_idx": i,
                 "img_path": img_path,
                 "image_base64": image_base64,
                 "texts": texts
             })
+        
+        print(f"[Batch OCR] Complete - {sum(len(p['texts']) for p in all_pages_data)} total texts", flush=True)
 
-        # ===== 2단계: 배치 번역 (1회 API 호출) =====
+        # ===== 2단계: 번역 (엔진별 최적화) =====
         total_texts = sum(len(p["texts"]) for p in all_pages_data)
-        update_progress("번역", 1, 1, f"전체 {total_texts}개 텍스트 일괄 번역 중... (1회 API 호출)")
-        print(f"[Batch Translation] Total {total_texts} texts from {total_pages} pages", flush=True)
-
-        # Gemini 배치 번역 사용 (Free Tier 최적화)
-        print(f"[Debug] Batch condition check: ai_engine=='{ai_engine}', api_key={bool(api_key)}, total_texts={total_texts}", flush=True)
-        print(f"[Debug] Will use batch? {ai_engine == 'gemini' and api_key and total_texts > 0}", flush=True)
+        
         if ai_engine == "gemini" and api_key and total_texts > 0:
+            # Gemini: 배치 번역 (1회 API 호출)
+            update_progress("번역", 1, 1, f"전체 {total_texts}개 텍스트 일괄 번역 중... (Gemini 배치)")
+            print(f"[Gemini Batch] Total {total_texts} texts from {total_pages} pages", flush=True)
+            
             batch_input = [{"page_idx": p["page_idx"], "texts": p["texts"]} for p in all_pages_data]
             translations_by_page = translate_batch_with_gemini(batch_input, target_lang, api_key, model)
 
-            # 결과 조합
             for page_data in all_pages_data:
                 page_idx = page_data["page_idx"]
                 translations = translations_by_page.get(page_idx, [])
@@ -3917,8 +4025,28 @@ def analyze():
                     "translations": translations,
                     "confirmed": False
                 })
+                
+        elif ai_engine in ("claude", "openai") and api_key and total_texts > 0:
+            # Claude/OpenAI: 병렬 번역 (동시 API 호출)
+            update_progress("번역", 1, 1, f"전체 {total_texts}개 텍스트 병렬 번역 중... ({ai_engine.upper()} 병렬)")
+            print(f"[Parallel Translation] {ai_engine.upper()} - {total_pages} pages", flush=True)
+            
+            translations_by_page = translate_pages_parallel(
+                all_pages_data, target_lang, ai_engine, api_key, model, max_workers=3
+            )
+            
+            for page_data in all_pages_data:
+                page_idx = page_data["page_idx"]
+                translations = translations_by_page.get(page_idx, [])
+                pages.append({
+                    "image": page_data["image_base64"],
+                    "image_path": page_data["img_path"],
+                    "translations": translations,
+                    "confirmed": False
+                })
+                
         else:
-            # 기존 방식: 페이지별 번역 (Ollama, OpenAI 등)
+            # Ollama 등: 순차 번역 (로컬 모델은 병렬화 이점 적음)
             for page_data in all_pages_data:
                 update_progress("번역", page_data["page_idx"]+1, total_pages,
                                f"페이지 {page_data['page_idx']+1}/{total_pages} - {len(page_data['texts'])}개 텍스트 번역 중...")
