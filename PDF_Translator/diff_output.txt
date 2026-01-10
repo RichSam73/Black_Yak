@@ -1,0 +1,1061 @@
+diff --git a/PDF_Translator/app.py b/PDF_Translator/app.py
+index 3dc7679..347d99c 100644
+--- a/PDF_Translator/app.py
++++ b/PDF_Translator/app.py
+@@ -7,9 +7,20 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
+ """
+ 
+ # 버전 정보
+-VERSION = "1.7.0"
+-VERSION_DATE = "2026-01-09"
++VERSION = "1.8.1"
++VERSION_DATE = "2026-01-11"
+ VERSION_NOTES = """
++v1.8.1 (2026-01-11)
++- ★ 성능 로그 추가: Batch OCR, Claude API, Gemini Batch, 병렬 번역 타이밍 출력
++- ★ 확정 버튼 클릭 시 미리보기 즉시 갱신 복구
++- 디버깅 및 성능 분석용 상세 로그
++
++v1.8.0 (2026-01-10)
++- ★ 사전 구조 통합: {"한글": {"full": "번역", "abbr": "약어"}} 
++- ★ UI 약어 편집: 용어 사전에서 약어 직접 추가/수정 가능
++- 하드코딩된 ABBREVIATIONS 제거, 사전 기반 약어 시스템으로 전환
++- 장기적 확장성 개선 (category, note 등 필드 추가 용이)
++
+ v1.7.0 (2026-01-09)
+ - ★ 용어 사전 관리 기능: 의류 전문 용어 추가/수정/삭제 가능
+ - ★ 사전 후처리: AI 번역 후 사전 용어로 자동 교정 (일관성 향상)
+@@ -74,12 +85,14 @@ import requests
+ import logging
+ from collections import Counter
+ from datetime import datetime
++from concurrent.futures import ThreadPoolExecutor, as_completed  # 병렬 처리용
+ from flask import Flask, render_template_string, request, send_file, jsonify
+ from PIL import Image, ImageDraw, ImageFont
+ import numpy as np
+ from paddleocr import PaddleOCR
+ import cv2
+ import fitz  # PyMuPDF
++from img2table.document import Image as Img2TableImage  # 테이블 감지용
+ 
+ # ★ 로깅 설정 (겹침 감지 디버깅용)
+ LOG_FILE = os.path.join(os.path.dirname(__file__), 'overlap_debug.log')
+@@ -167,22 +180,22 @@ LANGUAGE_CONFIG = {
+     }
+ }
+ 
+-# 약어 매핑 사전 (긴 텍스트 → 짧은 약어)
+-ABBREVIATIONS = {
+-    "Garment Matching": "G.M",
+-    "G Matching": "G.M",
+-    "Accessory Matching": "A.M",
+-    "A Matching": "A.M",
+-    "Consumption": "Cons.",
+-    "NaturalZipper": "Nat.Zip",
+-    "Natural Zipper": "Nat.Zip",
+-    "FrontZipper": "Fr.Zip",
+-    "Front Zipper": "Fr.Zip",
+-    "SidePocket": "Side Pkt",
+-    "Side Pocket": "Side Pkt",
+-    "Factory Handling": "Fact.Hdl",
+-    "Hood/Hem": "Hd/Hm",
+-}
++# [레거시] 하드코딩된 약어 - 이제 garment_dict.json의 abbr 필드로 대체됨
++# ABBREVIATIONS = {
++#     "Garment Matching": "G.M",
++#     "G Matching": "G.M",
++#     "Accessory Matching": "A.M",
++#     "A Matching": "A.M",
++#     "Consumption": "Cons.",
++#     "NaturalZipper": "Nat.Zip",
++#     "Natural Zipper": "Nat.Zip",
++#     "FrontZipper": "Fr.Zip",
++#     "Front Zipper": "Fr.Zip",
++#     "SidePocket": "Side Pkt",
++#     "Side Pocket": "Side Pkt",
++#     "Factory Handling": "Fact.Hdl",
++#     "Hood/Hem": "Hd/Hm",
++# }
+ 
+ # 의류 전문 용어 사전 파일 경로
+ GARMENT_DICT_FILE = os.path.join(os.path.dirname(__file__), "garment_dict.json")
+@@ -305,6 +318,81 @@ def get_ocr_results(image_path):
+     return texts
+ 
+ 
++def get_ocr_results_batch(image_paths):
++    """배치 OCR - 여러 이미지를 한번에 처리 (속도 향상)
++    
++    Args:
++        image_paths: 이미지 경로 리스트
++        
++    Returns:
++        list: 각 이미지별 OCR 결과 리스트
++    """
++    import time
++    batch_start = time.time()
++    
++    ocr = get_ocr_engine()
++    
++    # 모든 이미지를 RGB numpy 배열로 변환
++    load_start = time.time()
++    images_rgb = []
++    for img_path in image_paths:
++        img_bgr = cv2.imread(img_path)
++        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
++        images_rgb.append(img_rgb)
++    load_time = time.time() - load_start
++    print(f"[Batch OCR] Image loading: {load_time:.2f}s for {len(images_rgb)} images", flush=True)
++    
++    # 배치 OCR 실행
++    ocr_start = time.time()
++    print(f"[Batch OCR] Running OCR on {len(images_rgb)} images...", flush=True)
++    results = ocr.predict(images_rgb)
++    ocr_time = time.time() - ocr_start
++    print(f"[Batch OCR] OCR inference: {ocr_time:.2f}s", flush=True)
++    
++    # 결과 파싱
++    all_texts = []
++    for page_idx, result in enumerate(results if results else []):
++        texts = []
++        rec_texts = []
++        rec_scores = []
++        dt_polys = []
++        
++        # OCRResult 객체 처리
++        if hasattr(result, 'rec_texts'):
++            rec_texts = result.rec_texts or []
++            rec_scores = result.rec_scores or []
++            dt_polys = result.dt_polys if hasattr(result, 'dt_polys') and result.dt_polys is not None else []
++        elif isinstance(result, dict):
++            rec_texts = result.get('rec_text', result.get('rec_texts', []))
++            rec_scores = result.get('rec_score', result.get('rec_scores', []))
++            dt_polys = result.get('dt_polys', [])
++        
++        if isinstance(rec_texts, str):
++            rec_texts = [rec_texts]
++            rec_scores = [rec_scores]
++            dt_polys = [dt_polys]
++        
++        for text, score, poly in zip(rec_texts, rec_scores, dt_polys):
++            text_str = str(text)
++            has_korean = any('\uac00' <= c <= '\ud7a3' for c in text_str)
++            bbox = poly.tolist() if hasattr(poly, 'tolist') else poly
++            texts.append({
++                "bbox": bbox,
++                "text": text_str,
++                "confidence": float(score) if score else 1.0,
++                "has_korean": has_korean
++            })
++        
++        all_texts.append(texts)
++        print(f"  [Page {page_idx+1}] Found {len(texts)} texts", flush=True)
++    
++    total_time = time.time() - batch_start
++    total_texts = sum(len(t) for t in all_texts)
++    print(f"[Batch OCR] TOTAL: {total_time:.2f}s for {len(image_paths)} pages, {total_texts} texts", flush=True)
++    
++    return all_texts
++
++
+ def translate_with_dict(korean_text, target_lang):
+     """사전 기반 번역 (fallback용)"""
+     result = korean_text
+@@ -338,16 +426,88 @@ def apply_dict_preprocess(korean_text, target_lang):
+     sorted_terms = sorted(dict_terms.items(), key=lambda x: len(x[0]), reverse=True)
+ 
+     term_idx = 1
+-    for korean_term, translation in sorted_terms:
++    for korean_term, term_data in sorted_terms:
+         if korean_term in result:
+             placeholder = f"<<TERM_{term_idx}>>"
+             result = result.replace(korean_term, placeholder)
+-            placeholder_map[placeholder] = translation
++            # 새 구조: term_data = {"full": "번역", "abbr": "약어"}
++            if isinstance(term_data, dict):
++                placeholder_map[placeholder] = term_data.get("full", "")
++            else:
++                # 레거시 호환: 단순 문자열인 경우
++                placeholder_map[placeholder] = term_data
+             term_idx += 1
+ 
+     return result, placeholder_map
+ 
+ 
++def detect_table_regions(image_path, max_avg_row_height=50):
++    """img2table을 사용하여 테이블 영역 감지
++    
++    Args:
++        image_path: 이미지 경로
++        max_avg_row_height: 테이블로 인정할 최대 평균 행 높이 (기본 50px)
++    
++    Returns:
++        list: 테이블 영역 bbox 리스트 [(x1, y1, x2, y2), ...]
++    """
++    try:
++        img = Img2TableImage(src=image_path)
++        tables = img.extract_tables()
++        logger.info(f"[Table Detection] Found {len(tables)} raw tables")
++        
++        table_regions = []
++        for idx, table in enumerate(tables):
++            # 행 높이 계산
++            if hasattr(table, 'content') and table.content:
++                row_heights = []
++                for row in table.content:
++                    if row:
++                        for cell in row:
++                            if cell and hasattr(cell, 'bbox'):
++                                cell_bbox = cell.bbox
++                                if hasattr(cell_bbox, 'y1') and hasattr(cell_bbox, 'y2'):
++                                    row_heights.append(cell_bbox.y2 - cell_bbox.y1)
++                                break
++                
++                if row_heights:
++                    avg_row_height = sum(row_heights) / len(row_heights)
++                    logger.info(f"[Table Detection] Table #{idx} avg row height: {avg_row_height:.1f}px")
++                    if avg_row_height > max_avg_row_height:
++                        logger.info(f"[Table Detection] Table #{idx} skipped (height > {max_avg_row_height}px)")
++                        continue
++            
++            # bbox 추출
++            if hasattr(table, 'bbox'):
++                bbox = table.bbox
++                if hasattr(bbox, 'x1'):
++                    table_regions.append((bbox.x1, bbox.y1, bbox.x2, bbox.y2))
++                    logger.info(f"[Table Detection] Table #{idx} added: ({bbox.x1}, {bbox.y1}, {bbox.x2}, {bbox.y2})")
++        
++        logger.info(f"[Table Detection] Final: {len(table_regions)} valid tables")
++        return table_regions
++    except Exception as e:
++        logger.error(f"[Table Detection] Error: {e}")
++        return []
++
++
++def is_inside_table(bbox, table_regions):
++    """텍스트 bbox가 테이블 영역 안에 있는지 확인"""
++    if not table_regions:
++        return False
++    
++    # bbox 중심점 계산
++    xs = [p[0] for p in bbox]
++    ys = [p[1] for p in bbox]
++    center_x = (min(xs) + max(xs)) / 2
++    center_y = (min(ys) + max(ys)) / 2
++    
++    for (tx1, ty1, tx2, ty2) in table_regions:
++        if tx1 <= center_x <= tx2 and ty1 <= center_y <= ty2:
++            return True
++    return False
++
++
+ def restore_placeholders(translated_text, placeholder_map):
+     """번역 결과에서 플레이스홀더를 사전 번역으로 복원
+ 
+@@ -362,9 +522,46 @@ def restore_placeholders(translated_text, placeholder_map):
+         ("23SS Hanger Loop <<TERM_1>>", {"<<TERM_1>>": "Consumption"})
+         → "23SS Hanger Loop Consumption"
+     """
++    import re
+     result = translated_text
++    
+     for placeholder, translation in placeholder_map.items():
++        # 원본 placeholder (예: <<TERM_1>>)
+         result = result.replace(placeholder, translation)
++        
++        # AI가 변형한 다양한 패턴도 처리
++        # <<TERM_1>> 에서 숫자 추출
++        match = re.search(r'TERM_(\d+)', placeholder)
++        if match:
++            term_num = match.group(1)
++            # 다양한 변형 패턴 처리 (정확한 문자열 매칭)
++            variations = [
++                f"TERM_{term_num}",           # TERM_1 (꺾쇠 제거됨)
++                f"TERM {term_num}",           # TERM 1 (언더스코어 제거됨)
++                f"<TERM_{term_num}>",         # <TERM_1> (꺾쇠 하나만)
++                f"[TERM_{term_num}]",         # [TERM_1] (대괄호로 변형)
++                f"(TERM_{term_num})",         # (TERM_1) (괄호로 변형)
++                f"{{TERM_{term_num}}}",       # {TERM_1} (중괄호로 변형)
++                f"TERM{term_num}",            # TERM1 (언더스코어 완전 제거)
++                f"Term_{term_num}",           # Term_1 (대소문자 변형)
++                f"term_{term_num}",           # term_1 (소문자 변형)
++            ]
++            for var in variations:
++                if var in result:
++                    result = result.replace(var, translation)
++            
++            # 정규식으로 더 유연한 패턴 매칭 (공백, 특수문자 포함)
++            # 예: "TERM _ 1", "TERM- 1", "TERM_1." 등
++            flexible_patterns = [
++                rf'<<\s*TERM[_\s-]*{term_num}\s*>>',  # << TERM_1 >> 등
++                rf'<\s*TERM[_\s-]*{term_num}\s*>',    # < TERM_1 > 등
++                rf'\[\s*TERM[_\s-]*{term_num}\s*\]',  # [ TERM_1 ] 등
++                rf'\(\s*TERM[_\s-]*{term_num}\s*\)',  # ( TERM_1 ) 등
++                rf'TERM[_\s-]*{term_num}(?![0-9])',   # TERM_1, TERM 1, TERM-1 (뒤에 숫자 없을 때만)
++            ]
++            for pattern in flexible_patterns:
++                result = re.sub(pattern, translation, result, flags=re.IGNORECASE)
++    
+     return result
+ 
+ 
+@@ -396,6 +593,9 @@ def apply_dict_postprocess(translated_text, original_korean, target_lang):
+ 
+ def translate_with_claude(image_path, texts, target_lang, api_key, model=None):
+     """Claude API로 이미지 컨텍스트와 함께 번역 (Placeholder 방식 적용)"""
++    import time
++    api_start = time.time()
++    
+     print(f"[Claude] translate_with_claude called - texts: {len(texts)}, model: {model}", flush=True)
+     if model is None:
+         model = AI_MODELS["claude"]["default"]
+@@ -475,13 +675,15 @@ Korean texts:
+         }
+ 
+         print(f"[Claude] Calling API: {CLAUDE_API_URL}", flush=True)
++        request_start = time.time()
+         response = requests.post(
+             CLAUDE_API_URL,
+             headers=headers,
+             json=payload,
+             timeout=120
+         )
+-        print(f"[Claude] API response status: {response.status_code}", flush=True)
++        api_time = time.time() - request_start
++        print(f"[Claude] API response status: {response.status_code} (took {api_time:.2f}s)", flush=True)
+ 
+         if response.status_code == 200:
+             result = response.json()
+@@ -547,6 +749,8 @@ Korean texts:
+                 translated = item["text"]  # 영어 원본 유지
+             translations.append({**item, "translated": translated})
+ 
++    total_time = time.time() - api_start
++    print(f"[Claude] TOTAL: {total_time:.2f}s for {len(texts)} texts ({len(korean_list)} Korean)", flush=True)
+     return translations
+ 
+ 
+@@ -701,9 +905,16 @@ def translate_batch_with_gemini(all_pages_texts, target_lang, api_key, model=Non
+     Returns:
+         {page_idx: [translated_texts], ...}
+     """
++    import time
++    batch_start = time.time()
++    
+     if model is None:
+         model = AI_MODELS["gemini"]["default"]
+     lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
++    
++    total_pages = len(all_pages_texts)
++    total_texts = sum(len(p["texts"]) for p in all_pages_texts)
++    print(f"[Gemini Batch] Starting batch translation: {total_pages} pages, {total_texts} texts", flush=True)
+ 
+     # 모든 페이지의 텍스트를 하나의 리스트로 합침 (페이지 구분 포함)
+     all_korean = []
+@@ -801,6 +1012,8 @@ Korean texts:
+ 
+                 result_by_page[page_idx] = page_translations
+ 
++            total_time = time.time() - batch_start
++            print(f"[Gemini Batch] TOTAL: {total_time:.2f}s for {total_pages} pages, {total_texts} texts (1 API call)", flush=True)
+             return result_by_page
+         else:
+             print(f"Gemini Batch API error: {response.status_code} - {response.text}", flush=True)
+@@ -949,6 +1162,66 @@ Korean texts:
+     return translations
+ 
+ 
++def translate_pages_parallel(pages_data, target_lang, ai_engine, api_key, model, max_workers=3):
++    """병렬 번역 - 여러 페이지를 동시에 번역 (Claude, OpenAI용)
++    
++    Args:
++        pages_data: [{"page_idx": 0, "img_path": "...", "texts": [...]}, ...]
++        target_lang: 대상 언어
++        ai_engine: AI 엔진 (claude, openai)
++        api_key: API 키
++        model: 모델명
++        max_workers: 동시 처리 스레드 수 (기본 3, API rate limit 고려)
++        
++    Returns:
++        dict: {page_idx: translations, ...}
++    """
++    import time
++    parallel_start = time.time()
++    results = {}
++    page_times = {}  # 각 페이지별 소요 시간
++    
++    def translate_single_page(page_data):
++        """단일 페이지 번역 (스레드에서 실행)"""
++        page_start = time.time()
++        page_idx = page_data["page_idx"]
++        img_path = page_data["img_path"]
++        texts = page_data["texts"]
++        
++        if not texts:
++            return page_idx, [], 0
++        
++        try:
++            translations = translate_with_vlm(img_path, texts, target_lang, ai_engine, api_key, model)
++            elapsed = time.time() - page_start
++            print(f"  [Parallel] Page {page_idx+1} done - {len(translations)} texts in {elapsed:.2f}s", flush=True)
++            return page_idx, translations, elapsed
++        except Exception as e:
++            elapsed = time.time() - page_start
++            print(f"  [Parallel] Page {page_idx+1} ERROR in {elapsed:.2f}s: {e}", flush=True)
++            # 에러 시 원본 텍스트 반환
++            return page_idx, [{"bbox": t["bbox"], "text": t["text"], "translated": t["text"], 
++                             "has_korean": t.get("has_korean", True)} for t in texts], elapsed
++    
++    total_texts = sum(len(p["texts"]) for p in pages_data)
++    print(f"[Parallel Translation] Starting {len(pages_data)} pages ({total_texts} texts) with {max_workers} workers...", flush=True)
++    
++    with ThreadPoolExecutor(max_workers=max_workers) as executor:
++        # 모든 페이지 번역 작업 제출
++        futures = {executor.submit(translate_single_page, pd): pd["page_idx"] for pd in pages_data}
++        
++        # 완료되는 순서대로 결과 수집
++        for future in as_completed(futures):
++            page_idx, translations, elapsed = future.result()
++            results[page_idx] = translations
++            page_times[page_idx] = elapsed
++    
++    total_time = time.time() - parallel_start
++    avg_time = sum(page_times.values()) / len(page_times) if page_times else 0
++    print(f"[Parallel Translation] TOTAL: {total_time:.2f}s (avg per page: {avg_time:.2f}s, workers: {max_workers})", flush=True)
++    return results
++
++
+ def translate_with_vlm(image_path, texts, target_lang, ai_engine="ollama", api_key=None, model=None):
+     """VLM으로 이미지 컨텍스트와 함께 번역 (Ollama, Claude, GPT-4, Gemini)"""
+ 
+@@ -1264,21 +1537,30 @@ def check_bbox_overlap(bbox1, bbox2):
+     return True
+ 
+ 
+-def abbreviate_text(text, used_abbreviations):
+-    """긴 텍스트를 약어로 축약
++def abbreviate_text(text, used_abbreviations, target_lang="english"):
++    """긴 텍스트를 약어로 축약 (사전 기반)
+ 
+     Args:
+         text: 원본 텍스트
+         used_abbreviations: 사용된 약어 추적용 set (수정됨)
++        target_lang: 대상 언어 (사전에서 약어 조회용)
+ 
+     Returns:
+         str: 축약된 텍스트
+     """
+     result = text
+-    for full_text, abbr in ABBREVIATIONS.items():
+-        if full_text in result:
+-            result = result.replace(full_text, abbr)
+-            used_abbreviations.add((abbr, full_text))  # (약어, 원문) 저장
++    
++    # 사전에서 약어 조회
++    if target_lang in GARMENT_DICT:
++        lang_dict = GARMENT_DICT[target_lang]
++        for korean_term, term_data in lang_dict.items():
++            if isinstance(term_data, dict):
++                full_text = term_data.get("full", "")
++                abbr = term_data.get("abbr", "")
++                if abbr and full_text in result:
++                    result = result.replace(full_text, abbr)
++                    used_abbreviations.add((abbr, full_text))  # (약어, 원문) 저장
++    
+     return result
+ 
+ 
+@@ -1385,10 +1667,13 @@ def draw_vertical_text(draw, text, x, y, font, fill, box_width, box_height):
+         current_y += char_height
+ 
+ 
+-def replace_text_in_image(image_path, translations, output_path):
++def replace_text_in_image(image_path, translations, output_path, target_lang="english"):
+     """이미지에서 한글 영역을 지우고 번역된 텍스트로 교체 - v1.8.2 (영어 텍스트 유지, 겹침 감지용 포함)"""
+     img = cv2.imread(image_path)
+     height, width = img.shape[:2]
++    
++    # ★ 테이블 영역 감지 (중앙 정렬 적용 여부 판단용)
++    table_regions = detect_table_regions(image_path)
+ 
+     # 1단계: 한글 텍스트 영역만 배경색으로 지우기 (영어는 원본 유지)
+     bg_colors = {}
+@@ -1454,6 +1739,8 @@ def replace_text_in_image(image_path, translations, output_path):
+         is_vertical = is_vertical_text(bbox)
+         # 겹침 감지용: OCR bbox 사용 (같은 행 판단을 위해 원본 좌표 사용)
+         cell_bbox = (x, int(min(ys)), box_width, box_height)
++        # ★ 테이블 안에 있는지 확인
++        in_table = is_inside_table(bbox, table_regions)
+ 
+         text_render_info.append({
+             'x': x, 'y': y, 'y_adjusted': y_adjusted,
+@@ -1461,7 +1748,8 @@ def replace_text_in_image(image_path, translations, output_path):
+             'text_width': text_width, 'text_height': actual_text_height,
+             'cell_bbox': cell_bbox, 'bg_color': bg_color,
+             'is_vertical': is_vertical, 'bbox': bbox,
+-            'has_korean': item.get("has_korean", True)  # 한글 포함 여부 플래그
++            'has_korean': item.get("has_korean", True),  # 한글 포함 여부 플래그
++            'is_in_table': in_table  # ★ 테이블 내 여부
+         })
+ 
+     # 3단계: 겹침 감지 - 왼쪽 텍스트가 오른쪽 셀을 침범하는지 체크
+@@ -1528,7 +1816,7 @@ def replace_text_in_image(image_path, translations, output_path):
+         display_text = info['text']
+ 
+         if i in needs_abbreviation:
+-            display_text = abbreviate_text(info['text'], used_abbreviations)
++            display_text = abbreviate_text(info['text'], used_abbreviations, target_lang)
+ 
+         text_color = get_text_color_for_background(info['bg_color'])
+         text_color_rgb = (text_color[2], text_color[1], text_color[0]) if text_color == (255, 255, 255) else text_color
+@@ -1538,7 +1826,9 @@ def replace_text_in_image(image_path, translations, output_path):
+                              text_color_rgb, info['cell_bbox'][2], info['cell_bbox'][3])
+         else:
+             # 클리핑: 텍스트를 임시 이미지에 그린 후 셀 높이만큼만 잘라서 붙임
++            cell_left = info['cell_bbox'][0]
+             cell_top = info['cell_bbox'][1]
++            cell_width = info['cell_bbox'][2]
+             cell_height = info['cell_bbox'][3]
+ 
+             # 텍스트 bbox 계산 (충분한 여백에서)
+@@ -1569,8 +1859,20 @@ def replace_text_in_image(image_path, translations, output_path):
+                 # 텍스트가 셀보다 작음 → 셀 중앙에 배치
+                 paste_y = cell_top + (cell_height - text_height_temp) // 2 + y_offset
+ 
++            # ★ X축 정렬: 테이블 안이면 중앙, 아니면 왼쪽
++            if info.get('is_in_table', False):
++                # 테이블 내 텍스트 → 중앙 정렬
++                original_center_x = cell_left + cell_width // 2
++                paste_x = original_center_x - text_width_temp // 2
++                # 왼쪽 경계 제한
++                if paste_x < cell_left:
++                    paste_x = cell_left
++            else:
++                # 테이블 밖 텍스트 → 왼쪽 정렬
++                paste_x = info['x']
++
+             # 원본 이미지에 붙여넣기
+-            img_result.paste(temp_img, (info['x'], paste_y), temp_img)
++            img_result.paste(temp_img, (paste_x, paste_y), temp_img)
+ 
+         text_bbox_new = draw.textbbox((0, 0), display_text, font=info['font'])
+         new_width = text_bbox_new[2] - text_bbox_new[0]
+@@ -1586,13 +1888,22 @@ def replace_text_in_image(image_path, translations, output_path):
+     return output_path
+ 
+ 
+-def generate_preview_image(image_base64, translations):
++def generate_preview_image(image_base64, translations, target_lang='english'):
+     """미리보기 이미지 생성 (메모리에서 처리) - v1.8.0 (겹침 감지 + 약어)"""
+     # base64 이미지를 numpy 배열로 변환
+     image_data = base64.b64decode(image_base64)
+     nparr = np.frombuffer(image_data, np.uint8)
+     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+     height, width = img.shape[:2]
++    
++    # ★ 테이블 영역 감지 (중앙 정렬 적용 여부 판단용)
++    temp_img_path = os.path.join(UPLOAD_FOLDER, f"temp_table_detect_{id(image_base64)}.png")
++    cv2.imwrite(temp_img_path, img)
++    table_regions = detect_table_regions(temp_img_path)
++    try:
++        os.remove(temp_img_path)
++    except:
++        pass
+ 
+     # 1단계: 한글 텍스트 영역만 배경색으로 지우기 (영어는 원본 유지)
+     bg_colors = {}
+@@ -1658,6 +1969,8 @@ def generate_preview_image(image_base64, translations):
+         is_vertical = is_vertical_text(bbox)
+         # 겹침 감지용: OCR bbox 사용 (같은 행 판단을 위해 원본 좌표 사용)
+         cell_bbox = (x, int(min(ys)), box_width, box_height)
++        # ★ 테이블 안에 있는지 확인
++        in_table = is_inside_table(bbox, table_regions)
+ 
+         text_render_info.append({
+             'x': x, 'y': y, 'y_adjusted': y_adjusted,
+@@ -1665,7 +1978,8 @@ def generate_preview_image(image_base64, translations):
+             'text_width': text_width, 'text_height': actual_text_height,
+             'cell_bbox': cell_bbox, 'bg_color': bg_color,
+             'is_vertical': is_vertical, 'bbox': bbox,
+-            'has_korean': item.get("has_korean", True)  # 한글 포함 여부 플래그
++            'has_korean': item.get("has_korean", True),  # 한글 포함 여부 플래그
++            'is_in_table': in_table  # ★ 테이블 내 여부
+         })
+ 
+     # 3단계: 겹침 감지 - 왼쪽 텍스트가 오른쪽 셀을 침범하는지 체크
+@@ -1735,7 +2049,7 @@ def generate_preview_image(image_base64, translations):
+ 
+         # 침범한 텍스트는 약어로 변환
+         if i in needs_abbreviation:
+-            display_text = abbreviate_text(info['text'], used_abbreviations)
++            display_text = abbreviate_text(info['text'], used_abbreviations, target_lang)
+ 
+         text_color = get_text_color_for_background(info['bg_color'])
+         text_color_rgb = (text_color[2], text_color[1], text_color[0]) if text_color == (255, 255, 255) else text_color
+@@ -1745,7 +2059,9 @@ def generate_preview_image(image_base64, translations):
+                              text_color_rgb, info['cell_bbox'][2], info['cell_bbox'][3])
+         else:
+             # 클리핑: 텍스트를 임시 이미지에 그린 후 셀 높이만큼만 잘라서 붙임
++            cell_left = info['cell_bbox'][0]
+             cell_top = info['cell_bbox'][1]
++            cell_width = info['cell_bbox'][2]
+             cell_height = info['cell_bbox'][3]
+ 
+             # 텍스트 bbox 계산 (충분한 여백에서)
+@@ -1776,8 +2092,20 @@ def generate_preview_image(image_base64, translations):
+                 # 텍스트가 셀보다 작음 → 셀 중앙에 배치
+                 paste_y = cell_top + (cell_height - text_height_temp) // 2 + y_offset
+ 
++            # ★ X축 정렬: 테이블 안이면 중앙, 아니면 왼쪽
++            if info.get('is_in_table', False):
++                # 테이블 내 텍스트 → 중앙 정렬
++                original_center_x = cell_left + cell_width // 2
++                paste_x = original_center_x - text_width_temp // 2
++                # 왼쪽 경계 제한
++                if paste_x < cell_left:
++                    paste_x = cell_left
++            else:
++                # 테이블 밖 텍스트 → 왼쪽 정렬
++                paste_x = info['x']
++
+             # 원본 이미지에 붙여넣기
+-            img_result.paste(temp_img, (info['x'], paste_y), temp_img)
++            img_result.paste(temp_img, (paste_x, paste_y), temp_img)
+ 
+         # bbox 기록
+         text_bbox_new = draw.textbbox((0, 0), display_text, font=info['font'])
+@@ -2335,8 +2663,9 @@ HTML_TEMPLATE = """
+ 
+         /* 용어 사전 모달 스타일 */
+         .dict-modal {
+-            width: 700px;
+-            max-height: 80vh;
++            width: 890px;
++            max-width: 95vw;
++            max-height: 99vh;
+         }
+         .dict-tabs {
+             display: flex;
+@@ -2365,9 +2694,11 @@ HTML_TEMPLATE = """
+             display: flex;
+             gap: 10px;
+             margin-bottom: 15px;
++            flex-wrap: nowrap;
+         }
+         .dict-add-form input {
+             flex: 1;
++            min-width: 120px;
+             padding: 10px;
+             border: 2px solid #ddd;
+             border-radius: 8px;
+@@ -2377,6 +2708,10 @@ HTML_TEMPLATE = """
+             outline: none;
+             border-color: #667eea;
+         }
++        .dict-add-form button {
++            flex-shrink: 0;
++            white-space: nowrap;
++        }
+         .dict-search {
+             margin-bottom: 10px;
+         }
+@@ -2412,6 +2747,14 @@ HTML_TEMPLATE = """
+             position: sticky;
+             top: 0;
+         }
++        .dict-table th:nth-child(1) { width: 25%; }  /* 한글 */
++        .dict-table th:nth-child(2) { width: 35%; }  /* 번역 */
++        .dict-table th:nth-child(3) { width: 20%; }  /* 약어 */
++        .dict-table th:nth-child(4) { width: 20%; }  /* 작업 */
++        .dict-table .abbr-cell {
++            color: #666;
++            font-style: italic;
++        }
+         .dict-table tr:hover {
+             background: #f8f9fa;
+         }
+@@ -2557,6 +2900,7 @@ HTML_TEMPLATE = """
+             <button type="button" class="lang-btn" data-lang="chinese">🇨🇳中</button>
+             <button type="button" class="lang-btn" data-lang="indonesian">🇮🇩ID</button>
+             <button type="button" class="lang-btn" data-lang="bengali">🇧🇩BN</button>
++            <button type="button" class="lang-btn" data-lang="myanmar">🇲🇲MY</button>
+             <button type="button" class="file-select-btn" id="fileSelectBtn">📁 파일선택</button>
+             <button type="button" class="translate-btn" id="translateBtn" disabled>🚀 번역</button>
+             <button type="button" class="dict-btn" id="dictBtn" title="용어 사전 관리">📖</button>
+@@ -2632,10 +2976,12 @@ HTML_TEMPLATE = """
+                         <button class="dict-tab" data-lang="chinese">🇨🇳 중국어</button>
+                         <button class="dict-tab" data-lang="indonesian">🇮🇩 인도네시아어</button>
+                         <button class="dict-tab" data-lang="bengali">🇧🇩 벵골어</button>
++                        <button class="dict-tab" data-lang="myanmar">🇲🇲 미얀마어</button>
+                     </div>
+                     <div class="dict-add-form">
+                         <input type="text" id="dictKorean" placeholder="한글 용어">
+                         <input type="text" id="dictTranslation" placeholder="번역">
++                        <input type="text" id="dictAbbr" placeholder="약어 (선택)">
+                         <button type="button" class="btn-primary" id="addTermBtn">➕ 추가</button>
+                     </div>
+                     <div class="dict-search">
+@@ -2647,6 +2993,7 @@ HTML_TEMPLATE = """
+                                 <tr>
+                                     <th>한글</th>
+                                     <th>번역</th>
++                                    <th>약어</th>
+                                     <th>작업</th>
+                                 </tr>
+                             </thead>
+@@ -3145,28 +3492,39 @@ HTML_TEMPLATE = """
+             showPreviewBtn.textContent = '⏳ 생성중...';
+ 
+             try {
++                console.log('[Preview Debug] Sending request to /generate_preview...');
++                console.log('[Preview Debug] image length:', page.image ? page.image.length : 'null');
++                console.log('[Preview Debug] translations count:', page.translations ? page.translations.length : 0);
++                
+                 const response = await fetch('/generate_preview', {
+                     method: 'POST',
+                     headers: {'Content-Type': 'application/json'},
+                     body: JSON.stringify({
+                         image: page.image,
+-                        translations: page.translations
++                        translations: page.translations,
++                        target_lang: targetLang.value
+                     })
+                 });
+ 
++                console.log('[Preview Debug] Response status:', response.status);
+                 const data = await response.json();
++                console.log('[Preview Debug] Response data:', data.success, data.error || 'OK');
+ 
+                 if (data.success) {
+                     previewCache[pageIdx] = data.preview;
+                     previewImg.src = 'data:image/png;base64,' + data.preview;
++                    console.log('[Preview Debug] Preview loaded successfully');
+                 } else {
+                     console.error('Preview generation failed:', data.error);
++                    alert('미리보기 생성 실패: ' + data.error);
+                     previewImg.src = 'data:image/png;base64,' + page.image;
+                 }
+             } catch (error) {
+                 console.error('Preview error:', error);
++                alert('미리보기 오류: ' + error.message);
+                 previewImg.src = 'data:image/png;base64,' + page.image;
+             } finally {
++                console.log('[Preview Debug] Finally block executed');
+                 showPreviewBtn.classList.remove('loading');
+                 showPreviewBtn.textContent = '🔄 미리보기';
+             }
+@@ -3288,6 +3646,12 @@ HTML_TEMPLATE = """
+ 
+             status.className = 'status success';
+             status.innerHTML = `✅ 페이지 ${currentPage + 1} 번역 확정됨`;
++            
++            // 미리보기 모드면 즉시 갱신 (캐시 무효화 후)
++            if (isPreviewMode) {
++                delete previewCache[currentPage];  // 캐시 삭제
++                showPreviewImage(currentPage, true);  // 강제 새로고침
++            }
+         });
+ 
+         // 모든 페이지 재번역 (언어 변경 시)
+@@ -3488,22 +3852,29 @@ HTML_TEMPLATE = """
+             const searchTerm = dictSearch.value.toLowerCase();
+ 
+             const entries = Object.entries(langDict)
+-                .filter(([kr, trans]) =>
+-                    kr.toLowerCase().includes(searchTerm) ||
+-                    trans.toLowerCase().includes(searchTerm)
+-                )
++                .filter(([kr, termData]) => {
++                    const full = typeof termData === 'object' ? termData.full : termData;
++                    const abbr = typeof termData === 'object' ? (termData.abbr || '') : '';
++                    return kr.toLowerCase().includes(searchTerm) ||
++                           full.toLowerCase().includes(searchTerm) ||
++                           abbr.toLowerCase().includes(searchTerm);
++                })
+                 .sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+ 
+-            dictBody.innerHTML = entries.map(([korean, translation]) => `
++            dictBody.innerHTML = entries.map(([korean, termData]) => {
++                const full = typeof termData === 'object' ? termData.full : termData;
++                const abbr = typeof termData === 'object' ? (termData.abbr || '') : '';
++                return `
+                 <tr data-korean="${korean}">
+                     <td class="korean-cell">${korean}</td>
+-                    <td class="trans-cell">${translation}</td>
++                    <td class="trans-cell">${full}</td>
++                    <td class="abbr-cell">${abbr}</td>
+                     <td class="actions">
+                         <button class="edit-btn" onclick="editTerm('${korean}')">✏️</button>
+                         <button class="delete-btn" onclick="deleteTerm('${korean}')">🗑️</button>
+                     </td>
+                 </tr>
+-            `).join('');
++            `}).join('');
+ 
+             dictCount.textContent = `총 ${entries.length}개 용어`;
+         }
+@@ -3515,6 +3886,7 @@ HTML_TEMPLATE = """
+         addTermBtn.addEventListener('click', async () => {
+             const korean = dictKorean.value.trim();
+             const translation = dictTranslation.value.trim();
++            const abbr = document.getElementById('dictAbbr').value.trim();
+ 
+             if (!korean || !translation) {
+                 alert('한글 용어와 번역을 모두 입력하세요.');
+@@ -3525,13 +3897,14 @@ HTML_TEMPLATE = """
+                 const res = await fetch(`/api/dictionary/${currentDictLang}`, {
+                     method: 'POST',
+                     headers: { 'Content-Type': 'application/json' },
+-                    body: JSON.stringify({ korean, translation })
++                    body: JSON.stringify({ korean, translation, abbr })
+                 });
+                 const data = await res.json();
+ 
+                 if (data.success) {
+                     dictKorean.value = '';
+                     dictTranslation.value = '';
++                    document.getElementById('dictAbbr').value = '';
+                     await loadDictionary();
+                 } else {
+                     alert('추가 실패: ' + data.error);
+@@ -3545,10 +3918,13 @@ HTML_TEMPLATE = """
+         window.editTerm = function(korean) {
+             const row = document.querySelector(`tr[data-korean="${korean}"]`);
+             const transCell = row.querySelector('.trans-cell');
++            const abbrCell = row.querySelector('.abbr-cell');
+             const actionsCell = row.querySelector('.actions');
+             const currentTrans = transCell.textContent;
++            const currentAbbr = abbrCell.textContent;
+ 
+-            transCell.innerHTML = `<input type="text" class="edit-input" value="${currentTrans}">`;
++            transCell.innerHTML = `<input type="text" class="edit-input edit-trans" value="${currentTrans}">`;
++            abbrCell.innerHTML = `<input type="text" class="edit-input edit-abbr" value="${currentAbbr}">`;
+             actionsCell.innerHTML = `
+                 <button class="save-btn" onclick="saveTerm('${korean}')">💾</button>
+                 <button class="cancel-btn" onclick="renderDictTable()">✖️</button>
+@@ -3559,8 +3935,10 @@ HTML_TEMPLATE = """
+         // 용어 저장
+         window.saveTerm = async function(korean) {
+             const row = document.querySelector(`tr[data-korean="${korean}"]`);
+-            const input = row.querySelector('.edit-input');
+-            const translation = input.value.trim();
++            const transInput = row.querySelector('.edit-trans');
++            const abbrInput = row.querySelector('.edit-abbr');
++            const translation = transInput.value.trim();
++            const abbr = abbrInput ? abbrInput.value.trim() : '';
+ 
+             if (!translation) {
+                 alert('번역을 입력하세요.');
+@@ -3571,7 +3949,7 @@ HTML_TEMPLATE = """
+                 const res = await fetch(`/api/dictionary/${currentDictLang}/${encodeURIComponent(korean)}`, {
+                     method: 'PUT',
+                     headers: { 'Content-Type': 'application/json' },
+-                    body: JSON.stringify({ translation })
++                    body: JSON.stringify({ translation, abbr })
+                 });
+                 const data = await res.json();
+ 
+@@ -3657,7 +4035,7 @@ def get_progress():
+ 
+ @app.route('/analyze', methods=['POST'])
+ def analyze():
+-    """파일 업로드 + OCR + 초기 번역"""
++    """파일 업로드 + OCR + 초기 번역 (배치 OCR + 병렬 번역 최적화)"""
+     try:
+         if 'file' not in request.files:
+             return jsonify({"success": False, "error": "파일이 없습니다"})
+@@ -3690,46 +4068,50 @@ def analyze():
+         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+         temp_image_paths[session_id] = image_paths
+ 
+-        # 각 페이지 분석 (2단계: OCR 먼저, 번역은 배치로)
+         pages = []
+         total_pages = len(image_paths)
+-        all_pages_data = []  # OCR 결과 임시 저장
+-
+-        # ===== 1단계: 모든 페이지 OCR =====
+-        for i, img_path in enumerate(image_paths):
+-            print(f"[OCR {i+1}/{total_pages}] {img_path}", flush=True)
+-
+-            # ★ 진행 상황: OCR
+-            update_progress("OCR", i+1, total_pages, f"페이지 {i+1}/{total_pages} OCR 처리 중...")
++        all_pages_data = []
++        
++        import time  # 성능 측정용
+ 
+-            # 이미지를 base64로 인코딩
++        # ===== 1단계: 배치 OCR (모든 페이지 한번에) =====
++        update_progress("OCR", 1, total_pages, f"전체 {total_pages}개 페이지 일괄 OCR 처리 중...")
++        print(f"[Batch OCR] Processing {total_pages} pages at once...", flush=True)
++        
++        ocr_start = time.time()
++        all_ocr_results = get_ocr_results_batch(image_paths)
++        ocr_time = time.time() - ocr_start
++        print(f"[TIMING] OCR took {ocr_time:.2f}s for {total_pages} pages", flush=True)
++        
++        # OCR 결과와 이미지 정보 결합
++        for i, (img_path, texts) in enumerate(zip(image_paths, all_ocr_results)):
+             with open(img_path, "rb") as f:
+                 image_base64 = base64.b64encode(f.read()).decode()
+-
+-            # OCR
+-            texts = get_ocr_results(img_path)
+-            print(f"  Found {len(texts)} Korean texts", flush=True)
+-
++            
+             all_pages_data.append({
+                 "page_idx": i,
+                 "img_path": img_path,
+                 "image_base64": image_base64,
+                 "texts": texts
+             })
++        
++        print(f"[Batch OCR] Complete - {sum(len(p['texts']) for p in all_pages_data)} total texts", flush=True)
+ 
+-        # ===== 2단계: 배치 번역 (1회 API 호출) =====
++        # ===== 2단계: 번역 (엔진별 최적화) =====
+         total_texts = sum(len(p["texts"]) for p in all_pages_data)
+-        update_progress("번역", 1, 1, f"전체 {total_texts}개 텍스트 일괄 번역 중... (1회 API 호출)")
+-        print(f"[Batch Translation] Total {total_texts} texts from {total_pages} pages", flush=True)
+-
+-        # Gemini 배치 번역 사용 (Free Tier 최적화)
+-        print(f"[Debug] Batch condition check: ai_engine=='{ai_engine}', api_key={bool(api_key)}, total_texts={total_texts}", flush=True)
+-        print(f"[Debug] Will use batch? {ai_engine == 'gemini' and api_key and total_texts > 0}", flush=True)
++        translate_start = time.time()
++        
+         if ai_engine == "gemini" and api_key and total_texts > 0:
++            # Gemini: 배치 번역 (1회 API 호출)
++            update_progress("번역", 1, 1, f"전체 {total_texts}개 텍스트 일괄 번역 중... (Gemini 배치)")
++            print(f"[Gemini Batch] Total {total_texts} texts from {total_pages} pages", flush=True)
++            
+             batch_input = [{"page_idx": p["page_idx"], "texts": p["texts"]} for p in all_pages_data]
+             translations_by_page = translate_batch_with_gemini(batch_input, target_lang, api_key, model)
++            
++            translate_time = time.time() - translate_start
++            print(f"[TIMING] Gemini Batch Translation took {translate_time:.2f}s for {total_texts} texts", flush=True)
+ 
+-            # 결과 조합
+             for page_data in all_pages_data:
+                 page_idx = page_data["page_idx"]
+                 translations = translations_by_page.get(page_idx, [])
+@@ -3739,8 +4121,31 @@ def analyze():
+                     "translations": translations,
+                     "confirmed": False
+                 })
++                
++        elif ai_engine in ("claude", "openai") and api_key and total_texts > 0:
++            # Claude/OpenAI: 병렬 번역 (동시 API 호출)
++            update_progress("번역", 1, 1, f"전체 {total_texts}개 텍스트 병렬 번역 중... ({ai_engine.upper()} 병렬)")
++            print(f"[Parallel Translation] {ai_engine.upper()} - {total_pages} pages", flush=True)
++            
++            translations_by_page = translate_pages_parallel(
++                all_pages_data, target_lang, ai_engine, api_key, model, max_workers=3
++            )
++            
++            translate_time = time.time() - translate_start
++            print(f"[TIMING] {ai_engine.upper()} Parallel Translation took {translate_time:.2f}s for {total_texts} texts ({total_pages} pages)", flush=True)
++            
++            for page_data in all_pages_data:
++                page_idx = page_data["page_idx"]
++                translations = translations_by_page.get(page_idx, [])
++                pages.append({
++                    "image": page_data["image_base64"],
++                    "image_path": page_data["img_path"],
++                    "translations": translations,
++                    "confirmed": False
++                })
++                
+         else:
+-            # 기존 방식: 페이지별 번역 (Ollama, OpenAI 등)
++            # Ollama 등: 순차 번역 (로컬 모델은 병렬화 이점 적음)
+             for page_data in all_pages_data:
+                 update_progress("번역", page_data["page_idx"]+1, total_pages,
+                                f"페이지 {page_data['page_idx']+1}/{total_pages} - {len(page_data['texts'])}개 텍스트 번역 중...")
+@@ -3833,8 +4238,9 @@ def generate_preview():
+         data = request.get_json()
+         image_base64 = data.get('image')
+         translations = data.get('translations', [])
++        target_lang = data.get('target_lang', 'english')
+ 
+-        print(f"[generate_preview] Received {len(translations)} translations")
++        print(f"[generate_preview] Received {len(translations)} translations, target_lang={target_lang}")
+         for i, t in enumerate(translations[:3]):  # 처음 3개만 출력
+             print(f"  [{i}] bbox: {t.get('bbox', 'N/A')}, text: {t.get('text', 'N/A')[:20]}...")
+ 
+@@ -3847,7 +4253,7 @@ def generate_preview():
+ 
+         # 미리보기 이미지 생성
+         print("[generate_preview] Calling generate_preview_image...")
+-        preview_base64 = generate_preview_image(image_base64, translations)
++        preview_base64 = generate_preview_image(image_base64, translations, target_lang)
+         print("[generate_preview] Preview generated successfully")
+ 
+         return jsonify({
+@@ -3887,7 +4293,7 @@ def generate():
+                 # 이미지에 번역 적용
+                 output_filename = f"translated_{timestamp}_page{i+1}_{target_lang}.png"
+                 output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+-                replace_text_in_image(temp_img_path, translations, output_path)
++                replace_text_in_image(temp_img_path, translations, output_path, target_lang)
+                 output_files.append(output_filename)
+             else:
+                 print(f"  No translations, skipping...")
+@@ -3951,7 +4357,7 @@ def translate():
+                 # 이미지 교체
+                 output_filename = f"translated_{timestamp}_page{i+1}_{target_lang}.png"
+                 output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+-                replace_text_in_image(img_path, translations, output_path)
++                replace_text_in_image(img_path, translations, output_path, target_lang)
+                 output_files.append(output_filename)
+             else:
+                 print(f"  No Korean text found, skipping...")
+@@ -4000,13 +4406,14 @@ def get_dictionary_by_language(language):
+ 
+ @app.route('/api/dictionary/<language>', methods=['POST'])
+ def add_term(language):
+-    """용어 추가 (한글: 번역)"""
++    """용어 추가 (한글: {full: 번역, abbr: 약어})"""
+     global GARMENT_DICT
+     GARMENT_DICT = load_garment_dict()
+ 
+     data = request.json
+     korean = data.get('korean', '').strip()
+     translation = data.get('translation', '').strip()
++    abbr = data.get('abbr', '').strip()
+ 
+     if not korean or not translation:
+         return jsonify({"error": "korean and translation are required"}), 400
+@@ -4014,10 +4421,10 @@ def add_term(language):
+     if language not in GARMENT_DICT:
+         return jsonify({"error": f"Language '{language}' not found"}), 404
+ 
+-    GARMENT_DICT[language][korean] = translation
++    GARMENT_DICT[language][korean] = {"full": translation, "abbr": abbr}
+ 
+     if save_garment_dict(GARMENT_DICT):
+-        return jsonify({"success": True, "korean": korean, "translation": translation})
++        return jsonify({"success": True, "korean": korean, "translation": translation, "abbr": abbr})
+     return jsonify({"error": "Failed to save dictionary"}), 500
+ 
+ @app.route('/api/dictionary/<language>/<korean>', methods=['PUT'])
+@@ -4028,6 +4435,7 @@ def update_term(language, korean):
+ 
+     data = request.json
+     translation = data.get('translation', '').strip()
++    abbr = data.get('abbr', '').strip()
+ 
+     if not translation:
+         return jsonify({"error": "translation is required"}), 400
+@@ -4038,10 +4446,10 @@ def update_term(language, korean):
+     if korean not in GARMENT_DICT[language]:
+         return jsonify({"error": f"Term '{korean}' not found"}), 404
+ 
+-    GARMENT_DICT[language][korean] = translation
++    GARMENT_DICT[language][korean] = {"full": translation, "abbr": abbr}
+ 
+     if save_garment_dict(GARMENT_DICT):
+-        return jsonify({"success": True, "korean": korean, "translation": translation})
++        return jsonify({"success": True, "korean": korean, "translation": translation, "abbr": abbr})
+     return jsonify({"error": "Failed to save dictionary"}), 500
+ 
+ @app.route('/api/dictionary/<language>/<korean>', methods=['DELETE'])

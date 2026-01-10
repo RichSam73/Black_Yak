@@ -7,12 +7,18 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.8.1"
+VERSION = "1.8.2"
 VERSION_DATE = "2026-01-11"
 VERSION_NOTES = """
+v1.8.2 (2026-01-11)
+- ★ Placeholder 복원 강화: AI가 변형한 다양한 TERM 패턴 처리
+- TERM_1, TERM 1, <TERM_1>, [TERM_1] 등 모든 변형 자동 복원
+- 정규식 기반 유연한 패턴 매칭 추가
+
 v1.8.1 (2026-01-11)
-- 🐛 버그 수정: 번역 수정 후 확정 버튼 반복 클릭 시 미리보기 갱신되지 않던 문제 해결
-- 확정 버튼 클릭 시 캐시 무효화 + 미리보기 강제 갱신 로직 추가
+- ★ 성능 로그 추가: Batch OCR, Claude API, Gemini Batch, 병렬 번역 타이밍 출력
+- ★ 확정 버튼 클릭 시 미리보기 즉시 갱신 복구
+- 디버깅 및 성능 분석용 상세 로그
 
 v1.8.0 (2026-01-10)
 - ★ 사전 구조 통합: {"한글": {"full": "번역", "abbr": "약어"}} 
@@ -326,18 +332,27 @@ def get_ocr_results_batch(image_paths):
     Returns:
         list: 각 이미지별 OCR 결과 리스트
     """
+    import time
+    batch_start = time.time()
+    
     ocr = get_ocr_engine()
     
     # 모든 이미지를 RGB numpy 배열로 변환
+    load_start = time.time()
     images_rgb = []
     for img_path in image_paths:
         img_bgr = cv2.imread(img_path)
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         images_rgb.append(img_rgb)
+    load_time = time.time() - load_start
+    print(f"[Batch OCR] Image loading: {load_time:.2f}s for {len(images_rgb)} images", flush=True)
     
     # 배치 OCR 실행
-    print(f"[Batch OCR] Processing {len(images_rgb)} images at once...", flush=True)
+    ocr_start = time.time()
+    print(f"[Batch OCR] Running OCR on {len(images_rgb)} images...", flush=True)
     results = ocr.predict(images_rgb)
+    ocr_time = time.time() - ocr_start
+    print(f"[Batch OCR] OCR inference: {ocr_time:.2f}s", flush=True)
     
     # 결과 파싱
     all_texts = []
@@ -375,6 +390,10 @@ def get_ocr_results_batch(image_paths):
         
         all_texts.append(texts)
         print(f"  [Page {page_idx+1}] Found {len(texts)} texts", flush=True)
+    
+    total_time = time.time() - batch_start
+    total_texts = sum(len(t) for t in all_texts)
+    print(f"[Batch OCR] TOTAL: {total_time:.2f}s for {len(image_paths)} pages, {total_texts} texts", flush=True)
     
     return all_texts
 
@@ -508,9 +527,46 @@ def restore_placeholders(translated_text, placeholder_map):
         ("23SS Hanger Loop <<TERM_1>>", {"<<TERM_1>>": "Consumption"})
         → "23SS Hanger Loop Consumption"
     """
+    import re
     result = translated_text
+    
     for placeholder, translation in placeholder_map.items():
+        # 원본 placeholder (예: <<TERM_1>>)
         result = result.replace(placeholder, translation)
+        
+        # AI가 변형한 다양한 패턴도 처리
+        # <<TERM_1>> 에서 숫자 추출
+        match = re.search(r'TERM_(\d+)', placeholder)
+        if match:
+            term_num = match.group(1)
+            # 다양한 변형 패턴 처리 (정확한 문자열 매칭)
+            variations = [
+                f"TERM_{term_num}",           # TERM_1 (꺾쇠 제거됨)
+                f"TERM {term_num}",           # TERM 1 (언더스코어 제거됨)
+                f"<TERM_{term_num}>",         # <TERM_1> (꺾쇠 하나만)
+                f"[TERM_{term_num}]",         # [TERM_1] (대괄호로 변형)
+                f"(TERM_{term_num})",         # (TERM_1) (괄호로 변형)
+                f"{{TERM_{term_num}}}",       # {TERM_1} (중괄호로 변형)
+                f"TERM{term_num}",            # TERM1 (언더스코어 완전 제거)
+                f"Term_{term_num}",           # Term_1 (대소문자 변형)
+                f"term_{term_num}",           # term_1 (소문자 변형)
+            ]
+            for var in variations:
+                if var in result:
+                    result = result.replace(var, translation)
+            
+            # 정규식으로 더 유연한 패턴 매칭 (공백, 특수문자 포함)
+            # 예: "TERM _ 1", "TERM- 1", "TERM_1." 등
+            flexible_patterns = [
+                rf'<<\s*TERM[_\s-]*{term_num}\s*>>',  # << TERM_1 >> 등
+                rf'<\s*TERM[_\s-]*{term_num}\s*>',    # < TERM_1 > 등
+                rf'\[\s*TERM[_\s-]*{term_num}\s*\]',  # [ TERM_1 ] 등
+                rf'\(\s*TERM[_\s-]*{term_num}\s*\)',  # ( TERM_1 ) 등
+                rf'TERM[_\s-]*{term_num}(?![0-9])',   # TERM_1, TERM 1, TERM-1 (뒤에 숫자 없을 때만)
+            ]
+            for pattern in flexible_patterns:
+                result = re.sub(pattern, translation, result, flags=re.IGNORECASE)
+    
     return result
 
 
@@ -542,6 +598,9 @@ def apply_dict_postprocess(translated_text, original_korean, target_lang):
 
 def translate_with_claude(image_path, texts, target_lang, api_key, model=None):
     """Claude API로 이미지 컨텍스트와 함께 번역 (Placeholder 방식 적용)"""
+    import time
+    api_start = time.time()
+    
     print(f"[Claude] translate_with_claude called - texts: {len(texts)}, model: {model}", flush=True)
     if model is None:
         model = AI_MODELS["claude"]["default"]
@@ -621,13 +680,15 @@ Korean texts:
         }
 
         print(f"[Claude] Calling API: {CLAUDE_API_URL}", flush=True)
+        request_start = time.time()
         response = requests.post(
             CLAUDE_API_URL,
             headers=headers,
             json=payload,
             timeout=120
         )
-        print(f"[Claude] API response status: {response.status_code}", flush=True)
+        api_time = time.time() - request_start
+        print(f"[Claude] API response status: {response.status_code} (took {api_time:.2f}s)", flush=True)
 
         if response.status_code == 200:
             result = response.json()
@@ -693,6 +754,8 @@ Korean texts:
                 translated = item["text"]  # 영어 원본 유지
             translations.append({**item, "translated": translated})
 
+    total_time = time.time() - api_start
+    print(f"[Claude] TOTAL: {total_time:.2f}s for {len(texts)} texts ({len(korean_list)} Korean)", flush=True)
     return translations
 
 
@@ -847,9 +910,16 @@ def translate_batch_with_gemini(all_pages_texts, target_lang, api_key, model=Non
     Returns:
         {page_idx: [translated_texts], ...}
     """
+    import time
+    batch_start = time.time()
+    
     if model is None:
         model = AI_MODELS["gemini"]["default"]
     lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
+    
+    total_pages = len(all_pages_texts)
+    total_texts = sum(len(p["texts"]) for p in all_pages_texts)
+    print(f"[Gemini Batch] Starting batch translation: {total_pages} pages, {total_texts} texts", flush=True)
 
     # 모든 페이지의 텍스트를 하나의 리스트로 합침 (페이지 구분 포함)
     all_korean = []
@@ -947,6 +1017,8 @@ Korean texts:
 
                 result_by_page[page_idx] = page_translations
 
+            total_time = time.time() - batch_start
+            print(f"[Gemini Batch] TOTAL: {total_time:.2f}s for {total_pages} pages, {total_texts} texts (1 API call)", flush=True)
             return result_by_page
         else:
             print(f"Gemini Batch API error: {response.status_code} - {response.text}", flush=True)
@@ -1109,28 +1181,35 @@ def translate_pages_parallel(pages_data, target_lang, ai_engine, api_key, model,
     Returns:
         dict: {page_idx: translations, ...}
     """
+    import time
+    parallel_start = time.time()
     results = {}
+    page_times = {}  # 각 페이지별 소요 시간
     
     def translate_single_page(page_data):
         """단일 페이지 번역 (스레드에서 실행)"""
+        page_start = time.time()
         page_idx = page_data["page_idx"]
         img_path = page_data["img_path"]
         texts = page_data["texts"]
         
         if not texts:
-            return page_idx, []
+            return page_idx, [], 0
         
         try:
             translations = translate_with_vlm(img_path, texts, target_lang, ai_engine, api_key, model)
-            print(f"  [Parallel] Page {page_idx+1} done - {len(translations)} texts", flush=True)
-            return page_idx, translations
+            elapsed = time.time() - page_start
+            print(f"  [Parallel] Page {page_idx+1} done - {len(translations)} texts in {elapsed:.2f}s", flush=True)
+            return page_idx, translations, elapsed
         except Exception as e:
-            print(f"  [Parallel] Page {page_idx+1} ERROR: {e}", flush=True)
+            elapsed = time.time() - page_start
+            print(f"  [Parallel] Page {page_idx+1} ERROR in {elapsed:.2f}s: {e}", flush=True)
             # 에러 시 원본 텍스트 반환
             return page_idx, [{"bbox": t["bbox"], "text": t["text"], "translated": t["text"], 
-                             "has_korean": t.get("has_korean", True)} for t in texts]
+                             "has_korean": t.get("has_korean", True)} for t in texts], elapsed
     
-    print(f"[Parallel Translation] Starting {len(pages_data)} pages with {max_workers} workers...", flush=True)
+    total_texts = sum(len(p["texts"]) for p in pages_data)
+    print(f"[Parallel Translation] Starting {len(pages_data)} pages ({total_texts} texts) with {max_workers} workers...", flush=True)
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # 모든 페이지 번역 작업 제출
@@ -1138,10 +1217,13 @@ def translate_pages_parallel(pages_data, target_lang, ai_engine, api_key, model,
         
         # 완료되는 순서대로 결과 수집
         for future in as_completed(futures):
-            page_idx, translations = future.result()
+            page_idx, translations, elapsed = future.result()
             results[page_idx] = translations
+            page_times[page_idx] = elapsed
     
-    print(f"[Parallel Translation] All {len(results)} pages completed", flush=True)
+    total_time = time.time() - parallel_start
+    avg_time = sum(page_times.values()) / len(page_times) if page_times else 0
+    print(f"[Parallel Translation] TOTAL: {total_time:.2f}s (avg per page: {avg_time:.2f}s, workers: {max_workers})", flush=True)
     return results
 
 
@@ -3555,17 +3637,8 @@ HTML_TEMPLATE = """
         }
 
         // 확정 버튼
-        confirmBtn.addEventListener('click', async () => {
+        confirmBtn.addEventListener('click', () => {
             saveCurrentTranslations();
-            
-            // 미리보기 캐시 무효화 후 강제 갱신
-            invalidatePreviewCache(currentPage);
-            
-            // 미리보기 모드일 때만 이미지 갱신
-            if (showPreviewBtn.classList.contains('active')) {
-                await showPreviewImage(currentPage, true);  // forceRefresh = true
-            }
-            
             pagesData[currentPage].confirmed = true;
             confirmBtn.textContent = '✔ 확정됨';
             confirmBtn.classList.add('confirmed');
@@ -3578,6 +3651,12 @@ HTML_TEMPLATE = """
 
             status.className = 'status success';
             status.innerHTML = `✅ 페이지 ${currentPage + 1} 번역 확정됨`;
+            
+            // 미리보기 모드면 즉시 갱신 (캐시 무효화 후)
+            if (isPreviewMode) {
+                delete previewCache[currentPage];  // 캐시 삭제
+                showPreviewImage(currentPage, true);  // 강제 새로고침
+            }
         });
 
         // 모든 페이지 재번역 (언어 변경 시)
@@ -3997,12 +4076,17 @@ def analyze():
         pages = []
         total_pages = len(image_paths)
         all_pages_data = []
+        
+        import time  # 성능 측정용
 
         # ===== 1단계: 배치 OCR (모든 페이지 한번에) =====
         update_progress("OCR", 1, total_pages, f"전체 {total_pages}개 페이지 일괄 OCR 처리 중...")
         print(f"[Batch OCR] Processing {total_pages} pages at once...", flush=True)
         
+        ocr_start = time.time()
         all_ocr_results = get_ocr_results_batch(image_paths)
+        ocr_time = time.time() - ocr_start
+        print(f"[TIMING] OCR took {ocr_time:.2f}s for {total_pages} pages", flush=True)
         
         # OCR 결과와 이미지 정보 결합
         for i, (img_path, texts) in enumerate(zip(image_paths, all_ocr_results)):
@@ -4020,6 +4104,7 @@ def analyze():
 
         # ===== 2단계: 번역 (엔진별 최적화) =====
         total_texts = sum(len(p["texts"]) for p in all_pages_data)
+        translate_start = time.time()
         
         if ai_engine == "gemini" and api_key and total_texts > 0:
             # Gemini: 배치 번역 (1회 API 호출)
@@ -4028,6 +4113,9 @@ def analyze():
             
             batch_input = [{"page_idx": p["page_idx"], "texts": p["texts"]} for p in all_pages_data]
             translations_by_page = translate_batch_with_gemini(batch_input, target_lang, api_key, model)
+            
+            translate_time = time.time() - translate_start
+            print(f"[TIMING] Gemini Batch Translation took {translate_time:.2f}s for {total_texts} texts", flush=True)
 
             for page_data in all_pages_data:
                 page_idx = page_data["page_idx"]
@@ -4047,6 +4135,9 @@ def analyze():
             translations_by_page = translate_pages_parallel(
                 all_pages_data, target_lang, ai_engine, api_key, model, max_workers=3
             )
+            
+            translate_time = time.time() - translate_start
+            print(f"[TIMING] {ai_engine.upper()} Parallel Translation took {translate_time:.2f}s for {total_texts} texts ({total_pages} pages)", flush=True)
             
             for page_data in all_pages_data:
                 page_idx = page_data["page_idx"]
