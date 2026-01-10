@@ -83,16 +83,25 @@ import fitz  # PyMuPDF
 
 # ★ 로깅 설정 (겹침 감지 디버깅용)
 LOG_FILE = os.path.join(os.path.dirname(__file__), 'overlap_debug.log')
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding='utf-8', mode='a'),
-        logging.StreamHandler(sys.stdout)  # 콘솔에도 출력
-    ]
-)
+
+# 전용 로거 생성 (Flask 로깅과 분리)
 logger = logging.getLogger('overlap_debug')
+logger.setLevel(logging.DEBUG)
+logger.handlers = []  # 기존 핸들러 제거
+
+# 파일 핸들러
+file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8', mode='a')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', '%Y-%m-%d %H:%M:%S'))
+logger.addHandler(file_handler)
+
+# 콘솔 핸들러
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+console_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', '%Y-%m-%d %H:%M:%S'))
+logger.addHandler(console_handler)
+
+logger.propagate = False  # 부모 로거로 전파 방지
 
 # UTF-8 출력 설정
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
@@ -216,11 +225,14 @@ def get_ocr_engine():
     if ocr_engine is None:
         print("[init] PaddleOCR engine (korean)...")
         # 전처리 비활성화: bbox 좌표가 원본 이미지와 정확히 일치하도록 함
+        # 감지 임계값 낮춰서 더 많은 텍스트 인식 (영어 포함)
         ocr_engine = PaddleOCR(
             lang="korean",
             use_doc_orientation_classify=False,  # 문서 방향 분류 끄기
             use_doc_unwarping=False,             # 문서 왜곡 보정 끄기
-            use_textline_orientation=False       # 텍스트라인 방향 분류 끄기
+            use_textline_orientation=False,      # 텍스트라인 방향 분류 끄기
+            det_db_thresh=0.2,                   # 텍스트 감지 임계값 낮춤 (기본 0.3)
+            det_db_box_thresh=0.4                # 박스 임계값 낮춤 (기본 0.6)
         )
         print("[init] PaddleOCR engine ready")
     return ocr_engine
@@ -279,14 +291,16 @@ def get_ocr_results(image_path):
 
             for text, score, poly in zip(rec_texts, rec_scores, dt_polys):
                 text_str = str(text)
-                # 한글이 포함된 텍스트만 추출
-                if any('\uac00' <= c <= '\ud7a3' for c in text_str):
-                    bbox = poly.tolist() if hasattr(poly, 'tolist') else poly
-                    texts.append({
-                        "bbox": bbox,
-                        "text": text_str,
-                        "confidence": float(score) if score else 1.0
-                    })
+                # 모든 텍스트 추출 (영어 포함) - 겹침 감지에 사용
+                # has_korean 플래그로 번역 대상 여부 구분
+                has_korean = any('\uac00' <= c <= '\ud7a3' for c in text_str)
+                bbox = poly.tolist() if hasattr(poly, 'tolist') else poly
+                texts.append({
+                    "bbox": bbox,
+                    "text": text_str,
+                    "confidence": float(score) if score else 1.0,
+                    "has_korean": has_korean  # 한글 포함 여부 플래그
+                })
 
     return texts
 
@@ -394,8 +408,12 @@ def translate_with_claude(image_path, texts, target_lang, api_key, model=None):
 
     translations = []
 
-    # 모든 한글 텍스트를 한 번에 번역 요청
-    korean_list = [item["text"] for item in texts]
+    # 한글 텍스트만 필터링 (인덱스 보존) - 영어만 있는 텍스트는 번역하지 않음
+    korean_items = [(i, item) for i, item in enumerate(texts) if item.get("has_korean", True)]
+    korean_list = [item["text"] for _, item in korean_items]
+    korean_indices = [i for i, _ in korean_items]
+    
+    print(f"[Claude] Total texts: {len(texts)}, Korean texts to translate: {len(korean_list)}", flush=True)
 
     # ★ Placeholder 전처리: 사전 용어를 플레이스홀더로 대체
     preprocessed_list = []
@@ -491,30 +509,42 @@ Korean texts:
 
             # 결과 매핑 + 플레이스홀더 복원
             for i, item in enumerate(texts):
-                if i in trans_dict:
-                    translated = trans_dict[i]
-                    # ★ 플레이스홀더를 사전 번역으로 복원
-                    if placeholder_maps[i]:
-                        translated = restore_placeholders(translated, placeholder_maps[i])
-                        print(f"[Claude] Restored placeholders for item {i+1}: {translated[:50]}...", flush=True)
+                if not item.get("has_korean", True):
+                    # 영어 텍스트: 원본 유지 (번역하지 않음)
+                    translations.append({**item, "translated": item["text"]})
                 else:
-                    translated = translate_with_dict(item["text"], target_lang)
+                    # 한글 텍스트: 번역 결과 매핑
+                    korean_idx = korean_indices.index(i)
+                    if korean_idx in trans_dict:
+                        translated = trans_dict[korean_idx]
+                        # ★ 플레이스홀더를 사전 번역으로 복원
+                        if placeholder_maps[korean_idx]:
+                            translated = restore_placeholders(translated, placeholder_maps[korean_idx])
+                            print(f"[Claude] Restored placeholders for item {i+1}: {translated[:50]}...", flush=True)
+                    else:
+                        translated = translate_with_dict(item["text"], target_lang)
 
-                translations.append({
-                    **item,
-                    "translated": translated
-                })
+                    translations.append({
+                        **item,
+                        "translated": translated
+                    })
         else:
             print(f"[Claude] API error: {response.status_code} - {response.text}", flush=True)
-            # fallback: 사전 번역
+            # fallback: 사전 번역 (한글만), 영어는 원본 유지
             for item in texts:
-                translated = translate_with_dict(item["text"], target_lang)
+                if item.get("has_korean", True):
+                    translated = translate_with_dict(item["text"], target_lang)
+                else:
+                    translated = item["text"]  # 영어 원본 유지
                 translations.append({**item, "translated": translated})
 
     except Exception as e:
         print(f"[Claude] Exception: {e}", flush=True)
         for item in texts:
-            translated = translate_with_dict(item["text"], target_lang)
+            if item.get("has_korean", True):
+                translated = translate_with_dict(item["text"], target_lang)
+            else:
+                translated = item["text"]  # 영어 원본 유지
             translations.append({**item, "translated": translated})
 
     return translations
@@ -532,8 +562,12 @@ def translate_with_openai(image_path, texts, target_lang, api_key, model=None):
 
     translations = []
 
-    # 모든 한글 텍스트를 한 번에 번역 요청
-    korean_list = [item["text"] for item in texts]
+    # 한글 텍스트만 필터링 (인덱스 보존) - 영어만 있는 텍스트는 번역하지 않음
+    korean_items = [(i, item) for i, item in enumerate(texts) if item.get("has_korean", True)]
+    korean_list = [item["text"] for _, item in korean_items]
+    korean_indices = [i for i, _ in korean_items]
+    
+    print(f"[OpenAI] Total texts: {len(texts)}, Korean texts to translate: {len(korean_list)}", flush=True)
 
     # ★ Placeholder 전처리: 사전 용어를 플레이스홀더로 대체
     preprocessed_list = []
@@ -615,29 +649,41 @@ Korean texts:
 
             # 결과 매핑 + 플레이스홀더 복원
             for i, item in enumerate(texts):
-                if i in trans_dict:
-                    translated = trans_dict[i]
-                    # ★ 플레이스홀더를 사전 번역으로 복원
-                    if placeholder_maps[i]:
-                        translated = restore_placeholders(translated, placeholder_maps[i])
+                if not item.get("has_korean", True):
+                    # 영어 텍스트: 원본 유지 (번역하지 않음)
+                    translations.append({**item, "translated": item["text"]})
                 else:
-                    translated = translate_with_dict(item["text"], target_lang)
+                    # 한글 텍스트: 번역 결과 매핑
+                    korean_idx = korean_indices.index(i)
+                    if korean_idx in trans_dict:
+                        translated = trans_dict[korean_idx]
+                        # ★ 플레이스홀더를 사전 번역으로 복원
+                        if placeholder_maps[korean_idx]:
+                            translated = restore_placeholders(translated, placeholder_maps[korean_idx])
+                    else:
+                        translated = translate_with_dict(item["text"], target_lang)
 
-                translations.append({
-                    **item,
-                    "translated": translated
-                })
+                    translations.append({
+                        **item,
+                        "translated": translated
+                    })
         else:
             print(f"OpenAI API error: {response.status_code} - {response.text}")
-            # fallback: 사전 번역
+            # fallback: 사전 번역 (한글만), 영어는 원본 유지
             for item in texts:
-                translated = translate_with_dict(item["text"], target_lang)
+                if item.get("has_korean", True):
+                    translated = translate_with_dict(item["text"], target_lang)
+                else:
+                    translated = item["text"]
                 translations.append({**item, "translated": translated})
 
     except Exception as e:
         print(f"OpenAI API error: {e}")
         for item in texts:
-            translated = translate_with_dict(item["text"], target_lang)
+            if item.get("has_korean", True):
+                translated = translate_with_dict(item["text"], target_lang)
+            else:
+                translated = item["text"]
             translations.append({**item, "translated": translated})
 
     return translations
@@ -1138,9 +1184,9 @@ def erase_text_region(img, bbox):
 
     # ★ Y축만 축소하여 수평선(셀 경계) 보호
     # margin_x = 1: X축은 기존대로 약간 확장
-    # margin_y = -3: Y축은 안쪽으로 축소 (위아래 3px씩 보호)
+    # margin_y = -2: Y축은 안쪽으로 축소 (위아래 2px씩 보호)
     margin_x = 1
-    margin_y = -3
+    margin_y = -2
     x_min_ext = max(0, x_min - margin_x)
     y_min_ext = max(0, y_min - margin_y)  # y_min + 3 (아래로 축소)
     x_max_ext = min(width, x_max + margin_x)
@@ -1340,19 +1386,22 @@ def draw_vertical_text(draw, text, x, y, font, fill, box_width, box_height):
 
 
 def replace_text_in_image(image_path, translations, output_path):
-    """이미지에서 한글 영역을 지우고 번역된 텍스트로 교체 - v1.8.1 (침범한 쪽 약어 처리)"""
+    """이미지에서 한글 영역을 지우고 번역된 텍스트로 교체 - v1.8.2 (영어 텍스트 유지, 겹침 감지용 포함)"""
     img = cv2.imread(image_path)
     height, width = img.shape[:2]
 
-    # 1단계: 모든 텍스트 영역을 배경색으로 지우고, 배경색 저장
+    # 1단계: 한글 텍스트 영역만 배경색으로 지우기 (영어는 원본 유지)
     bg_colors = {}
     for i, item in enumerate(translations):
-        bbox = item["bbox"]
-        img, bg_color = erase_text_region(img, bbox)
-        bg_colors[i] = bg_color
+        if item.get("has_korean", True):  # 한글 텍스트만 erase
+            bbox = item["bbox"]
+            img, bg_color = erase_text_region(img, bbox)
+            bg_colors[i] = bg_color
+        else:
+            bg_colors[i] = (255, 255, 255)  # 영어 텍스트는 erase 안 함
 
     # 2단계: 텍스트 정보 사전 계산 (겹침 감지용)
-    font_sizes = [12, 11, 10, 9, 8, 7]
+    font_sizes = [13, 12, 11, 10, 9, 8, 7]  # 폰트 크기 약간 증가
     text_render_info = []
 
     img_pil_temp = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -1399,7 +1448,7 @@ def replace_text_in_image(image_path, translations, output_path):
         # Y축 중앙 정렬: 셀 중앙에 텍스트 중앙을 맞춤
         cell_top = int(min(ys))
         cell_center = cell_top + box_height // 2
-        y_adjusted = cell_center - render_height // 2 - text_top_offset
+        y_adjusted = cell_center - render_height // 2 - text_top_offset + 2  # +2: 텍스트를 약간 아래로
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
@@ -1411,7 +1460,8 @@ def replace_text_in_image(image_path, translations, output_path):
             'text': translated_text, 'font': font,
             'text_width': text_width, 'text_height': actual_text_height,
             'cell_bbox': cell_bbox, 'bg_color': bg_color,
-            'is_vertical': is_vertical, 'bbox': bbox
+            'is_vertical': is_vertical, 'bbox': bbox,
+            'has_korean': item.get("has_korean", True)  # 한글 포함 여부 플래그
         })
 
     # 3단계: 겹침 감지 - 왼쪽 텍스트가 오른쪽 셀을 침범하는지 체크
@@ -1419,6 +1469,19 @@ def replace_text_in_image(image_path, translations, output_path):
     logger.info(f"\n{'='*60}")
     logger.info(f"[Overlap Detection - replace] Total texts: {len(text_render_info)}")
     logger.info(f"{'='*60}")
+    
+    # 3-1: 셀 경계 초과 체크 (OCR 미인식 텍스트 대응)
+    OVERFLOW_THRESHOLD = 30  # 30px 이상 초과시 무조건 축약
+    for i, info in enumerate(text_render_info):
+        text_right_edge = info['x'] + info['text_width']
+        cell_x, cell_y, cell_w, cell_h = info['cell_bbox']
+        cell_right = cell_x + cell_w
+        overflow = text_right_edge - cell_right
+        if overflow > OVERFLOW_THRESHOLD:
+            needs_abbreviation.add(i)
+            logger.info(f"  ★ OVERFLOW ABBREVIATE #{i} '{info['text'][:20]}' | overflow={overflow}px > {OVERFLOW_THRESHOLD}px")
+    
+    # 3-2: 인접 텍스트 침범 체크
     for i, info in enumerate(text_render_info):
         text_right_edge = info['x'] + info['text_width']
         cell_x, cell_y, cell_w, cell_h = info['cell_bbox']
@@ -1535,7 +1598,7 @@ def generate_preview_image(image_base64, translations):
         bg_colors[i] = bg_color
 
     # 2단계: 텍스트 정보 사전 계산 (겹침 감지용)
-    font_sizes = [12, 11, 10, 9, 8, 7]
+    font_sizes = [13, 12, 11, 10, 9, 8, 7]  # 폰트 크기 약간 증가
     text_render_info = []  # [(x, y_adjusted, text, font, text_width, height, cell_bbox, bg_color, is_vertical)]
 
     img_pil_temp = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -1582,7 +1645,7 @@ def generate_preview_image(image_base64, translations):
         # Y축 중앙 정렬: 셀 중앙에 텍스트 중앙을 맞춤
         cell_top = int(min(ys))
         cell_center = cell_top + box_height // 2
-        y_adjusted = cell_center - render_height // 2 - text_top_offset
+        y_adjusted = cell_center - render_height // 2 - text_top_offset + 2  # +2: 텍스트를 약간 아래로
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
@@ -1594,7 +1657,8 @@ def generate_preview_image(image_base64, translations):
             'text': translated_text, 'font': font,
             'text_width': text_width, 'text_height': actual_text_height,
             'cell_bbox': cell_bbox, 'bg_color': bg_color,
-            'is_vertical': is_vertical, 'bbox': bbox
+            'is_vertical': is_vertical, 'bbox': bbox,
+            'has_korean': item.get("has_korean", True)  # 한글 포함 여부 플래그
         })
 
     # 3단계: 겹침 감지 - 왼쪽 텍스트가 오른쪽 셀을 침범하는지 체크
@@ -1602,6 +1666,19 @@ def generate_preview_image(image_base64, translations):
     logger.info(f"\n{'='*60}")
     logger.info(f"[Overlap Detection - preview] Total texts: {len(text_render_info)}")
     logger.info(f"{'='*60}")
+    
+    # 3-1: 셀 경계 초과 체크 (OCR 미인식 텍스트 대응)
+    OVERFLOW_THRESHOLD = 30  # 30px 이상 초과시 무조건 축약
+    for i, info in enumerate(text_render_info):
+        text_right_edge = info['x'] + info['text_width']
+        cell_x, cell_y, cell_w, cell_h = info['cell_bbox']
+        cell_right = cell_x + cell_w
+        overflow = text_right_edge - cell_right
+        if overflow > OVERFLOW_THRESHOLD:
+            needs_abbreviation.add(i)
+            logger.info(f"  ★ OVERFLOW ABBREVIATE #{i} '{info['text'][:20]}' | overflow={overflow}px > {OVERFLOW_THRESHOLD}px")
+    
+    # 3-2: 인접 텍스트 침범 체크
     for i, info in enumerate(text_render_info):
         # 현재 텍스트의 실제 렌더링 영역 (x ~ x+text_width)
         text_right_edge = info['x'] + info['text_width']
