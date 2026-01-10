@@ -1448,7 +1448,7 @@ def replace_text_in_image(image_path, translations, output_path):
         # Y축 중앙 정렬: 셀 중앙에 텍스트 중앙을 맞춤
         cell_top = int(min(ys))
         cell_center = cell_top + box_height // 2
-        y_adjusted = cell_center - render_height // 2 - text_top_offset + 2  # +2: 텍스트를 약간 아래로
+        y_adjusted = cell_center - render_height // 2 - text_top_offset + 1  # +1: 텍스트를 약간 아래로
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
@@ -1521,6 +1521,10 @@ def replace_text_in_image(image_path, translations, output_path):
     all_text_bboxes = []
 
     for i, info in enumerate(text_render_info):
+        # ★ 영어 텍스트는 렌더링 건너뛰기 (원본 유지)
+        if not info.get('has_korean', True):
+            continue
+            
         display_text = info['text']
 
         if i in needs_abbreviation:
@@ -1590,12 +1594,15 @@ def generate_preview_image(image_base64, translations):
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     height, width = img.shape[:2]
 
-    # 1단계: 모든 텍스트 영역을 배경색으로 지우고, 배경색 저장
+    # 1단계: 한글 텍스트 영역만 배경색으로 지우기 (영어는 원본 유지)
     bg_colors = {}
     for i, item in enumerate(translations):
-        bbox = item["bbox"]
-        img, bg_color = erase_text_region(img, bbox)
-        bg_colors[i] = bg_color
+        if item.get("has_korean", True):  # 한글 텍스트만 erase
+            bbox = item["bbox"]
+            img, bg_color = erase_text_region(img, bbox)
+            bg_colors[i] = bg_color
+        else:
+            bg_colors[i] = (255, 255, 255)  # 영어 텍스트는 erase 안 함
 
     # 2단계: 텍스트 정보 사전 계산 (겹침 감지용)
     font_sizes = [13, 12, 11, 10, 9, 8, 7]  # 폰트 크기 약간 증가
@@ -1645,7 +1652,7 @@ def generate_preview_image(image_base64, translations):
         # Y축 중앙 정렬: 셀 중앙에 텍스트 중앙을 맞춤
         cell_top = int(min(ys))
         cell_center = cell_top + box_height // 2
-        y_adjusted = cell_center - render_height // 2 - text_top_offset + 2  # +2: 텍스트를 약간 아래로
+        y_adjusted = cell_center - render_height // 2 - text_top_offset + 1  # +1: 텍스트를 약간 아래로
 
         bg_color = bg_colors.get(i, (255, 255, 255))
         is_vertical = is_vertical_text(bbox)
@@ -1720,6 +1727,10 @@ def generate_preview_image(image_base64, translations):
     all_text_bboxes = []
 
     for i, info in enumerate(text_render_info):
+        # ★ 영어 텍스트는 렌더링 건너뛰기 (원본 유지)
+        if not info.get('has_korean', True):
+            continue
+            
         display_text = info['text']
 
         # 침범한 텍스트는 약어로 변환
