@@ -71,6 +71,7 @@ import base64
 import tempfile
 import re
 import requests
+import logging
 from collections import Counter
 from datetime import datetime
 from flask import Flask, render_template_string, request, send_file, jsonify
@@ -79,6 +80,19 @@ import numpy as np
 from paddleocr import PaddleOCR
 import cv2
 import fitz  # PyMuPDF
+
+# ★ 로깅 설정 (겹침 감지 디버깅용)
+LOG_FILE = os.path.join(os.path.dirname(__file__), 'overlap_debug.log')
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding='utf-8', mode='a'),
+        logging.StreamHandler(sys.stdout)  # 콘솔에도 출력
+    ]
+)
+logger = logging.getLogger('overlap_debug')
 
 # UTF-8 출력 설정
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
@@ -1122,13 +1136,15 @@ def erase_text_region(img, bbox):
     x_max = int(max(p[0] for p in bbox))
     y_max = int(max(p[1] for p in bbox))
 
-    # ★ 마진 없이 bbox 그대로 사용 (선 침범 방지)
-    # 또는 아주 작은 마진만 (1픽셀)
-    margin = 1
-    x_min_ext = max(0, x_min - margin)
-    y_min_ext = max(0, y_min - margin)
-    x_max_ext = min(width, x_max + margin)
-    y_max_ext = min(height, y_max + margin)
+    # ★ Y축만 축소하여 수평선(셀 경계) 보호
+    # margin_x = 1: X축은 기존대로 약간 확장
+    # margin_y = -3: Y축은 안쪽으로 축소 (위아래 3px씩 보호)
+    margin_x = 1
+    margin_y = -3
+    x_min_ext = max(0, x_min - margin_x)
+    y_min_ext = max(0, y_min - margin_y)  # y_min + 3 (아래로 축소)
+    x_max_ext = min(width, x_max + margin_x)
+    y_max_ext = min(height, y_max + margin_y)  # y_max - 3 (위로 축소)
 
     # 배경색 샘플링
     bg_color = sample_background_color(img, bbox, height, width)
@@ -1370,7 +1386,7 @@ def replace_text_in_image(image_path, translations, output_path):
             text_width = text_bbox_size[2] - text_bbox_size[0]
             selected_text_height = text_bbox_size[3] - text_bbox_size[1]
 
-            if selected_text_height <= box_height * 0.75:  # 셀 높이의 75% (위아래 여백 확보)
+            if selected_text_height <= box_height:  # 셀 높이에 맞춤 (클리핑으로 경계 처리)
                 break
 
         text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
@@ -1400,10 +1416,13 @@ def replace_text_in_image(image_path, translations, output_path):
 
     # 3단계: 겹침 감지 - 왼쪽 텍스트가 오른쪽 셀을 침범하는지 체크
     needs_abbreviation = set()
-    print(f"\n[Overlap Detection - replace] Total texts: {len(text_render_info)}", flush=True)
+    logger.info(f"\n{'='*60}")
+    logger.info(f"[Overlap Detection - replace] Total texts: {len(text_render_info)}")
+    logger.info(f"{'='*60}")
     for i, info in enumerate(text_render_info):
         text_right_edge = info['x'] + info['text_width']
-        print(f"[#{i}] '{info['text'][:30]}' x={info['x']}, text_width={info['text_width']}, right={text_right_edge}, box_h={info['cell_bbox'][3]}", flush=True)
+        cell_x, cell_y, cell_w, cell_h = info['cell_bbox']
+        logger.debug(f"[#{i}] '{info['text'][:30]}' | x={info['x']}, w={info['text_width']}, right={text_right_edge} | cell=({cell_x},{cell_y},{cell_w},{cell_h})")
 
         for j, other_info in enumerate(text_render_info):
             if i == j:
@@ -1419,13 +1438,17 @@ def replace_text_in_image(image_path, translations, output_path):
                 other_h = other_info['cell_bbox'][3]
 
                 y_overlap = not (my_y + my_h <= other_y or other_y + other_h <= my_y)
-                print(f"  → INVADES #{j} '{other_info['text'][:20]}' other_left={other_cell_left}, y_overlap={y_overlap}", flush=True)
+                logger.info(f"  → #{i} INVADES #{j} '{other_info['text'][:20]}' | other_left={other_cell_left}")
+                logger.info(f"     my_y={my_y}, my_h={my_h} (range: {my_y}~{my_y+my_h})")
+                logger.info(f"     other_y={other_y}, other_h={other_h} (range: {other_y}~{other_y+other_h})")
+                logger.info(f"     y_overlap={y_overlap}")
 
                 if y_overlap:
                     needs_abbreviation.add(i)  # 침범한 쪽(왼쪽)을 약어로
-                    print(f"  ★ ABBREVIATE #{i}", flush=True)
+                    logger.info(f"  ★ ABBREVIATE #{i}")
                     break
-    print(f"[Overlap] needs_abbreviation: {needs_abbreviation}", flush=True)
+    logger.info(f"[Overlap Result] needs_abbreviation: {needs_abbreviation}")
+    logger.info(f"{'='*60}\n")
 
     # 4단계: 실제 렌더링
     img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -1447,7 +1470,40 @@ def replace_text_in_image(image_path, translations, output_path):
             draw_vertical_text(draw, display_text, info['x'], info['y'], info['font'],
                              text_color_rgb, info['cell_bbox'][2], info['cell_bbox'][3])
         else:
-            draw.text((info['x'], info['y_adjusted']), display_text, fill=text_color_rgb, font=info['font'], anchor="lt")
+            # 클리핑: 텍스트를 임시 이미지에 그린 후 셀 높이만큼만 잘라서 붙임
+            cell_top = info['cell_bbox'][1]
+            cell_height = info['cell_bbox'][3]
+
+            # 텍스트 bbox 계산 (충분한 여백에서)
+            margin = 50
+            text_bbox_temp = draw.textbbox((margin, margin), display_text, font=info['font'], anchor="lt")
+            text_width_temp = text_bbox_temp[2] - text_bbox_temp[0]
+            text_height_temp = text_bbox_temp[3] - text_bbox_temp[1]
+            text_left = text_bbox_temp[0]
+            text_top = text_bbox_temp[1]
+
+            # 임시 이미지 생성 (충분히 크게)
+            temp_img = Image.new('RGBA', (text_width_temp + margin * 2, text_height_temp + margin * 2), (0, 0, 0, 0))
+            temp_draw = ImageDraw.Draw(temp_img)
+            temp_draw.text((margin, margin), display_text, fill=text_color_rgb, font=info['font'], anchor="lt")
+
+            # 실제 텍스트 영역만 crop
+            temp_img = temp_img.crop((text_left, text_top, text_bbox_temp[2], text_bbox_temp[3]))
+
+            # 셀 높이에 맞춰 추가 crop 및 위치 계산
+            y_offset = 2  # 글자를 아래로 내리는 오프셋 (픽셀)
+            if text_height_temp > cell_height:
+                # 텍스트가 셀보다 큼 → 중앙 부분만 잘라냄
+                crop_top = (text_height_temp - cell_height) // 2
+                crop_bottom = crop_top + cell_height
+                temp_img = temp_img.crop((0, crop_top, text_width_temp, crop_bottom))
+                paste_y = cell_top + y_offset
+            else:
+                # 텍스트가 셀보다 작음 → 셀 중앙에 배치
+                paste_y = cell_top + (cell_height - text_height_temp) // 2 + y_offset
+
+            # 원본 이미지에 붙여넣기
+            img_result.paste(temp_img, (info['x'], paste_y), temp_img)
 
         text_bbox_new = draw.textbbox((0, 0), display_text, font=info['font'])
         new_width = text_bbox_new[2] - text_bbox_new[0]
@@ -1513,7 +1569,7 @@ def generate_preview_image(image_base64, translations):
             text_width = text_bbox_size[2] - text_bbox_size[0]
             selected_text_height = text_bbox_size[3] - text_bbox_size[1]
 
-            if selected_text_height <= box_height * 0.75:  # 셀 높이의 75% (위아래 여백 확보)
+            if selected_text_height <= box_height:  # 셀 높이에 맞춤 (클리핑으로 경계 처리)
                 break
 
         text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
@@ -1543,11 +1599,14 @@ def generate_preview_image(image_base64, translations):
 
     # 3단계: 겹침 감지 - 왼쪽 텍스트가 오른쪽 셀을 침범하는지 체크
     needs_abbreviation = set()
-    print(f"\n[Overlap Detection] Total texts: {len(text_render_info)}", flush=True)
+    logger.info(f"\n{'='*60}")
+    logger.info(f"[Overlap Detection - preview] Total texts: {len(text_render_info)}")
+    logger.info(f"{'='*60}")
     for i, info in enumerate(text_render_info):
         # 현재 텍스트의 실제 렌더링 영역 (x ~ x+text_width)
         text_right_edge = info['x'] + info['text_width']
-        print(f"[Overlap] #{i} '{info['text'][:25]}' x={info['x']}, w={info['text_width']}, right={text_right_edge}", flush=True)
+        cell_x, cell_y, cell_w, cell_h = info['cell_bbox']
+        logger.debug(f"[#{i}] '{info['text'][:25]}' | x={info['x']}, w={info['text_width']}, right={text_right_edge} | cell=({cell_x},{cell_y},{cell_w},{cell_h})")
 
         # 오른쪽에 있는 모든 셀과 비교
         for j, other_info in enumerate(text_render_info):
@@ -1565,12 +1624,16 @@ def generate_preview_image(image_base64, translations):
 
                 # Y축 겹침 체크
                 y_overlap = not (my_y + my_h <= other_y or other_y + other_h <= my_y)
-                print(f"  → INVADES #{j} '{other_info['text'][:15]}' cell_left={other_cell_left}, y_overlap={y_overlap}", flush=True)
+                logger.info(f"  → #{i} INVADES #{j} '{other_info['text'][:15]}' | other_left={other_cell_left}")
+                logger.info(f"     my_y={my_y}, my_h={my_h} (range: {my_y}~{my_y+my_h})")
+                logger.info(f"     other_y={other_y}, other_h={other_h} (range: {other_y}~{other_y+other_h})")
+                logger.info(f"     y_overlap={y_overlap}")
                 if y_overlap:
                     needs_abbreviation.add(i)  # 침범한 쪽(왼쪽)을 약어로
-                    print(f"  ★ ABBREVIATE #{i}", flush=True)
+                    logger.info(f"  ★ ABBREVIATE #{i}")
                     break
-    print(f"[Overlap] needs_abbreviation: {needs_abbreviation}", flush=True)
+    logger.info(f"[Overlap Result] needs_abbreviation: {needs_abbreviation}")
+    logger.info(f"{'='*60}\n")
 
     # 4단계: 실제 렌더링
     img_result = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -1593,7 +1656,40 @@ def generate_preview_image(image_base64, translations):
             draw_vertical_text(draw, display_text, info['x'], info['y'], info['font'],
                              text_color_rgb, info['cell_bbox'][2], info['cell_bbox'][3])
         else:
-            draw.text((info['x'], info['y_adjusted']), display_text, fill=text_color_rgb, font=info['font'], anchor="lt")
+            # 클리핑: 텍스트를 임시 이미지에 그린 후 셀 높이만큼만 잘라서 붙임
+            cell_top = info['cell_bbox'][1]
+            cell_height = info['cell_bbox'][3]
+
+            # 텍스트 bbox 계산 (충분한 여백에서)
+            margin = 50
+            text_bbox_temp = draw.textbbox((margin, margin), display_text, font=info['font'], anchor="lt")
+            text_width_temp = text_bbox_temp[2] - text_bbox_temp[0]
+            text_height_temp = text_bbox_temp[3] - text_bbox_temp[1]
+            text_left = text_bbox_temp[0]
+            text_top = text_bbox_temp[1]
+
+            # 임시 이미지 생성 (충분히 크게)
+            temp_img = Image.new('RGBA', (text_width_temp + margin * 2, text_height_temp + margin * 2), (0, 0, 0, 0))
+            temp_draw = ImageDraw.Draw(temp_img)
+            temp_draw.text((margin, margin), display_text, fill=text_color_rgb, font=info['font'], anchor="lt")
+
+            # 실제 텍스트 영역만 crop
+            temp_img = temp_img.crop((text_left, text_top, text_bbox_temp[2], text_bbox_temp[3]))
+
+            # 셀 높이에 맞춰 추가 crop 및 위치 계산
+            y_offset = 2  # 글자를 아래로 내리는 오프셋 (픽셀)
+            if text_height_temp > cell_height:
+                # 텍스트가 셀보다 큼 → 중앙 부분만 잘라냄
+                crop_top = (text_height_temp - cell_height) // 2
+                crop_bottom = crop_top + cell_height
+                temp_img = temp_img.crop((0, crop_top, text_width_temp, crop_bottom))
+                paste_y = cell_top + y_offset
+            else:
+                # 텍스트가 셀보다 작음 → 셀 중앙에 배치
+                paste_y = cell_top + (cell_height - text_height_temp) // 2 + y_offset
+
+            # 원본 이미지에 붙여넣기
+            img_result.paste(temp_img, (info['x'], paste_y), temp_img)
 
         # bbox 기록
         text_bbox_new = draw.textbbox((0, 0), display_text, font=info['font'])
