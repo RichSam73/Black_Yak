@@ -1558,7 +1558,9 @@ def replace_text_in_image(image_path, translations, output_path, target_lang="en
                              text_color_rgb, info['cell_bbox'][2], info['cell_bbox'][3])
         else:
             # 클리핑: 텍스트를 임시 이미지에 그린 후 셀 높이만큼만 잘라서 붙임
+            cell_left = info['cell_bbox'][0]
             cell_top = info['cell_bbox'][1]
+            cell_width = info['cell_bbox'][2]
             cell_height = info['cell_bbox'][3]
 
             # 텍스트 bbox 계산 (충분한 여백에서)
@@ -1589,8 +1591,16 @@ def replace_text_in_image(image_path, translations, output_path, target_lang="en
                 # 텍스트가 셀보다 작음 → 셀 중앙에 배치
                 paste_y = cell_top + (cell_height - text_height_temp) // 2 + y_offset
 
+            # ★ X축 중앙 정렬: 원본 bbox 중앙 = 번역 텍스트 중앙
+            original_center_x = cell_left + cell_width // 2
+            paste_x = original_center_x - text_width_temp // 2
+            
+            # 왼쪽 경계 제한 (bbox 왼쪽을 넘지 않도록)
+            if paste_x < cell_left:
+                paste_x = cell_left
+
             # 원본 이미지에 붙여넣기
-            img_result.paste(temp_img, (info['x'], paste_y), temp_img)
+            img_result.paste(temp_img, (paste_x, paste_y), temp_img)
 
         text_bbox_new = draw.textbbox((0, 0), display_text, font=info['font'])
         new_width = text_bbox_new[2] - text_bbox_new[0]
@@ -1765,7 +1775,9 @@ def generate_preview_image(image_base64, translations, target_lang='english'):
                              text_color_rgb, info['cell_bbox'][2], info['cell_bbox'][3])
         else:
             # 클리핑: 텍스트를 임시 이미지에 그린 후 셀 높이만큼만 잘라서 붙임
+            cell_left = info['cell_bbox'][0]
             cell_top = info['cell_bbox'][1]
+            cell_width = info['cell_bbox'][2]
             cell_height = info['cell_bbox'][3]
 
             # 텍스트 bbox 계산 (충분한 여백에서)
@@ -1796,8 +1808,16 @@ def generate_preview_image(image_base64, translations, target_lang='english'):
                 # 텍스트가 셀보다 작음 → 셀 중앙에 배치
                 paste_y = cell_top + (cell_height - text_height_temp) // 2 + y_offset
 
+            # ★ X축 중앙 정렬: 원본 bbox 중앙 = 번역 텍스트 중앙
+            original_center_x = cell_left + cell_width // 2
+            paste_x = original_center_x - text_width_temp // 2
+            
+            # 왼쪽 경계 제한 (bbox 왼쪽을 넘지 않도록)
+            if paste_x < cell_left:
+                paste_x = cell_left
+
             # 원본 이미지에 붙여넣기
-            img_result.paste(temp_img, (info['x'], paste_y), temp_img)
+            img_result.paste(temp_img, (paste_x, paste_y), temp_img)
 
         # bbox 기록
         text_bbox_new = draw.textbbox((0, 0), display_text, font=info['font'])
@@ -2355,8 +2375,9 @@ HTML_TEMPLATE = """
 
         /* 용어 사전 모달 스타일 */
         .dict-modal {
-            width: 850px;
-            max-height: 80vh;
+            width: 890px;
+            max-width: 95vw;
+            max-height: 99vh;
         }
         .dict-tabs {
             display: flex;
@@ -2385,9 +2406,11 @@ HTML_TEMPLATE = """
             display: flex;
             gap: 10px;
             margin-bottom: 15px;
+            flex-wrap: nowrap;
         }
         .dict-add-form input {
             flex: 1;
+            min-width: 120px;
             padding: 10px;
             border: 2px solid #ddd;
             border-radius: 8px;
@@ -2396,6 +2419,10 @@ HTML_TEMPLATE = """
         .dict-add-form input:focus {
             outline: none;
             border-color: #667eea;
+        }
+        .dict-add-form button {
+            flex-shrink: 0;
+            white-space: nowrap;
         }
         .dict-search {
             margin-bottom: 10px;
@@ -2585,6 +2612,7 @@ HTML_TEMPLATE = """
             <button type="button" class="lang-btn" data-lang="chinese">🇨🇳中</button>
             <button type="button" class="lang-btn" data-lang="indonesian">🇮🇩ID</button>
             <button type="button" class="lang-btn" data-lang="bengali">🇧🇩BN</button>
+            <button type="button" class="lang-btn" data-lang="myanmar">🇲🇲MY</button>
             <button type="button" class="file-select-btn" id="fileSelectBtn">📁 파일선택</button>
             <button type="button" class="translate-btn" id="translateBtn" disabled>🚀 번역</button>
             <button type="button" class="dict-btn" id="dictBtn" title="용어 사전 관리">📖</button>
@@ -2660,6 +2688,7 @@ HTML_TEMPLATE = """
                         <button class="dict-tab" data-lang="chinese">🇨🇳 중국어</button>
                         <button class="dict-tab" data-lang="indonesian">🇮🇩 인도네시아어</button>
                         <button class="dict-tab" data-lang="bengali">🇧🇩 벵골어</button>
+                        <button class="dict-tab" data-lang="myanmar">🇲🇲 미얀마어</button>
                     </div>
                     <div class="dict-add-form">
                         <input type="text" id="dictKorean" placeholder="한글 용어">
