@@ -1,990 +1,3804 @@
 {
   "english": {
-    "남성": "Men's",
-    "여성": "Women's",
-    "자켓": "Jacket",
-    "다운자켓": "Down Jacket",
-    "후드": "Hood",
-    "에리": "Collar",
-    "봉제": "Sewing",
-    "작업": "Work",
-    "원단": "Fabric",
-    "안감": "Lining",
-    "겉감": "Shell",
-    "소매": "Sleeve",
-    "밑단": "Hem",
-    "어깨": "Shoulder",
-    "가슴": "Chest",
-    "허리": "Waist",
-    "지퍼": "Zipper",
-    "스토퍼": "Stopper",
-    "고리": "Loop",
-    "테이프": "Tape",
-    "앞판": "Front Panel",
-    "뒷판": "Back Panel",
-    "로고": "LOGO",
-    "벨크로": "Velcro",
-    "밴드": "Band",
-    "아일렛": "Eyelet",
-    "스트링": "String",
-    "주머니": "Pocket",
-    "포켓": "Pocket",
-    "메인": "Main",
-    "라벨": "Label",
-    "탈부착": "Detachable",
-    "탈부착형": "Detachable Type",
-    "블럭": "Block",
-    "컬러": "Color",
-    "여름": "Summer",
-    "겨울": "Winter",
-    "봄": "Spring",
-    "가을": "Fall",
-    "사이즈": "Size",
-    "치수": "Measurement",
-    "봉제사양": "Sewing Spec",
-    "부자재": "Accessories",
-    "단추": "Button",
-    "똑딱이": "Snap Button",
-    "고무밴드": "Elastic Band",
-    "드로우코드": "Drawcord",
-    "스트링스토퍼": "String Stopper",
-    "후드탈부착": "Detachable Hood",
-    "요척": "Consumption",
-
-    "겹누빔": "Side Quilting",
-    "고정박음": "Bar Tacking",
-    "깃달기": "Collar Attach",
-    "깃눌러박기": "Collar Top Stitch",
-    "눌러박기": "Top Stitch",
-    "새발뜨기": "Cross Stitch",
-    "속감침": "Blind Stitch",
-    "시접": "Seam Allowance",
-    "시접분": "Seam Allowance",
-    "통솔": "Fell Seam",
-    "통솔박음": "Refolded Seam",
-    "오버록": "Overlock",
-    "오바로크": "Overlock",
-    "상침": "Top Stitch",
-    "박음질": "Stitching",
-    "미싱": "Sewing Machine",
-    "재봉": "Sewing",
-    "재단": "Cutting",
-    "패턴": "Pattern",
-    "그레이딩": "Grading",
-    "마킹": "Marking",
-    "스프레딩": "Spreading",
-
-    "끝손질": "Trimming",
-    "다림질": "Pressing",
-    "다리미": "Iron",
-    "마감": "Finishing",
-    "불량": "Defect",
-    "검품": "Quality Check",
-    "검침": "Needle Detection",
-    "포장": "Packing",
-    "출하": "Shipping",
-
-    "심지": "Interlining",
-    "접착심": "Fusible Interlining",
-    "어깨솜": "Shoulder Pad",
-    "어깨패드": "Shoulder Pad",
-    "충전재": "Filling",
-    "솜": "Padding",
-    "덕다운": "Duck Down",
-    "구스다운": "Goose Down",
-    "행택": "Hang Tag",
-    "케어라벨": "Care Label",
-    "사이즈라벨": "Size Label",
-    "메인라벨": "Main Label",
-    "브랜드라벨": "Brand Label",
-    "워셔": "Washer",
-    "리벳": "Rivet",
-    "버클": "Buckle",
-    "고무줄": "Elastic",
-    "끈": "Cord",
-    "시보리": "Rib Knit",
-    "립": "Rib",
-    "니트립": "Knit Rib",
-
-    "옆선": "Side Seam",
-    "어깨선": "Shoulder Seam",
-    "암홀": "Armhole",
-    "소매통": "Sleeve Width",
-    "소매산": "Sleeve Cap",
-    "네크라인": "Neckline",
-    "목둘레": "Neck Circumference",
-    "가슴둘레": "Chest Circumference",
-    "허리둘레": "Waist Circumference",
-    "엉덩이둘레": "Hip Circumference",
-    "총장": "Total Length",
-    "등길이": "Back Length",
-    "화장": "Sleeve Length",
-    "진동": "Armhole Depth",
-    "밑위": "Rise",
-    "인심": "Inseam",
-    "밑단둘레": "Hem Circumference",
-
-    "기모": "Brushed",
-    "방수": "Waterproof",
-    "방풍": "Windproof",
-    "투습": "Breathable",
-    "발수": "Water Repellent",
-    "보온": "Insulation",
-    "경량": "Lightweight",
-    "신축성": "Stretch",
-    "스판": "Spandex",
-    "폴리": "Polyester",
-    "나일론": "Nylon",
-    "면": "Cotton",
-    "울": "Wool",
-    "플리스": "Fleece",
-    "고어텍스": "Gore-Tex",
-    "멤브레인": "Membrane",
-
-    "바느질": "Needlework",
-    "홈질": "Running Stitch",
-    "감침질": "Hemstitch",
-    "시침질": "Basting",
-    "휘감치기": "Whip Stitch",
-    "공그르기": "Slip Stitch",
-    "바이어스": "Bias",
-    "식서": "Selvage",
-    "올": "Grain",
-    "결": "Grain Line",
-    "다트": "Dart",
-    "주름": "Pleat",
-    "개더": "Gather",
-    "턱": "Tuck",
-    "플리츠": "Pleats",
-    "프릴": "Frill",
-    "러플": "Ruffle",
-    "파이핑": "Piping",
-    "바인딩": "Binding",
-    "트리밍": "Trimming",
-    "퀼팅": "Quilting",
-    "누빔": "Quilting",
-    "자수": "Embroidery",
-    "아플리케": "Applique",
-    "단": "Hem",
-    "단처리": "Hem Finish",
-    "시침": "Basting",
-    "본봉": "Lock Stitch",
-    "체인스티치": "Chain Stitch",
-    "지그재그": "Zigzag",
-    "새들스티치": "Saddle Stitch",
-    "프렌치솔기": "French Seam",
-    "플랫펠트솔기": "Flat-felled Seam",
-    "가름솔": "Open Seam",
-    "쌈솔": "Closed Seam",
-    "합봉": "Joining Seam",
-    "노루발": "Presser Foot",
-    "북집": "Bobbin Case",
-    "보빈": "Bobbin",
-    "실": "Thread",
-    "바늘": "Needle",
-    "가위": "Scissors",
-    "자": "Ruler",
-    "줄자": "Tape Measure",
-    "초크": "Chalk",
-    "핀": "Pin",
-    "시루시": "Notch",
-    "이새": "Ease",
-    "조시": "Thread Tension",
-    "맞춤": "Fitting",
-    "가봉": "Fitting",
-    "샘플": "Sample",
-    "생산": "Production",
-    "납기": "Delivery",
-    "원가": "Cost",
-    "품번": "Style Number",
-    "색상": "Color",
-    "배색": "Color Combination",
-    "단색": "Solid Color",
-    "프린트": "Print",
-    "염색": "Dyeing",
-    "워싱": "Washing",
-    "가공": "Processing",
-    "코팅": "Coating",
-    "라미네이팅": "Laminating",
-    "본딩": "Bonding",
-    "융착": "Welding",
-    "열접착": "Heat Sealing",
-    "초음파": "Ultrasonic",
-    "레이저": "Laser",
-    "커팅": "Cutting",
-    "가다마이": "Single Breasted",
-    "가시바리": "Back Stitch",
-    "간도메": "Bar Tack",
-    "고다찌": "Precise Cutting",
-    "고로시": "Ironing",
-    "나라시": "Spreading",
-    "나시": "Sleeveless",
-    "낫찌": "Notch",
-    "단작": "Placket",
-    "오비": "Waist Band",
-    "와끼": "Side Line",
-    "플래킷": "Placket",
-    "카라": "Collar",
-    "커프스": "Cuffs",
-    "요크": "Yoke",
-    "벤트": "Vent",
-    "슬릿": "Slit",
-    "플랩": "Flap",
-    "웰트": "Welt",
-    "패치": "Patch",
-    "인서트": "Insert",
-    "고어": "Gore",
-    "거싯": "Gusset",
-    "벨트루프": "Belt Loop",
-    "견장": "Epaulette",
-    "후크": "Hook",
-    "아이": "Eye",
-    "스냅": "Snap",
-    "토글": "Toggle",
-    "코드록": "Cord Lock",
-    "피봇": "Pivot",
-    "턴업": "Turn Up",
-    "롤업": "Roll Up",
-    "접음": "Fold",
-    "겹침": "Overlap",
-    "덧댐": "Reinforcement",
-    "보강": "Reinforcement",
-    "스테이": "Stay",
-    "테이핑": "Taping",
-    "심테이프": "Seam Tape",
-    "반사": "Reflective",
-    "형광": "Fluorescent",
-    "야광": "Glow",
-    "발열": "Heat Generation",
-    "냉감": "Cooling",
-    "항균": "Antibacterial",
-    "방취": "Deodorant",
-    "흡습": "Moisture Absorption",
-    "속건": "Quick Dry",
-    "UV차단": "UV Protection",
-    "정전기방지": "Anti-static"
+    "남성": {
+      "full": "Men's",
+      "abbr": ""
+    },
+    "여성": {
+      "full": "Women's",
+      "abbr": ""
+    },
+    "자켓": {
+      "full": "Jacket",
+      "abbr": ""
+    },
+    "다운자켓": {
+      "full": "Down Jacket",
+      "abbr": ""
+    },
+    "후드": {
+      "full": "Hood",
+      "abbr": ""
+    },
+    "에리": {
+      "full": "Collar",
+      "abbr": ""
+    },
+    "봉제": {
+      "full": "Sewing",
+      "abbr": ""
+    },
+    "작업": {
+      "full": "Work",
+      "abbr": ""
+    },
+    "원단": {
+      "full": "Fabric",
+      "abbr": ""
+    },
+    "안감": {
+      "full": "Lining",
+      "abbr": ""
+    },
+    "겉감": {
+      "full": "Shell",
+      "abbr": ""
+    },
+    "소매": {
+      "full": "Sleeve",
+      "abbr": ""
+    },
+    "밑단": {
+      "full": "Hem",
+      "abbr": ""
+    },
+    "어깨": {
+      "full": "Shoulder",
+      "abbr": ""
+    },
+    "가슴": {
+      "full": "Chest",
+      "abbr": ""
+    },
+    "허리": {
+      "full": "Waist",
+      "abbr": ""
+    },
+    "지퍼": {
+      "full": "Zipper",
+      "abbr": ""
+    },
+    "스토퍼": {
+      "full": "Stopper",
+      "abbr": ""
+    },
+    "고리": {
+      "full": "Loop",
+      "abbr": ""
+    },
+    "테이프": {
+      "full": "Tape",
+      "abbr": ""
+    },
+    "앞판": {
+      "full": "Front Panel",
+      "abbr": ""
+    },
+    "뒷판": {
+      "full": "Back Panel",
+      "abbr": ""
+    },
+    "로고": {
+      "full": "LOGO",
+      "abbr": ""
+    },
+    "벨크로": {
+      "full": "Velcro",
+      "abbr": ""
+    },
+    "밴드": {
+      "full": "Band",
+      "abbr": ""
+    },
+    "아일렛": {
+      "full": "Eyelet",
+      "abbr": ""
+    },
+    "스트링": {
+      "full": "String",
+      "abbr": ""
+    },
+    "주머니": {
+      "full": "Pocket",
+      "abbr": ""
+    },
+    "포켓": {
+      "full": "Pocket",
+      "abbr": ""
+    },
+    "메인": {
+      "full": "Main",
+      "abbr": ""
+    },
+    "라벨": {
+      "full": "Label",
+      "abbr": ""
+    },
+    "탈부착": {
+      "full": "Detachable",
+      "abbr": ""
+    },
+    "탈부착형": {
+      "full": "Detachable Type",
+      "abbr": "Det. Type"
+    },
+    "블럭": {
+      "full": "Block",
+      "abbr": ""
+    },
+    "컬러": {
+      "full": "Color",
+      "abbr": ""
+    },
+    "여름": {
+      "full": "Summer",
+      "abbr": ""
+    },
+    "겨울": {
+      "full": "Winter",
+      "abbr": ""
+    },
+    "봄": {
+      "full": "Spring",
+      "abbr": ""
+    },
+    "가을": {
+      "full": "Fall",
+      "abbr": ""
+    },
+    "사이즈": {
+      "full": "Size",
+      "abbr": ""
+    },
+    "치수": {
+      "full": "Measurement",
+      "abbr": ""
+    },
+    "봉제사양": {
+      "full": "Sewing Spec",
+      "abbr": "Sew. Spec"
+    },
+    "부자재": {
+      "full": "Accessories",
+      "abbr": ""
+    },
+    "단추": {
+      "full": "Button",
+      "abbr": ""
+    },
+    "똑딱이": {
+      "full": "Snap Button",
+      "abbr": "Snap Btn"
+    },
+    "고무밴드": {
+      "full": "Elastic Band",
+      "abbr": "Elast. Band"
+    },
+    "드로우코드": {
+      "full": "Drawcord",
+      "abbr": ""
+    },
+    "스트링스토퍼": {
+      "full": "String Stopper",
+      "abbr": "Str. Stop."
+    },
+    "후드탈부착": {
+      "full": "Detachable Hood",
+      "abbr": "Det. Hood"
+    },
+    "요척": {
+      "full": "Consumption",
+      "abbr": "Cons."
+    },
+    "겹누빔": {
+      "full": "Side Quilting",
+      "abbr": ""
+    },
+    "고정박음": {
+      "full": "Bar Tacking",
+      "abbr": ""
+    },
+    "깃달기": {
+      "full": "Collar Attach",
+      "abbr": ""
+    },
+    "깃눌러박기": {
+      "full": "Collar Top Stitch",
+      "abbr": ""
+    },
+    "눌러박기": {
+      "full": "Top Stitch",
+      "abbr": ""
+    },
+    "새발뜨기": {
+      "full": "Cross Stitch",
+      "abbr": ""
+    },
+    "속감침": {
+      "full": "Blind Stitch",
+      "abbr": ""
+    },
+    "시접": {
+      "full": "Seam Allowance",
+      "abbr": "Seam Allow."
+    },
+    "시접분": {
+      "full": "Seam Allowance",
+      "abbr": "Seam Allow."
+    },
+    "통솔": {
+      "full": "Fell Seam",
+      "abbr": ""
+    },
+    "통솔박음": {
+      "full": "Refolded Seam",
+      "abbr": ""
+    },
+    "오버록": {
+      "full": "Overlock",
+      "abbr": ""
+    },
+    "오바로크": {
+      "full": "Overlock",
+      "abbr": ""
+    },
+    "상침": {
+      "full": "Top Stitch",
+      "abbr": ""
+    },
+    "박음질": {
+      "full": "Stitching",
+      "abbr": ""
+    },
+    "미싱": {
+      "full": "Sewing Machine",
+      "abbr": "Sew. Mach."
+    },
+    "재봉": {
+      "full": "Sewing",
+      "abbr": ""
+    },
+    "재단": {
+      "full": "Cutting",
+      "abbr": ""
+    },
+    "패턴": {
+      "full": "Pattern",
+      "abbr": ""
+    },
+    "그레이딩": {
+      "full": "Grading",
+      "abbr": ""
+    },
+    "마킹": {
+      "full": "Marking",
+      "abbr": ""
+    },
+    "스프레딩": {
+      "full": "Spreading",
+      "abbr": ""
+    },
+    "끝손질": {
+      "full": "Trimming",
+      "abbr": ""
+    },
+    "다림질": {
+      "full": "Pressing",
+      "abbr": ""
+    },
+    "다리미": {
+      "full": "Iron",
+      "abbr": ""
+    },
+    "마감": {
+      "full": "Finishing",
+      "abbr": ""
+    },
+    "불량": {
+      "full": "Defect",
+      "abbr": ""
+    },
+    "검품": {
+      "full": "Quality Check",
+      "abbr": "QC"
+    },
+    "검침": {
+      "full": "Needle Detection",
+      "abbr": "Needle Det."
+    },
+    "포장": {
+      "full": "Packing",
+      "abbr": ""
+    },
+    "출하": {
+      "full": "Shipping",
+      "abbr": ""
+    },
+    "심지": {
+      "full": "Interlining",
+      "abbr": ""
+    },
+    "접착심": {
+      "full": "Fusible Interlining",
+      "abbr": "Fus. Interl."
+    },
+    "어깨솜": {
+      "full": "Shoulder Pad",
+      "abbr": "Shldr Pad"
+    },
+    "어깨패드": {
+      "full": "Shoulder Pad",
+      "abbr": "Shldr Pad"
+    },
+    "충전재": {
+      "full": "Filling",
+      "abbr": ""
+    },
+    "솜": {
+      "full": "Padding",
+      "abbr": ""
+    },
+    "덕다운": {
+      "full": "Duck Down",
+      "abbr": ""
+    },
+    "구스다운": {
+      "full": "Goose Down",
+      "abbr": ""
+    },
+    "행택": {
+      "full": "Hang Tag",
+      "abbr": ""
+    },
+    "케어라벨": {
+      "full": "Care Label",
+      "abbr": ""
+    },
+    "사이즈라벨": {
+      "full": "Size Label",
+      "abbr": ""
+    },
+    "메인라벨": {
+      "full": "Main Label",
+      "abbr": ""
+    },
+    "브랜드라벨": {
+      "full": "Brand Label",
+      "abbr": ""
+    },
+    "워셔": {
+      "full": "Washer",
+      "abbr": ""
+    },
+    "리벳": {
+      "full": "Rivet",
+      "abbr": ""
+    },
+    "버클": {
+      "full": "Buckle",
+      "abbr": ""
+    },
+    "고무줄": {
+      "full": "Elastic",
+      "abbr": ""
+    },
+    "끈": {
+      "full": "Cord",
+      "abbr": ""
+    },
+    "시보리": {
+      "full": "Rib Knit",
+      "abbr": ""
+    },
+    "립": {
+      "full": "Rib",
+      "abbr": ""
+    },
+    "니트립": {
+      "full": "Knit Rib",
+      "abbr": ""
+    },
+    "옆선": {
+      "full": "Side Seam",
+      "abbr": ""
+    },
+    "어깨선": {
+      "full": "Shoulder Seam",
+      "abbr": ""
+    },
+    "암홀": {
+      "full": "Armhole",
+      "abbr": ""
+    },
+    "소매통": {
+      "full": "Sleeve Width",
+      "abbr": "Slv. Width"
+    },
+    "소매산": {
+      "full": "Sleeve Cap",
+      "abbr": ""
+    },
+    "네크라인": {
+      "full": "Neckline",
+      "abbr": ""
+    },
+    "목둘레": {
+      "full": "Neck Circumference",
+      "abbr": "Neck Circ."
+    },
+    "가슴둘레": {
+      "full": "Chest Circumference",
+      "abbr": "Chest Circ."
+    },
+    "허리둘레": {
+      "full": "Waist Circumference",
+      "abbr": "Waist Circ."
+    },
+    "엉덩이둘레": {
+      "full": "Hip Circumference",
+      "abbr": "Hip Circ."
+    },
+    "총장": {
+      "full": "Total Length",
+      "abbr": "Total Len."
+    },
+    "등길이": {
+      "full": "Back Length",
+      "abbr": "Back Len."
+    },
+    "화장": {
+      "full": "Sleeve Length",
+      "abbr": "Slv. Len."
+    },
+    "진동": {
+      "full": "Armhole Depth",
+      "abbr": "Armhole Dep."
+    },
+    "밑위": {
+      "full": "Rise",
+      "abbr": ""
+    },
+    "인심": {
+      "full": "Inseam",
+      "abbr": ""
+    },
+    "밑단둘레": {
+      "full": "Hem Circumference",
+      "abbr": "Hem Circ."
+    },
+    "기모": {
+      "full": "Brushed",
+      "abbr": ""
+    },
+    "방수": {
+      "full": "Waterproof",
+      "abbr": ""
+    },
+    "방풍": {
+      "full": "Windproof",
+      "abbr": ""
+    },
+    "투습": {
+      "full": "Breathable",
+      "abbr": ""
+    },
+    "발수": {
+      "full": "Water Repellent",
+      "abbr": "Water Rep."
+    },
+    "보온": {
+      "full": "Insulation",
+      "abbr": ""
+    },
+    "경량": {
+      "full": "Lightweight",
+      "abbr": ""
+    },
+    "신축성": {
+      "full": "Stretch",
+      "abbr": ""
+    },
+    "스판": {
+      "full": "Spandex",
+      "abbr": ""
+    },
+    "폴리": {
+      "full": "Polyester",
+      "abbr": ""
+    },
+    "나일론": {
+      "full": "Nylon",
+      "abbr": ""
+    },
+    "면": {
+      "full": "Cotton",
+      "abbr": ""
+    },
+    "울": {
+      "full": "Wool",
+      "abbr": ""
+    },
+    "플리스": {
+      "full": "Fleece",
+      "abbr": ""
+    },
+    "고어텍스": {
+      "full": "Gore-Tex",
+      "abbr": ""
+    },
+    "멤브레인": {
+      "full": "Membrane",
+      "abbr": ""
+    },
+    "바느질": {
+      "full": "Needlework",
+      "abbr": ""
+    },
+    "홈질": {
+      "full": "Running Stitch",
+      "abbr": ""
+    },
+    "감침질": {
+      "full": "Hemstitch",
+      "abbr": ""
+    },
+    "시침질": {
+      "full": "Basting",
+      "abbr": ""
+    },
+    "휘감치기": {
+      "full": "Whip Stitch",
+      "abbr": ""
+    },
+    "공그르기": {
+      "full": "Slip Stitch",
+      "abbr": ""
+    },
+    "바이어스": {
+      "full": "Bias",
+      "abbr": ""
+    },
+    "식서": {
+      "full": "Selvage",
+      "abbr": ""
+    },
+    "올": {
+      "full": "Grain",
+      "abbr": ""
+    },
+    "결": {
+      "full": "Grain Line",
+      "abbr": ""
+    },
+    "다트": {
+      "full": "Dart",
+      "abbr": ""
+    },
+    "주름": {
+      "full": "Pleat",
+      "abbr": ""
+    },
+    "개더": {
+      "full": "Gather",
+      "abbr": ""
+    },
+    "턱": {
+      "full": "Tuck",
+      "abbr": ""
+    },
+    "플리츠": {
+      "full": "Pleats",
+      "abbr": ""
+    },
+    "프릴": {
+      "full": "Frill",
+      "abbr": ""
+    },
+    "러플": {
+      "full": "Ruffle",
+      "abbr": ""
+    },
+    "파이핑": {
+      "full": "Piping",
+      "abbr": ""
+    },
+    "바인딩": {
+      "full": "Binding",
+      "abbr": ""
+    },
+    "트리밍": {
+      "full": "Trimming",
+      "abbr": ""
+    },
+    "퀼팅": {
+      "full": "Quilting",
+      "abbr": ""
+    },
+    "누빔": {
+      "full": "Quilting",
+      "abbr": ""
+    },
+    "자수": {
+      "full": "Embroidery",
+      "abbr": ""
+    },
+    "아플리케": {
+      "full": "Applique",
+      "abbr": ""
+    },
+    "단": {
+      "full": "Hem",
+      "abbr": ""
+    },
+    "단처리": {
+      "full": "Hem Finish",
+      "abbr": ""
+    },
+    "시침": {
+      "full": "Basting",
+      "abbr": ""
+    },
+    "본봉": {
+      "full": "Lock Stitch",
+      "abbr": ""
+    },
+    "체인스티치": {
+      "full": "Chain Stitch",
+      "abbr": ""
+    },
+    "지그재그": {
+      "full": "Zigzag",
+      "abbr": ""
+    },
+    "새들스티치": {
+      "full": "Saddle Stitch",
+      "abbr": ""
+    },
+    "프렌치솔기": {
+      "full": "French Seam",
+      "abbr": ""
+    },
+    "플랫펠트솔기": {
+      "full": "Flat-felled Seam",
+      "abbr": "Flat-fell"
+    },
+    "가름솔": {
+      "full": "Open Seam",
+      "abbr": ""
+    },
+    "쌈솔": {
+      "full": "Closed Seam",
+      "abbr": ""
+    },
+    "합봉": {
+      "full": "Joining Seam",
+      "abbr": ""
+    },
+    "노루발": {
+      "full": "Presser Foot",
+      "abbr": ""
+    },
+    "북집": {
+      "full": "Bobbin Case",
+      "abbr": ""
+    },
+    "보빈": {
+      "full": "Bobbin",
+      "abbr": ""
+    },
+    "실": {
+      "full": "Thread",
+      "abbr": ""
+    },
+    "바늘": {
+      "full": "Needle",
+      "abbr": ""
+    },
+    "가위": {
+      "full": "Scissors",
+      "abbr": ""
+    },
+    "자": {
+      "full": "Ruler",
+      "abbr": ""
+    },
+    "줄자": {
+      "full": "Tape Measure",
+      "abbr": ""
+    },
+    "초크": {
+      "full": "Chalk",
+      "abbr": ""
+    },
+    "핀": {
+      "full": "Pin",
+      "abbr": ""
+    },
+    "시루시": {
+      "full": "Notch",
+      "abbr": ""
+    },
+    "이새": {
+      "full": "Ease",
+      "abbr": ""
+    },
+    "조시": {
+      "full": "Thread Tension",
+      "abbr": ""
+    },
+    "맞춤": {
+      "full": "Fitting",
+      "abbr": ""
+    },
+    "가봉": {
+      "full": "Fitting",
+      "abbr": ""
+    },
+    "샘플": {
+      "full": "Sample",
+      "abbr": ""
+    },
+    "생산": {
+      "full": "Production",
+      "abbr": ""
+    },
+    "납기": {
+      "full": "Delivery",
+      "abbr": ""
+    },
+    "원가": {
+      "full": "Cost",
+      "abbr": ""
+    },
+    "품번": {
+      "full": "Style Number",
+      "abbr": "Style No."
+    },
+    "색상": {
+      "full": "Color",
+      "abbr": ""
+    },
+    "배색": {
+      "full": "Color Combination",
+      "abbr": "Color Comb."
+    },
+    "단색": {
+      "full": "Solid Color",
+      "abbr": ""
+    },
+    "프린트": {
+      "full": "Print",
+      "abbr": ""
+    },
+    "염색": {
+      "full": "Dyeing",
+      "abbr": ""
+    },
+    "워싱": {
+      "full": "Washing",
+      "abbr": ""
+    },
+    "가공": {
+      "full": "Processing",
+      "abbr": ""
+    },
+    "코팅": {
+      "full": "Coating",
+      "abbr": ""
+    },
+    "라미네이팅": {
+      "full": "Laminating",
+      "abbr": ""
+    },
+    "본딩": {
+      "full": "Bonding",
+      "abbr": ""
+    },
+    "융착": {
+      "full": "Welding",
+      "abbr": ""
+    },
+    "열접착": {
+      "full": "Heat Sealing",
+      "abbr": ""
+    },
+    "초음파": {
+      "full": "Ultrasonic",
+      "abbr": ""
+    },
+    "레이저": {
+      "full": "Laser",
+      "abbr": ""
+    },
+    "커팅": {
+      "full": "Cutting",
+      "abbr": ""
+    },
+    "가다마이": {
+      "full": "Single Breasted",
+      "abbr": ""
+    },
+    "가시바리": {
+      "full": "Back Stitch",
+      "abbr": ""
+    },
+    "간도메": {
+      "full": "Bar Tack",
+      "abbr": ""
+    },
+    "고다찌": {
+      "full": "Precise Cutting",
+      "abbr": ""
+    },
+    "고로시": {
+      "full": "Ironing",
+      "abbr": ""
+    },
+    "나라시": {
+      "full": "Spreading",
+      "abbr": ""
+    },
+    "나시": {
+      "full": "Sleeveless",
+      "abbr": ""
+    },
+    "낫찌": {
+      "full": "Notch",
+      "abbr": ""
+    },
+    "단작": {
+      "full": "Placket",
+      "abbr": ""
+    },
+    "오비": {
+      "full": "Waist Band",
+      "abbr": ""
+    },
+    "와끼": {
+      "full": "Side Line",
+      "abbr": ""
+    },
+    "플래킷": {
+      "full": "Placket",
+      "abbr": ""
+    },
+    "카라": {
+      "full": "Collar",
+      "abbr": ""
+    },
+    "커프스": {
+      "full": "Cuffs",
+      "abbr": ""
+    },
+    "요크": {
+      "full": "Yoke",
+      "abbr": ""
+    },
+    "벤트": {
+      "full": "Vent",
+      "abbr": ""
+    },
+    "슬릿": {
+      "full": "Slit",
+      "abbr": ""
+    },
+    "플랩": {
+      "full": "Flap",
+      "abbr": ""
+    },
+    "웰트": {
+      "full": "Welt",
+      "abbr": ""
+    },
+    "패치": {
+      "full": "Patch",
+      "abbr": ""
+    },
+    "인서트": {
+      "full": "Insert",
+      "abbr": ""
+    },
+    "고어": {
+      "full": "Gore",
+      "abbr": ""
+    },
+    "거싯": {
+      "full": "Gusset",
+      "abbr": ""
+    },
+    "벨트루프": {
+      "full": "Belt Loop",
+      "abbr": ""
+    },
+    "견장": {
+      "full": "Epaulette",
+      "abbr": ""
+    },
+    "후크": {
+      "full": "Hook",
+      "abbr": ""
+    },
+    "아이": {
+      "full": "Eye",
+      "abbr": ""
+    },
+    "스냅": {
+      "full": "Snap",
+      "abbr": ""
+    },
+    "토글": {
+      "full": "Toggle",
+      "abbr": ""
+    },
+    "코드록": {
+      "full": "Cord Lock",
+      "abbr": ""
+    },
+    "피봇": {
+      "full": "Pivot",
+      "abbr": ""
+    },
+    "턴업": {
+      "full": "Turn Up",
+      "abbr": ""
+    },
+    "롤업": {
+      "full": "Roll Up",
+      "abbr": ""
+    },
+    "접음": {
+      "full": "Fold",
+      "abbr": ""
+    },
+    "겹침": {
+      "full": "Overlap",
+      "abbr": ""
+    },
+    "덧댐": {
+      "full": "Reinforcement",
+      "abbr": ""
+    },
+    "보강": {
+      "full": "Reinforcement",
+      "abbr": ""
+    },
+    "스테이": {
+      "full": "Stay",
+      "abbr": ""
+    },
+    "테이핑": {
+      "full": "Taping",
+      "abbr": ""
+    },
+    "심테이프": {
+      "full": "Seam Tape",
+      "abbr": ""
+    },
+    "반사": {
+      "full": "Reflective",
+      "abbr": ""
+    },
+    "형광": {
+      "full": "Fluorescent",
+      "abbr": ""
+    },
+    "야광": {
+      "full": "Glow",
+      "abbr": ""
+    },
+    "발열": {
+      "full": "Heat Generation",
+      "abbr": "Heat Gen."
+    },
+    "냉감": {
+      "full": "Cooling",
+      "abbr": ""
+    },
+    "항균": {
+      "full": "Antibacterial",
+      "abbr": ""
+    },
+    "방취": {
+      "full": "Deodorant",
+      "abbr": ""
+    },
+    "흡습": {
+      "full": "Moisture Absorption",
+      "abbr": "Moist. Abs."
+    },
+    "속건": {
+      "full": "Quick Dry",
+      "abbr": ""
+    },
+    "UV차단": {
+      "full": "UV Protection",
+      "abbr": "UV Prot."
+    },
+    "정전기방지": {
+      "full": "Anti-static",
+      "abbr": "Anti-stat."
+    }
   },
   "vietnamese": {
-    "남성": "Nam",
-    "여성": "Nữ",
-    "자켓": "Áo khoác",
-    "다운자켓": "Áo phao",
-    "후드": "Mũ trùm",
-    "에리": "Cổ áo",
-    "봉제": "May",
-    "작업": "Công việc",
-    "원단": "Vải",
-    "안감": "Lót",
-    "겉감": "Vỏ ngoài",
-    "소매": "Tay áo",
-    "밑단": "Gấu áo",
-    "어깨": "Vai",
-    "가슴": "Ngực",
-    "허리": "Eo",
-    "지퍼": "Khóa kéo",
-    "스토퍼": "Nút chặn",
-    "고리": "Vòng",
-    "테이프": "Băng dính",
-    "앞판": "Thân trước",
-    "뒷판": "Thân sau",
-    "로고": "Logo",
-    "벨크로": "Velcro",
-    "밴드": "Dây đai",
-    "아일렛": "Lỗ xỏ dây",
-    "스트링": "Dây rút",
-    "주머니": "Túi",
-    "포켓": "Túi",
-    "메인": "Chính",
-    "라벨": "Nhãn",
-    "탈부착": "Có thể tháo rời",
-    "탈부착형": "Loại tháo rời",
-    "블럭": "Khối",
-    "컬러": "Màu sắc",
-    "여름": "Mùa hè",
-    "겨울": "Mùa đông",
-    "봄": "Mùa xuân",
-    "가을": "Mùa thu",
-    "사이즈": "Kích thước",
-    "치수": "Số đo",
-    "봉제사양": "Quy cách may",
-    "부자재": "Phụ liệu",
-    "단추": "Nút",
-    "똑딱이": "Nút bấm",
-    "고무밴드": "Dây thun",
-    "드로우코드": "Dây rút",
-    "스트링스토퍼": "Khóa dây",
-    "후드탈부착": "Mũ tháo rời",
-    "요척": "Định mức",
-
-    "겹누빔": "May chần bông",
-    "고정박음": "May cố định",
-    "눌러박기": "May mí",
-    "새발뜨기": "Mũi chữ thập",
-    "속감침": "May giấu mũi",
-    "시접": "Đường may",
-    "시접분": "Lượng dư may",
-    "통솔": "Đường viền",
-    "오버록": "Vắt sổ",
-    "오바로크": "Vắt sổ",
-    "상침": "May mí trên",
-    "박음질": "May",
-    "미싱": "Máy may",
-    "재봉": "May vá",
-    "재단": "Cắt",
-    "패턴": "Rập",
-    "그레이딩": "Nhảy size",
-    "마킹": "Đánh dấu",
-    "스프레딩": "Trải vải",
-
-    "끝손질": "Cắt chỉ",
-    "다림질": "Ủi",
-    "다리미": "Bàn ủi",
-    "마감": "Hoàn thiện",
-    "불량": "Lỗi",
-    "검품": "Kiểm tra chất lượng",
-    "검침": "Kiểm kim",
-    "포장": "Đóng gói",
-    "출하": "Xuất hàng",
-
-    "심지": "Mex",
-    "접착심": "Mex dính",
-    "어깨솜": "Độn vai",
-    "어깨패드": "Độn vai",
-    "충전재": "Chất độn",
-    "솜": "Bông",
-    "덕다운": "Lông vịt",
-    "구스다운": "Lông ngỗng",
-    "행택": "Thẻ treo",
-    "케어라벨": "Nhãn hướng dẫn",
-    "사이즈라벨": "Nhãn size",
-    "메인라벨": "Nhãn chính",
-    "브랜드라벨": "Nhãn thương hiệu",
-    "워셔": "Vòng đệm",
-    "리벳": "Đinh tán",
-    "버클": "Khóa",
-    "고무줄": "Dây thun",
-    "끈": "Dây",
-    "시보리": "Bo",
-    "립": "Bo gân",
-    "니트립": "Bo len",
-
-    "옆선": "Đường sườn",
-    "어깨선": "Đường vai",
-    "암홀": "Nách",
-    "소매통": "Rộng tay",
-    "소매산": "Đỉnh tay",
-    "네크라인": "Cổ",
-    "목둘레": "Vòng cổ",
-    "가슴둘레": "Vòng ngực",
-    "허리둘레": "Vòng eo",
-    "엉덩이둘레": "Vòng mông",
-    "총장": "Dài tổng",
-    "등길이": "Dài lưng",
-    "화장": "Dài tay",
-    "진동": "Sâu nách",
-    "밑위": "Đũng",
-    "인심": "Dài đùi trong",
-    "밑단둘레": "Vòng gấu",
-
-    "기모": "Lông cào",
-    "방수": "Chống nước",
-    "방풍": "Chống gió",
-    "투습": "Thoáng khí",
-    "발수": "Kháng nước",
-    "보온": "Giữ ấm",
-    "경량": "Nhẹ",
-    "신축성": "Co giãn",
-    "스판": "Spandex",
-    "폴리": "Polyester",
-    "나일론": "Nylon",
-    "면": "Cotton",
-    "울": "Len",
-    "플리스": "Lông cừu",
-    "고어텍스": "Gore-Tex",
-    "멤브레인": "Màng",
-
-    "바느질": "Khâu tay",
-    "홈질": "Mũi khâu",
-    "바이어스": "Xéo",
-    "식서": "Biên vải",
-    "다트": "Chiết ly",
-    "주름": "Xếp ly",
-    "개더": "Nhún",
-    "턱": "Xếp nếp",
-    "파이핑": "Viền ống",
-    "바인딩": "Viền",
-    "트리밍": "Cắt tỉa",
-    "퀼팅": "Chần bông",
-    "누빔": "Chần",
-    "자수": "Thêu",
-    "실": "Chỉ",
-    "바늘": "Kim",
-    "가위": "Kéo",
-    "핀": "Ghim",
-    "샘플": "Mẫu",
-    "생산": "Sản xuất",
-    "납기": "Giao hàng",
-    "품번": "Mã hàng",
-    "색상": "Màu",
-    "배색": "Phối màu",
-    "프린트": "In",
-    "염색": "Nhuộm",
-    "워싱": "Giặt",
-    "가공": "Gia công",
-    "카라": "Cổ",
-    "커프스": "Măng sét",
-    "요크": "Cầu vai",
-    "벤트": "Xẻ",
-    "슬릿": "Xẻ",
-    "플랩": "Nắp",
-    "웰트": "Viền túi",
-    "패치": "Đắp",
-    "벨트루프": "Quai",
-    "후크": "Móc",
-    "스냅": "Nút bấm",
-    "접음": "Gấp",
-    "보강": "Gia cố",
-    "반사": "Phản quang",
-    "흡습": "Hút ẩm",
-    "속건": "Khô nhanh"
+    "남성": {
+      "full": "Nam",
+      "abbr": ""
+    },
+    "여성": {
+      "full": "Nữ",
+      "abbr": ""
+    },
+    "자켓": {
+      "full": "Áo khoác",
+      "abbr": ""
+    },
+    "다운자켓": {
+      "full": "Áo phao",
+      "abbr": ""
+    },
+    "후드": {
+      "full": "Mũ trùm",
+      "abbr": ""
+    },
+    "에리": {
+      "full": "Cổ áo",
+      "abbr": ""
+    },
+    "봉제": {
+      "full": "May",
+      "abbr": ""
+    },
+    "작업": {
+      "full": "Công việc",
+      "abbr": ""
+    },
+    "원단": {
+      "full": "Vải",
+      "abbr": ""
+    },
+    "안감": {
+      "full": "Lót",
+      "abbr": ""
+    },
+    "겉감": {
+      "full": "Vỏ ngoài",
+      "abbr": ""
+    },
+    "소매": {
+      "full": "Tay áo",
+      "abbr": ""
+    },
+    "밑단": {
+      "full": "Gấu áo",
+      "abbr": ""
+    },
+    "어깨": {
+      "full": "Vai",
+      "abbr": ""
+    },
+    "가슴": {
+      "full": "Ngực",
+      "abbr": ""
+    },
+    "허리": {
+      "full": "Eo",
+      "abbr": ""
+    },
+    "지퍼": {
+      "full": "Khóa kéo",
+      "abbr": ""
+    },
+    "스토퍼": {
+      "full": "Nút chặn",
+      "abbr": ""
+    },
+    "고리": {
+      "full": "Vòng",
+      "abbr": ""
+    },
+    "테이프": {
+      "full": "Băng dính",
+      "abbr": ""
+    },
+    "앞판": {
+      "full": "Thân trước",
+      "abbr": ""
+    },
+    "뒷판": {
+      "full": "Thân sau",
+      "abbr": ""
+    },
+    "로고": {
+      "full": "Logo",
+      "abbr": ""
+    },
+    "벨크로": {
+      "full": "Velcro",
+      "abbr": ""
+    },
+    "밴드": {
+      "full": "Dây đai",
+      "abbr": ""
+    },
+    "아일렛": {
+      "full": "Lỗ xỏ dây",
+      "abbr": ""
+    },
+    "스트링": {
+      "full": "Dây rút",
+      "abbr": ""
+    },
+    "주머니": {
+      "full": "Túi",
+      "abbr": ""
+    },
+    "포켓": {
+      "full": "Túi",
+      "abbr": ""
+    },
+    "메인": {
+      "full": "Chính",
+      "abbr": ""
+    },
+    "라벨": {
+      "full": "Nhãn",
+      "abbr": ""
+    },
+    "탈부착": {
+      "full": "Có thể tháo rời",
+      "abbr": ""
+    },
+    "탈부착형": {
+      "full": "Loại tháo rời",
+      "abbr": ""
+    },
+    "블럭": {
+      "full": "Khối",
+      "abbr": ""
+    },
+    "컬러": {
+      "full": "Màu sắc",
+      "abbr": ""
+    },
+    "여름": {
+      "full": "Mùa hè",
+      "abbr": ""
+    },
+    "겨울": {
+      "full": "Mùa đông",
+      "abbr": ""
+    },
+    "봄": {
+      "full": "Mùa xuân",
+      "abbr": ""
+    },
+    "가을": {
+      "full": "Mùa thu",
+      "abbr": ""
+    },
+    "사이즈": {
+      "full": "Kích thước",
+      "abbr": ""
+    },
+    "치수": {
+      "full": "Số đo",
+      "abbr": ""
+    },
+    "봉제사양": {
+      "full": "Quy cách may",
+      "abbr": ""
+    },
+    "부자재": {
+      "full": "Phụ liệu",
+      "abbr": ""
+    },
+    "단추": {
+      "full": "Nút",
+      "abbr": ""
+    },
+    "똑딱이": {
+      "full": "Nút bấm",
+      "abbr": ""
+    },
+    "고무밴드": {
+      "full": "Dây thun",
+      "abbr": ""
+    },
+    "드로우코드": {
+      "full": "Dây rút",
+      "abbr": ""
+    },
+    "스트링스토퍼": {
+      "full": "Khóa dây",
+      "abbr": ""
+    },
+    "후드탈부착": {
+      "full": "Mũ tháo rời",
+      "abbr": ""
+    },
+    "요척": {
+      "full": "Định mức",
+      "abbr": ""
+    },
+    "겹누빔": {
+      "full": "May chần bông",
+      "abbr": ""
+    },
+    "고정박음": {
+      "full": "May cố định",
+      "abbr": ""
+    },
+    "눌러박기": {
+      "full": "May mí",
+      "abbr": ""
+    },
+    "새발뜨기": {
+      "full": "Mũi chữ thập",
+      "abbr": ""
+    },
+    "속감침": {
+      "full": "May giấu mũi",
+      "abbr": ""
+    },
+    "시접": {
+      "full": "Đường may",
+      "abbr": ""
+    },
+    "시접분": {
+      "full": "Lượng dư may",
+      "abbr": ""
+    },
+    "통솔": {
+      "full": "Đường viền",
+      "abbr": ""
+    },
+    "오버록": {
+      "full": "Vắt sổ",
+      "abbr": ""
+    },
+    "오바로크": {
+      "full": "Vắt sổ",
+      "abbr": ""
+    },
+    "상침": {
+      "full": "May mí trên",
+      "abbr": ""
+    },
+    "박음질": {
+      "full": "May",
+      "abbr": ""
+    },
+    "미싱": {
+      "full": "Máy may",
+      "abbr": ""
+    },
+    "재봉": {
+      "full": "May vá",
+      "abbr": ""
+    },
+    "재단": {
+      "full": "Cắt",
+      "abbr": ""
+    },
+    "패턴": {
+      "full": "Rập",
+      "abbr": ""
+    },
+    "그레이딩": {
+      "full": "Nhảy size",
+      "abbr": ""
+    },
+    "마킹": {
+      "full": "Đánh dấu",
+      "abbr": ""
+    },
+    "스프레딩": {
+      "full": "Trải vải",
+      "abbr": ""
+    },
+    "끝손질": {
+      "full": "Cắt chỉ",
+      "abbr": ""
+    },
+    "다림질": {
+      "full": "Ủi",
+      "abbr": ""
+    },
+    "다리미": {
+      "full": "Bàn ủi",
+      "abbr": ""
+    },
+    "마감": {
+      "full": "Hoàn thiện",
+      "abbr": ""
+    },
+    "불량": {
+      "full": "Lỗi",
+      "abbr": ""
+    },
+    "검품": {
+      "full": "Kiểm tra chất lượng",
+      "abbr": ""
+    },
+    "검침": {
+      "full": "Kiểm kim",
+      "abbr": ""
+    },
+    "포장": {
+      "full": "Đóng gói",
+      "abbr": ""
+    },
+    "출하": {
+      "full": "Xuất hàng",
+      "abbr": ""
+    },
+    "심지": {
+      "full": "Mex",
+      "abbr": ""
+    },
+    "접착심": {
+      "full": "Mex dính",
+      "abbr": ""
+    },
+    "어깨솜": {
+      "full": "Độn vai",
+      "abbr": ""
+    },
+    "어깨패드": {
+      "full": "Độn vai",
+      "abbr": ""
+    },
+    "충전재": {
+      "full": "Chất độn",
+      "abbr": ""
+    },
+    "솜": {
+      "full": "Bông",
+      "abbr": ""
+    },
+    "덕다운": {
+      "full": "Lông vịt",
+      "abbr": ""
+    },
+    "구스다운": {
+      "full": "Lông ngỗng",
+      "abbr": ""
+    },
+    "행택": {
+      "full": "Thẻ treo",
+      "abbr": ""
+    },
+    "케어라벨": {
+      "full": "Nhãn hướng dẫn",
+      "abbr": ""
+    },
+    "사이즈라벨": {
+      "full": "Nhãn size",
+      "abbr": ""
+    },
+    "메인라벨": {
+      "full": "Nhãn chính",
+      "abbr": ""
+    },
+    "브랜드라벨": {
+      "full": "Nhãn thương hiệu",
+      "abbr": ""
+    },
+    "워셔": {
+      "full": "Vòng đệm",
+      "abbr": ""
+    },
+    "리벳": {
+      "full": "Đinh tán",
+      "abbr": ""
+    },
+    "버클": {
+      "full": "Khóa",
+      "abbr": ""
+    },
+    "고무줄": {
+      "full": "Dây thun",
+      "abbr": ""
+    },
+    "끈": {
+      "full": "Dây",
+      "abbr": ""
+    },
+    "시보리": {
+      "full": "Bo",
+      "abbr": ""
+    },
+    "립": {
+      "full": "Bo gân",
+      "abbr": ""
+    },
+    "니트립": {
+      "full": "Bo len",
+      "abbr": ""
+    },
+    "옆선": {
+      "full": "Đường sườn",
+      "abbr": ""
+    },
+    "어깨선": {
+      "full": "Đường vai",
+      "abbr": ""
+    },
+    "암홀": {
+      "full": "Nách",
+      "abbr": ""
+    },
+    "소매통": {
+      "full": "Rộng tay",
+      "abbr": ""
+    },
+    "소매산": {
+      "full": "Đỉnh tay",
+      "abbr": ""
+    },
+    "네크라인": {
+      "full": "Cổ",
+      "abbr": ""
+    },
+    "목둘레": {
+      "full": "Vòng cổ",
+      "abbr": ""
+    },
+    "가슴둘레": {
+      "full": "Vòng ngực",
+      "abbr": ""
+    },
+    "허리둘레": {
+      "full": "Vòng eo",
+      "abbr": ""
+    },
+    "엉덩이둘레": {
+      "full": "Vòng mông",
+      "abbr": ""
+    },
+    "총장": {
+      "full": "Dài tổng",
+      "abbr": ""
+    },
+    "등길이": {
+      "full": "Dài lưng",
+      "abbr": ""
+    },
+    "화장": {
+      "full": "Dài tay",
+      "abbr": ""
+    },
+    "진동": {
+      "full": "Sâu nách",
+      "abbr": ""
+    },
+    "밑위": {
+      "full": "Đũng",
+      "abbr": ""
+    },
+    "인심": {
+      "full": "Dài đùi trong",
+      "abbr": ""
+    },
+    "밑단둘레": {
+      "full": "Vòng gấu",
+      "abbr": ""
+    },
+    "기모": {
+      "full": "Lông cào",
+      "abbr": ""
+    },
+    "방수": {
+      "full": "Chống nước",
+      "abbr": ""
+    },
+    "방풍": {
+      "full": "Chống gió",
+      "abbr": ""
+    },
+    "투습": {
+      "full": "Thoáng khí",
+      "abbr": ""
+    },
+    "발수": {
+      "full": "Kháng nước",
+      "abbr": ""
+    },
+    "보온": {
+      "full": "Giữ ấm",
+      "abbr": ""
+    },
+    "경량": {
+      "full": "Nhẹ",
+      "abbr": ""
+    },
+    "신축성": {
+      "full": "Co giãn",
+      "abbr": ""
+    },
+    "스판": {
+      "full": "Spandex",
+      "abbr": ""
+    },
+    "폴리": {
+      "full": "Polyester",
+      "abbr": ""
+    },
+    "나일론": {
+      "full": "Nylon",
+      "abbr": ""
+    },
+    "면": {
+      "full": "Cotton",
+      "abbr": ""
+    },
+    "울": {
+      "full": "Len",
+      "abbr": ""
+    },
+    "플리스": {
+      "full": "Lông cừu",
+      "abbr": ""
+    },
+    "고어텍스": {
+      "full": "Gore-Tex",
+      "abbr": ""
+    },
+    "멤브레인": {
+      "full": "Màng",
+      "abbr": ""
+    },
+    "바느질": {
+      "full": "Khâu tay",
+      "abbr": ""
+    },
+    "홈질": {
+      "full": "Mũi khâu",
+      "abbr": ""
+    },
+    "바이어스": {
+      "full": "Xéo",
+      "abbr": ""
+    },
+    "식서": {
+      "full": "Biên vải",
+      "abbr": ""
+    },
+    "다트": {
+      "full": "Chiết ly",
+      "abbr": ""
+    },
+    "주름": {
+      "full": "Xếp ly",
+      "abbr": ""
+    },
+    "개더": {
+      "full": "Nhún",
+      "abbr": ""
+    },
+    "턱": {
+      "full": "Xếp nếp",
+      "abbr": ""
+    },
+    "파이핑": {
+      "full": "Viền ống",
+      "abbr": ""
+    },
+    "바인딩": {
+      "full": "Viền",
+      "abbr": ""
+    },
+    "트리밍": {
+      "full": "Cắt tỉa",
+      "abbr": ""
+    },
+    "퀼팅": {
+      "full": "Chần bông",
+      "abbr": ""
+    },
+    "누빔": {
+      "full": "Chần",
+      "abbr": ""
+    },
+    "자수": {
+      "full": "Thêu",
+      "abbr": ""
+    },
+    "실": {
+      "full": "Chỉ",
+      "abbr": ""
+    },
+    "바늘": {
+      "full": "Kim",
+      "abbr": ""
+    },
+    "가위": {
+      "full": "Kéo",
+      "abbr": ""
+    },
+    "핀": {
+      "full": "Ghim",
+      "abbr": ""
+    },
+    "샘플": {
+      "full": "Mẫu",
+      "abbr": ""
+    },
+    "생산": {
+      "full": "Sản xuất",
+      "abbr": ""
+    },
+    "납기": {
+      "full": "Giao hàng",
+      "abbr": ""
+    },
+    "품번": {
+      "full": "Mã hàng",
+      "abbr": ""
+    },
+    "색상": {
+      "full": "Màu",
+      "abbr": ""
+    },
+    "배색": {
+      "full": "Phối màu",
+      "abbr": ""
+    },
+    "프린트": {
+      "full": "In",
+      "abbr": ""
+    },
+    "염색": {
+      "full": "Nhuộm",
+      "abbr": ""
+    },
+    "워싱": {
+      "full": "Giặt",
+      "abbr": ""
+    },
+    "가공": {
+      "full": "Gia công",
+      "abbr": ""
+    },
+    "카라": {
+      "full": "Cổ",
+      "abbr": ""
+    },
+    "커프스": {
+      "full": "Măng sét",
+      "abbr": ""
+    },
+    "요크": {
+      "full": "Cầu vai",
+      "abbr": ""
+    },
+    "벤트": {
+      "full": "Xẻ",
+      "abbr": ""
+    },
+    "슬릿": {
+      "full": "Xẻ",
+      "abbr": ""
+    },
+    "플랩": {
+      "full": "Nắp",
+      "abbr": ""
+    },
+    "웰트": {
+      "full": "Viền túi",
+      "abbr": ""
+    },
+    "패치": {
+      "full": "Đắp",
+      "abbr": ""
+    },
+    "벨트루프": {
+      "full": "Quai",
+      "abbr": ""
+    },
+    "후크": {
+      "full": "Móc",
+      "abbr": ""
+    },
+    "스냅": {
+      "full": "Nút bấm",
+      "abbr": ""
+    },
+    "접음": {
+      "full": "Gấp",
+      "abbr": ""
+    },
+    "보강": {
+      "full": "Gia cố",
+      "abbr": ""
+    },
+    "반사": {
+      "full": "Phản quang",
+      "abbr": ""
+    },
+    "흡습": {
+      "full": "Hút ẩm",
+      "abbr": ""
+    },
+    "속건": {
+      "full": "Khô nhanh",
+      "abbr": ""
+    }
   },
   "chinese": {
-    "남성": "男士",
-    "여성": "女士",
-    "자켓": "夹克",
-    "다운자켓": "羽绒服",
-    "후드": "连帽",
-    "에리": "领子",
-    "봉제": "缝纫",
-    "작업": "工作",
-    "원단": "面料",
-    "안감": "里料",
-    "겉감": "外层",
-    "소매": "袖子",
-    "밑단": "下摆",
-    "어깨": "肩部",
-    "가슴": "胸部",
-    "허리": "腰部",
-    "지퍼": "拉链",
-    "스토퍼": "止扣",
-    "고리": "环扣",
-    "테이프": "胶带",
-    "앞판": "前片",
-    "뒷판": "后片",
-    "로고": "标志",
-    "벨크로": "魔术贴",
-    "밴드": "松紧带",
-    "아일렛": "鸡眼",
-    "스트링": "抽绳",
-    "주머니": "口袋",
-    "포켓": "口袋",
-    "메인": "主要",
-    "라벨": "标签",
-    "탈부착": "可拆卸",
-    "탈부착형": "可拆卸型",
-    "블럭": "色块",
-    "컬러": "颜色",
-    "여름": "夏季",
-    "겨울": "冬季",
-    "봄": "春季",
-    "가을": "秋季",
-    "사이즈": "尺码",
-    "치수": "尺寸",
-    "봉제사양": "缝纫规格",
-    "부자재": "辅料",
-    "단추": "纽扣",
-    "똑딱이": "四合扣",
-    "고무밴드": "松紧带",
-    "드로우코드": "抽绳",
-    "스트링스토퍼": "绳扣",
-    "후드탈부착": "可拆卸帽",
-    "요척": "用料",
-
-    "겹누빔": "绗缝",
-    "고정박음": "固定缝",
-    "깃달기": "上领",
-    "깃눌러박기": "领压线",
-    "눌러박기": "压线",
-    "새발뜨기": "十字绣",
-    "속감침": "暗缝",
-    "시접": "缝份",
-    "시접분": "缝份量",
-    "통솔": "包缝",
-    "통솔박음": "包边缝",
-    "오버록": "包边",
-    "오바로크": "包边",
-    "상침": "面线",
-    "박음질": "缝纫",
-    "미싱": "缝纫机",
-    "재봉": "缝纫",
-    "재단": "裁剪",
-    "패턴": "版型",
-    "그레이딩": "放码",
-    "마킹": "画样",
-    "스프레딩": "铺布",
-
-    "끝손질": "修剪",
-    "다림질": "熨烫",
-    "다리미": "熨斗",
-    "마감": "整理",
-    "불량": "次品",
-    "검품": "质检",
-    "검침": "检针",
-    "포장": "包装",
-    "출하": "出货",
-
-    "심지": "衬布",
-    "접착심": "粘合衬",
-    "어깨솜": "肩垫",
-    "어깨패드": "肩垫",
-    "충전재": "填充物",
-    "솜": "棉絮",
-    "덕다운": "鸭绒",
-    "구스다운": "鹅绒",
-    "행택": "吊牌",
-    "케어라벨": "洗标",
-    "사이즈라벨": "尺码标",
-    "메인라벨": "主标",
-    "브랜드라벨": "商标",
-    "워셔": "垫圈",
-    "리벳": "铆钉",
-    "버클": "扣具",
-    "고무줄": "橡筋",
-    "끈": "绳",
-    "시보리": "罗纹",
-    "립": "罗纹",
-    "니트립": "针织罗纹",
-
-    "옆선": "侧缝",
-    "어깨선": "肩缝",
-    "암홀": "袖笼",
-    "소매통": "袖宽",
-    "소매산": "袖山",
-    "네크라인": "领口",
-    "목둘레": "领围",
-    "가슴둘레": "胸围",
-    "허리둘레": "腰围",
-    "엉덩이둘레": "臀围",
-    "총장": "衣长",
-    "등길이": "背长",
-    "화장": "袖长",
-    "진동": "袖窿深",
-    "밑위": "裆深",
-    "인심": "内缝",
-    "밑단둘레": "下摆围",
-
-    "기모": "拉毛",
-    "방수": "防水",
-    "방풍": "防风",
-    "투습": "透气",
-    "발수": "拒水",
-    "보온": "保暖",
-    "경량": "轻量",
-    "신축성": "弹性",
-    "스판": "氨纶",
-    "폴리": "涤纶",
-    "나일론": "尼龙",
-    "면": "棉",
-    "울": "羊毛",
-    "플리스": "摇粒绒",
-    "고어텍스": "戈尔特斯",
-    "멤브레인": "薄膜",
-
-    "바느질": "针线活",
-    "홈질": "平针",
-    "바이어스": "斜向",
-    "식서": "布边",
-    "다트": "省道",
-    "주름": "褶",
-    "개더": "褶裥",
-    "턱": "褶",
-    "파이핑": "嵌条",
-    "바인딩": "滚边",
-    "트리밍": "修剪",
-    "퀼팅": "绗缝",
-    "누빔": "绗缝",
-    "자수": "刺绣",
-    "실": "线",
-    "바늘": "针",
-    "가위": "剪刀",
-    "핀": "大头针",
-    "샘플": "样品",
-    "생산": "生产",
-    "납기": "交期",
-    "품번": "款号",
-    "색상": "颜色",
-    "배색": "配色",
-    "프린트": "印花",
-    "염색": "染色",
-    "워싱": "水洗",
-    "가공": "加工",
-    "카라": "领",
-    "커프스": "袖口",
-    "요크": "过肩",
-    "벤트": "开叉",
-    "슬릿": "开衩",
-    "플랩": "盖",
-    "웰트": "袋盖",
-    "패치": "贴袋",
-    "벨트루프": "裤袢",
-    "후크": "挂钩",
-    "스냅": "按扣",
-    "접음": "折叠",
-    "보강": "加固",
-    "반사": "反光",
-    "흡습": "吸湿",
-    "속건": "速干"
+    "남성": {
+      "full": "男士",
+      "abbr": ""
+    },
+    "여성": {
+      "full": "女士",
+      "abbr": ""
+    },
+    "자켓": {
+      "full": "夹克",
+      "abbr": ""
+    },
+    "다운자켓": {
+      "full": "羽绒服",
+      "abbr": ""
+    },
+    "후드": {
+      "full": "连帽",
+      "abbr": ""
+    },
+    "에리": {
+      "full": "领子",
+      "abbr": ""
+    },
+    "봉제": {
+      "full": "缝纫",
+      "abbr": ""
+    },
+    "작업": {
+      "full": "工作",
+      "abbr": ""
+    },
+    "원단": {
+      "full": "面料",
+      "abbr": ""
+    },
+    "안감": {
+      "full": "里料",
+      "abbr": ""
+    },
+    "겉감": {
+      "full": "外层",
+      "abbr": ""
+    },
+    "소매": {
+      "full": "袖子",
+      "abbr": ""
+    },
+    "밑단": {
+      "full": "下摆",
+      "abbr": ""
+    },
+    "어깨": {
+      "full": "肩部",
+      "abbr": ""
+    },
+    "가슴": {
+      "full": "胸部",
+      "abbr": ""
+    },
+    "허리": {
+      "full": "腰部",
+      "abbr": ""
+    },
+    "지퍼": {
+      "full": "拉链",
+      "abbr": ""
+    },
+    "스토퍼": {
+      "full": "止扣",
+      "abbr": ""
+    },
+    "고리": {
+      "full": "环扣",
+      "abbr": ""
+    },
+    "테이프": {
+      "full": "胶带",
+      "abbr": ""
+    },
+    "앞판": {
+      "full": "前片",
+      "abbr": ""
+    },
+    "뒷판": {
+      "full": "后片",
+      "abbr": ""
+    },
+    "로고": {
+      "full": "标志",
+      "abbr": ""
+    },
+    "벨크로": {
+      "full": "魔术贴",
+      "abbr": ""
+    },
+    "밴드": {
+      "full": "松紧带",
+      "abbr": ""
+    },
+    "아일렛": {
+      "full": "鸡眼",
+      "abbr": ""
+    },
+    "스트링": {
+      "full": "抽绳",
+      "abbr": ""
+    },
+    "주머니": {
+      "full": "口袋",
+      "abbr": ""
+    },
+    "포켓": {
+      "full": "口袋",
+      "abbr": ""
+    },
+    "메인": {
+      "full": "主要",
+      "abbr": ""
+    },
+    "라벨": {
+      "full": "标签",
+      "abbr": ""
+    },
+    "탈부착": {
+      "full": "可拆卸",
+      "abbr": ""
+    },
+    "탈부착형": {
+      "full": "可拆卸型",
+      "abbr": ""
+    },
+    "블럭": {
+      "full": "色块",
+      "abbr": ""
+    },
+    "컬러": {
+      "full": "颜色",
+      "abbr": ""
+    },
+    "여름": {
+      "full": "夏季",
+      "abbr": ""
+    },
+    "겨울": {
+      "full": "冬季",
+      "abbr": ""
+    },
+    "봄": {
+      "full": "春季",
+      "abbr": ""
+    },
+    "가을": {
+      "full": "秋季",
+      "abbr": ""
+    },
+    "사이즈": {
+      "full": "尺码",
+      "abbr": ""
+    },
+    "치수": {
+      "full": "尺寸",
+      "abbr": ""
+    },
+    "봉제사양": {
+      "full": "缝纫规格",
+      "abbr": ""
+    },
+    "부자재": {
+      "full": "辅料",
+      "abbr": ""
+    },
+    "단추": {
+      "full": "纽扣",
+      "abbr": ""
+    },
+    "똑딱이": {
+      "full": "四合扣",
+      "abbr": ""
+    },
+    "고무밴드": {
+      "full": "松紧带",
+      "abbr": ""
+    },
+    "드로우코드": {
+      "full": "抽绳",
+      "abbr": ""
+    },
+    "스트링스토퍼": {
+      "full": "绳扣",
+      "abbr": ""
+    },
+    "후드탈부착": {
+      "full": "可拆卸帽",
+      "abbr": ""
+    },
+    "요척": {
+      "full": "用料",
+      "abbr": ""
+    },
+    "겹누빔": {
+      "full": "绗缝",
+      "abbr": ""
+    },
+    "고정박음": {
+      "full": "固定缝",
+      "abbr": ""
+    },
+    "깃달기": {
+      "full": "上领",
+      "abbr": ""
+    },
+    "깃눌러박기": {
+      "full": "领压线",
+      "abbr": ""
+    },
+    "눌러박기": {
+      "full": "压线",
+      "abbr": ""
+    },
+    "새발뜨기": {
+      "full": "十字绣",
+      "abbr": ""
+    },
+    "속감침": {
+      "full": "暗缝",
+      "abbr": ""
+    },
+    "시접": {
+      "full": "缝份",
+      "abbr": ""
+    },
+    "시접분": {
+      "full": "缝份量",
+      "abbr": ""
+    },
+    "통솔": {
+      "full": "包缝",
+      "abbr": ""
+    },
+    "통솔박음": {
+      "full": "包边缝",
+      "abbr": ""
+    },
+    "오버록": {
+      "full": "包边",
+      "abbr": ""
+    },
+    "오바로크": {
+      "full": "包边",
+      "abbr": ""
+    },
+    "상침": {
+      "full": "面线",
+      "abbr": ""
+    },
+    "박음질": {
+      "full": "缝纫",
+      "abbr": ""
+    },
+    "미싱": {
+      "full": "缝纫机",
+      "abbr": ""
+    },
+    "재봉": {
+      "full": "缝纫",
+      "abbr": ""
+    },
+    "재단": {
+      "full": "裁剪",
+      "abbr": ""
+    },
+    "패턴": {
+      "full": "版型",
+      "abbr": ""
+    },
+    "그레이딩": {
+      "full": "放码",
+      "abbr": ""
+    },
+    "마킹": {
+      "full": "画样",
+      "abbr": ""
+    },
+    "스프레딩": {
+      "full": "铺布",
+      "abbr": ""
+    },
+    "끝손질": {
+      "full": "修剪",
+      "abbr": ""
+    },
+    "다림질": {
+      "full": "熨烫",
+      "abbr": ""
+    },
+    "다리미": {
+      "full": "熨斗",
+      "abbr": ""
+    },
+    "마감": {
+      "full": "整理",
+      "abbr": ""
+    },
+    "불량": {
+      "full": "次品",
+      "abbr": ""
+    },
+    "검품": {
+      "full": "质检",
+      "abbr": ""
+    },
+    "검침": {
+      "full": "检针",
+      "abbr": ""
+    },
+    "포장": {
+      "full": "包装",
+      "abbr": ""
+    },
+    "출하": {
+      "full": "出货",
+      "abbr": ""
+    },
+    "심지": {
+      "full": "衬布",
+      "abbr": ""
+    },
+    "접착심": {
+      "full": "粘合衬",
+      "abbr": ""
+    },
+    "어깨솜": {
+      "full": "肩垫",
+      "abbr": ""
+    },
+    "어깨패드": {
+      "full": "肩垫",
+      "abbr": ""
+    },
+    "충전재": {
+      "full": "填充物",
+      "abbr": ""
+    },
+    "솜": {
+      "full": "棉絮",
+      "abbr": ""
+    },
+    "덕다운": {
+      "full": "鸭绒",
+      "abbr": ""
+    },
+    "구스다운": {
+      "full": "鹅绒",
+      "abbr": ""
+    },
+    "행택": {
+      "full": "吊牌",
+      "abbr": ""
+    },
+    "케어라벨": {
+      "full": "洗标",
+      "abbr": ""
+    },
+    "사이즈라벨": {
+      "full": "尺码标",
+      "abbr": ""
+    },
+    "메인라벨": {
+      "full": "主标",
+      "abbr": ""
+    },
+    "브랜드라벨": {
+      "full": "商标",
+      "abbr": ""
+    },
+    "워셔": {
+      "full": "垫圈",
+      "abbr": ""
+    },
+    "리벳": {
+      "full": "铆钉",
+      "abbr": ""
+    },
+    "버클": {
+      "full": "扣具",
+      "abbr": ""
+    },
+    "고무줄": {
+      "full": "橡筋",
+      "abbr": ""
+    },
+    "끈": {
+      "full": "绳",
+      "abbr": ""
+    },
+    "시보리": {
+      "full": "罗纹",
+      "abbr": ""
+    },
+    "립": {
+      "full": "罗纹",
+      "abbr": ""
+    },
+    "니트립": {
+      "full": "针织罗纹",
+      "abbr": ""
+    },
+    "옆선": {
+      "full": "侧缝",
+      "abbr": ""
+    },
+    "어깨선": {
+      "full": "肩缝",
+      "abbr": ""
+    },
+    "암홀": {
+      "full": "袖笼",
+      "abbr": ""
+    },
+    "소매통": {
+      "full": "袖宽",
+      "abbr": ""
+    },
+    "소매산": {
+      "full": "袖山",
+      "abbr": ""
+    },
+    "네크라인": {
+      "full": "领口",
+      "abbr": ""
+    },
+    "목둘레": {
+      "full": "领围",
+      "abbr": ""
+    },
+    "가슴둘레": {
+      "full": "胸围",
+      "abbr": ""
+    },
+    "허리둘레": {
+      "full": "腰围",
+      "abbr": ""
+    },
+    "엉덩이둘레": {
+      "full": "臀围",
+      "abbr": ""
+    },
+    "총장": {
+      "full": "衣长",
+      "abbr": ""
+    },
+    "등길이": {
+      "full": "背长",
+      "abbr": ""
+    },
+    "화장": {
+      "full": "袖长",
+      "abbr": ""
+    },
+    "진동": {
+      "full": "袖窿深",
+      "abbr": ""
+    },
+    "밑위": {
+      "full": "裆深",
+      "abbr": ""
+    },
+    "인심": {
+      "full": "内缝",
+      "abbr": ""
+    },
+    "밑단둘레": {
+      "full": "下摆围",
+      "abbr": ""
+    },
+    "기모": {
+      "full": "拉毛",
+      "abbr": ""
+    },
+    "방수": {
+      "full": "防水",
+      "abbr": ""
+    },
+    "방풍": {
+      "full": "防风",
+      "abbr": ""
+    },
+    "투습": {
+      "full": "透气",
+      "abbr": ""
+    },
+    "발수": {
+      "full": "拒水",
+      "abbr": ""
+    },
+    "보온": {
+      "full": "保暖",
+      "abbr": ""
+    },
+    "경량": {
+      "full": "轻量",
+      "abbr": ""
+    },
+    "신축성": {
+      "full": "弹性",
+      "abbr": ""
+    },
+    "스판": {
+      "full": "氨纶",
+      "abbr": ""
+    },
+    "폴리": {
+      "full": "涤纶",
+      "abbr": ""
+    },
+    "나일론": {
+      "full": "尼龙",
+      "abbr": ""
+    },
+    "면": {
+      "full": "棉",
+      "abbr": ""
+    },
+    "울": {
+      "full": "羊毛",
+      "abbr": ""
+    },
+    "플리스": {
+      "full": "摇粒绒",
+      "abbr": ""
+    },
+    "고어텍스": {
+      "full": "戈尔特斯",
+      "abbr": ""
+    },
+    "멤브레인": {
+      "full": "薄膜",
+      "abbr": ""
+    },
+    "바느질": {
+      "full": "针线活",
+      "abbr": ""
+    },
+    "홈질": {
+      "full": "平针",
+      "abbr": ""
+    },
+    "바이어스": {
+      "full": "斜向",
+      "abbr": ""
+    },
+    "식서": {
+      "full": "布边",
+      "abbr": ""
+    },
+    "다트": {
+      "full": "省道",
+      "abbr": ""
+    },
+    "주름": {
+      "full": "褶",
+      "abbr": ""
+    },
+    "개더": {
+      "full": "褶裥",
+      "abbr": ""
+    },
+    "턱": {
+      "full": "褶",
+      "abbr": ""
+    },
+    "파이핑": {
+      "full": "嵌条",
+      "abbr": ""
+    },
+    "바인딩": {
+      "full": "滚边",
+      "abbr": ""
+    },
+    "트리밍": {
+      "full": "修剪",
+      "abbr": ""
+    },
+    "퀼팅": {
+      "full": "绗缝",
+      "abbr": ""
+    },
+    "누빔": {
+      "full": "绗缝",
+      "abbr": ""
+    },
+    "자수": {
+      "full": "刺绣",
+      "abbr": ""
+    },
+    "실": {
+      "full": "线",
+      "abbr": ""
+    },
+    "바늘": {
+      "full": "针",
+      "abbr": ""
+    },
+    "가위": {
+      "full": "剪刀",
+      "abbr": ""
+    },
+    "핀": {
+      "full": "大头针",
+      "abbr": ""
+    },
+    "샘플": {
+      "full": "样品",
+      "abbr": ""
+    },
+    "생산": {
+      "full": "生产",
+      "abbr": ""
+    },
+    "납기": {
+      "full": "交期",
+      "abbr": ""
+    },
+    "품번": {
+      "full": "款号",
+      "abbr": ""
+    },
+    "색상": {
+      "full": "颜色",
+      "abbr": ""
+    },
+    "배색": {
+      "full": "配色",
+      "abbr": ""
+    },
+    "프린트": {
+      "full": "印花",
+      "abbr": ""
+    },
+    "염색": {
+      "full": "染色",
+      "abbr": ""
+    },
+    "워싱": {
+      "full": "水洗",
+      "abbr": ""
+    },
+    "가공": {
+      "full": "加工",
+      "abbr": ""
+    },
+    "카라": {
+      "full": "领",
+      "abbr": ""
+    },
+    "커프스": {
+      "full": "袖口",
+      "abbr": ""
+    },
+    "요크": {
+      "full": "过肩",
+      "abbr": ""
+    },
+    "벤트": {
+      "full": "开叉",
+      "abbr": ""
+    },
+    "슬릿": {
+      "full": "开衩",
+      "abbr": ""
+    },
+    "플랩": {
+      "full": "盖",
+      "abbr": ""
+    },
+    "웰트": {
+      "full": "袋盖",
+      "abbr": ""
+    },
+    "패치": {
+      "full": "贴袋",
+      "abbr": ""
+    },
+    "벨트루프": {
+      "full": "裤袢",
+      "abbr": ""
+    },
+    "후크": {
+      "full": "挂钩",
+      "abbr": ""
+    },
+    "스냅": {
+      "full": "按扣",
+      "abbr": ""
+    },
+    "접음": {
+      "full": "折叠",
+      "abbr": ""
+    },
+    "보강": {
+      "full": "加固",
+      "abbr": ""
+    },
+    "반사": {
+      "full": "反光",
+      "abbr": ""
+    },
+    "흡습": {
+      "full": "吸湿",
+      "abbr": ""
+    },
+    "속건": {
+      "full": "速干",
+      "abbr": ""
+    }
   },
   "indonesian": {
-    "남성": "Pria",
-    "여성": "Wanita",
-    "자켓": "Jaket",
-    "다운자켓": "Jaket Bulu",
-    "후드": "Tudung",
-    "에리": "Kerah",
-    "봉제": "Jahit",
-    "작업": "Kerja",
-    "원단": "Kain",
-    "안감": "Lapisan Dalam",
-    "겉감": "Lapisan Luar",
-    "소매": "Lengan",
-    "밑단": "Keliman",
-    "어깨": "Bahu",
-    "가슴": "Dada",
-    "허리": "Pinggang",
-    "지퍼": "Ritsleting",
-    "스토퍼": "Penghenti",
-    "고리": "Lingkaran",
-    "테이프": "Pita",
-    "앞판": "Panel Depan",
-    "뒷판": "Panel Belakang",
-    "로고": "Logo",
-    "벨크로": "Velcro",
-    "밴드": "Pita Elastis",
-    "아일렛": "Lubang Tali",
-    "스트링": "Tali Serut",
-    "주머니": "Saku",
-    "포켓": "Saku",
-    "메인": "Utama",
-    "라벨": "Label",
-    "탈부착": "Dapat Dilepas",
-    "탈부착형": "Tipe Lepas Pasang",
-    "블럭": "Blok",
-    "컬러": "Warna",
-    "여름": "Musim Panas",
-    "겨울": "Musim Dingin",
-    "봄": "Musim Semi",
-    "가을": "Musim Gugur",
-    "사이즈": "Ukuran",
-    "치수": "Ukuran",
-    "봉제사양": "Spesifikasi Jahit",
-    "부자재": "Aksesori",
-    "단추": "Kancing",
-    "똑딱이": "Kancing Jepret",
-    "고무밴드": "Karet Elastis",
-    "드로우코드": "Tali Serut",
-    "스트링스토퍼": "Penghenti Tali",
-    "후드탈부착": "Tudung Lepas",
-    "요척": "Konsumsi",
-
-    "겹누빔": "Quilting",
-    "고정박음": "Bar Tack",
-    "눌러박기": "Jahit Tekan",
-    "새발뜨기": "Jahit Silang",
-    "속감침": "Jahit Tersembunyi",
-    "시접": "Kampuh",
-    "시접분": "Tambahan Kampuh",
-    "통솔": "Obras",
-    "오버록": "Obras",
-    "오바로크": "Obras",
-    "상침": "Jahit Atas",
-    "박음질": "Jahitan",
-    "미싱": "Mesin Jahit",
-    "재봉": "Menjahit",
-    "재단": "Potong",
-    "패턴": "Pola",
-    "그레이딩": "Grading",
-    "마킹": "Marking",
-    "스프레딩": "Spreading",
-
-    "끝손질": "Trimming",
-    "다림질": "Setrika",
-    "다리미": "Setrika",
-    "마감": "Finishing",
-    "불량": "Cacat",
-    "검품": "QC",
-    "검침": "Deteksi Jarum",
-    "포장": "Packing",
-    "출하": "Pengiriman",
-
-    "심지": "Kain Keras",
-    "접착심": "Kain Keras Perekat",
-    "어깨솜": "Bantalan Bahu",
-    "어깨패드": "Bantalan Bahu",
-    "충전재": "Isian",
-    "솜": "Kapas",
-    "덕다운": "Bulu Bebek",
-    "구스다운": "Bulu Angsa",
-    "행택": "Hang Tag",
-    "케어라벨": "Label Perawatan",
-    "사이즈라벨": "Label Ukuran",
-    "메인라벨": "Label Utama",
-    "브랜드라벨": "Label Merek",
-    "워셔": "Ring",
-    "리벳": "Rivet",
-    "버클": "Gesper",
-    "고무줄": "Karet",
-    "끈": "Tali",
-    "시보리": "Rib",
-    "립": "Rib",
-    "니트립": "Rib Rajut",
-
-    "옆선": "Jahit Samping",
-    "어깨선": "Jahit Bahu",
-    "암홀": "Lubang Lengan",
-    "소매통": "Lebar Lengan",
-    "소매산": "Tinggi Lengan",
-    "네크라인": "Garis Leher",
-    "목둘레": "Lingkar Leher",
-    "가슴둘레": "Lingkar Dada",
-    "허리둘레": "Lingkar Pinggang",
-    "엉덩이둘레": "Lingkar Pinggul",
-    "총장": "Panjang Total",
-    "등길이": "Panjang Punggung",
-    "화장": "Panjang Lengan",
-    "진동": "Kedalaman Lengan",
-    "밑위": "Panjang Selangkangan",
-    "인심": "Inseam",
-    "밑단둘레": "Lingkar Bawah",
-
-    "기모": "Bulu",
-    "방수": "Tahan Air",
-    "방풍": "Tahan Angin",
-    "투습": "Breathable",
-    "발수": "Tolak Air",
-    "보온": "Hangat",
-    "경량": "Ringan",
-    "신축성": "Elastis",
-    "스판": "Spandex",
-    "폴리": "Polyester",
-    "나일론": "Nilon",
-    "면": "Katun",
-    "울": "Wol",
-    "플리스": "Fleece",
-    "고어텍스": "Gore-Tex",
-    "멤브레인": "Membran",
-
-    "바느질": "Menjahit",
-    "바이어스": "Bias",
-    "다트": "Kupnat",
-    "주름": "Lipatan",
-    "파이핑": "Piping",
-    "바인딩": "Binding",
-    "퀼팅": "Quilting",
-    "자수": "Sulam",
-    "실": "Benang",
-    "바늘": "Jarum",
-    "가위": "Gunting",
-    "핀": "Peniti",
-    "샘플": "Sampel",
-    "생산": "Produksi",
-    "납기": "Pengiriman",
-    "품번": "Nomor Gaya",
-    "색상": "Warna",
-    "배색": "Kombinasi Warna",
-    "프린트": "Cetak",
-    "염색": "Pewarnaan",
-    "워싱": "Cuci",
-    "가공": "Proses",
-    "카라": "Kerah",
-    "커프스": "Manset",
-    "요크": "Yoke",
-    "벤트": "Belahan",
-    "슬릿": "Belahan",
-    "플랩": "Tutup",
-    "웰트": "Welt",
-    "패치": "Tempel",
-    "벨트루프": "Loop Sabuk",
-    "후크": "Kait",
-    "스냅": "Kancing Jepret",
-    "접음": "Lipat",
-    "보강": "Penguatan",
-    "반사": "Reflektif"
+    "남성": {
+      "full": "Pria",
+      "abbr": ""
+    },
+    "여성": {
+      "full": "Wanita",
+      "abbr": ""
+    },
+    "자켓": {
+      "full": "Jaket",
+      "abbr": ""
+    },
+    "다운자켓": {
+      "full": "Jaket Bulu",
+      "abbr": ""
+    },
+    "후드": {
+      "full": "Tudung",
+      "abbr": ""
+    },
+    "에리": {
+      "full": "Kerah",
+      "abbr": ""
+    },
+    "봉제": {
+      "full": "Jahit",
+      "abbr": ""
+    },
+    "작업": {
+      "full": "Kerja",
+      "abbr": ""
+    },
+    "원단": {
+      "full": "Kain",
+      "abbr": ""
+    },
+    "안감": {
+      "full": "Lapisan Dalam",
+      "abbr": ""
+    },
+    "겉감": {
+      "full": "Lapisan Luar",
+      "abbr": ""
+    },
+    "소매": {
+      "full": "Lengan",
+      "abbr": ""
+    },
+    "밑단": {
+      "full": "Keliman",
+      "abbr": ""
+    },
+    "어깨": {
+      "full": "Bahu",
+      "abbr": ""
+    },
+    "가슴": {
+      "full": "Dada",
+      "abbr": ""
+    },
+    "허리": {
+      "full": "Pinggang",
+      "abbr": ""
+    },
+    "지퍼": {
+      "full": "Ritsleting",
+      "abbr": ""
+    },
+    "스토퍼": {
+      "full": "Penghenti",
+      "abbr": ""
+    },
+    "고리": {
+      "full": "Lingkaran",
+      "abbr": ""
+    },
+    "테이프": {
+      "full": "Pita",
+      "abbr": ""
+    },
+    "앞판": {
+      "full": "Panel Depan",
+      "abbr": ""
+    },
+    "뒷판": {
+      "full": "Panel Belakang",
+      "abbr": ""
+    },
+    "로고": {
+      "full": "Logo",
+      "abbr": ""
+    },
+    "벨크로": {
+      "full": "Velcro",
+      "abbr": ""
+    },
+    "밴드": {
+      "full": "Pita Elastis",
+      "abbr": ""
+    },
+    "아일렛": {
+      "full": "Lubang Tali",
+      "abbr": ""
+    },
+    "스트링": {
+      "full": "Tali Serut",
+      "abbr": ""
+    },
+    "주머니": {
+      "full": "Saku",
+      "abbr": ""
+    },
+    "포켓": {
+      "full": "Saku",
+      "abbr": ""
+    },
+    "메인": {
+      "full": "Utama",
+      "abbr": ""
+    },
+    "라벨": {
+      "full": "Label",
+      "abbr": ""
+    },
+    "탈부착": {
+      "full": "Dapat Dilepas",
+      "abbr": ""
+    },
+    "탈부착형": {
+      "full": "Tipe Lepas Pasang",
+      "abbr": ""
+    },
+    "블럭": {
+      "full": "Blok",
+      "abbr": ""
+    },
+    "컬러": {
+      "full": "Warna",
+      "abbr": ""
+    },
+    "여름": {
+      "full": "Musim Panas",
+      "abbr": ""
+    },
+    "겨울": {
+      "full": "Musim Dingin",
+      "abbr": ""
+    },
+    "봄": {
+      "full": "Musim Semi",
+      "abbr": ""
+    },
+    "가을": {
+      "full": "Musim Gugur",
+      "abbr": ""
+    },
+    "사이즈": {
+      "full": "Ukuran",
+      "abbr": ""
+    },
+    "치수": {
+      "full": "Ukuran",
+      "abbr": ""
+    },
+    "봉제사양": {
+      "full": "Spesifikasi Jahit",
+      "abbr": ""
+    },
+    "부자재": {
+      "full": "Aksesori",
+      "abbr": ""
+    },
+    "단추": {
+      "full": "Kancing",
+      "abbr": ""
+    },
+    "똑딱이": {
+      "full": "Kancing Jepret",
+      "abbr": ""
+    },
+    "고무밴드": {
+      "full": "Karet Elastis",
+      "abbr": ""
+    },
+    "드로우코드": {
+      "full": "Tali Serut",
+      "abbr": ""
+    },
+    "스트링스토퍼": {
+      "full": "Penghenti Tali",
+      "abbr": ""
+    },
+    "후드탈부착": {
+      "full": "Tudung Lepas",
+      "abbr": ""
+    },
+    "요척": {
+      "full": "Konsumsi",
+      "abbr": ""
+    },
+    "겹누빔": {
+      "full": "Quilting",
+      "abbr": ""
+    },
+    "고정박음": {
+      "full": "Bar Tack",
+      "abbr": ""
+    },
+    "눌러박기": {
+      "full": "Jahit Tekan",
+      "abbr": ""
+    },
+    "새발뜨기": {
+      "full": "Jahit Silang",
+      "abbr": ""
+    },
+    "속감침": {
+      "full": "Jahit Tersembunyi",
+      "abbr": ""
+    },
+    "시접": {
+      "full": "Kampuh",
+      "abbr": ""
+    },
+    "시접분": {
+      "full": "Tambahan Kampuh",
+      "abbr": ""
+    },
+    "통솔": {
+      "full": "Obras",
+      "abbr": ""
+    },
+    "오버록": {
+      "full": "Obras",
+      "abbr": ""
+    },
+    "오바로크": {
+      "full": "Obras",
+      "abbr": ""
+    },
+    "상침": {
+      "full": "Jahit Atas",
+      "abbr": ""
+    },
+    "박음질": {
+      "full": "Jahitan",
+      "abbr": ""
+    },
+    "미싱": {
+      "full": "Mesin Jahit",
+      "abbr": ""
+    },
+    "재봉": {
+      "full": "Menjahit",
+      "abbr": ""
+    },
+    "재단": {
+      "full": "Potong",
+      "abbr": ""
+    },
+    "패턴": {
+      "full": "Pola",
+      "abbr": ""
+    },
+    "그레이딩": {
+      "full": "Grading",
+      "abbr": ""
+    },
+    "마킹": {
+      "full": "Marking",
+      "abbr": ""
+    },
+    "스프레딩": {
+      "full": "Spreading",
+      "abbr": ""
+    },
+    "끝손질": {
+      "full": "Trimming",
+      "abbr": ""
+    },
+    "다림질": {
+      "full": "Setrika",
+      "abbr": ""
+    },
+    "다리미": {
+      "full": "Setrika",
+      "abbr": ""
+    },
+    "마감": {
+      "full": "Finishing",
+      "abbr": ""
+    },
+    "불량": {
+      "full": "Cacat",
+      "abbr": ""
+    },
+    "검품": {
+      "full": "QC",
+      "abbr": ""
+    },
+    "검침": {
+      "full": "Deteksi Jarum",
+      "abbr": ""
+    },
+    "포장": {
+      "full": "Packing",
+      "abbr": ""
+    },
+    "출하": {
+      "full": "Pengiriman",
+      "abbr": ""
+    },
+    "심지": {
+      "full": "Kain Keras",
+      "abbr": ""
+    },
+    "접착심": {
+      "full": "Kain Keras Perekat",
+      "abbr": ""
+    },
+    "어깨솜": {
+      "full": "Bantalan Bahu",
+      "abbr": ""
+    },
+    "어깨패드": {
+      "full": "Bantalan Bahu",
+      "abbr": ""
+    },
+    "충전재": {
+      "full": "Isian",
+      "abbr": ""
+    },
+    "솜": {
+      "full": "Kapas",
+      "abbr": ""
+    },
+    "덕다운": {
+      "full": "Bulu Bebek",
+      "abbr": ""
+    },
+    "구스다운": {
+      "full": "Bulu Angsa",
+      "abbr": ""
+    },
+    "행택": {
+      "full": "Hang Tag",
+      "abbr": ""
+    },
+    "케어라벨": {
+      "full": "Label Perawatan",
+      "abbr": ""
+    },
+    "사이즈라벨": {
+      "full": "Label Ukuran",
+      "abbr": ""
+    },
+    "메인라벨": {
+      "full": "Label Utama",
+      "abbr": ""
+    },
+    "브랜드라벨": {
+      "full": "Label Merek",
+      "abbr": ""
+    },
+    "워셔": {
+      "full": "Ring",
+      "abbr": ""
+    },
+    "리벳": {
+      "full": "Rivet",
+      "abbr": ""
+    },
+    "버클": {
+      "full": "Gesper",
+      "abbr": ""
+    },
+    "고무줄": {
+      "full": "Karet",
+      "abbr": ""
+    },
+    "끈": {
+      "full": "Tali",
+      "abbr": ""
+    },
+    "시보리": {
+      "full": "Rib",
+      "abbr": ""
+    },
+    "립": {
+      "full": "Rib",
+      "abbr": ""
+    },
+    "니트립": {
+      "full": "Rib Rajut",
+      "abbr": ""
+    },
+    "옆선": {
+      "full": "Jahit Samping",
+      "abbr": ""
+    },
+    "어깨선": {
+      "full": "Jahit Bahu",
+      "abbr": ""
+    },
+    "암홀": {
+      "full": "Lubang Lengan",
+      "abbr": ""
+    },
+    "소매통": {
+      "full": "Lebar Lengan",
+      "abbr": ""
+    },
+    "소매산": {
+      "full": "Tinggi Lengan",
+      "abbr": ""
+    },
+    "네크라인": {
+      "full": "Garis Leher",
+      "abbr": ""
+    },
+    "목둘레": {
+      "full": "Lingkar Leher",
+      "abbr": ""
+    },
+    "가슴둘레": {
+      "full": "Lingkar Dada",
+      "abbr": ""
+    },
+    "허리둘레": {
+      "full": "Lingkar Pinggang",
+      "abbr": ""
+    },
+    "엉덩이둘레": {
+      "full": "Lingkar Pinggul",
+      "abbr": ""
+    },
+    "총장": {
+      "full": "Panjang Total",
+      "abbr": ""
+    },
+    "등길이": {
+      "full": "Panjang Punggung",
+      "abbr": ""
+    },
+    "화장": {
+      "full": "Panjang Lengan",
+      "abbr": ""
+    },
+    "진동": {
+      "full": "Kedalaman Lengan",
+      "abbr": ""
+    },
+    "밑위": {
+      "full": "Panjang Selangkangan",
+      "abbr": ""
+    },
+    "인심": {
+      "full": "Inseam",
+      "abbr": ""
+    },
+    "밑단둘레": {
+      "full": "Lingkar Bawah",
+      "abbr": ""
+    },
+    "기모": {
+      "full": "Bulu",
+      "abbr": ""
+    },
+    "방수": {
+      "full": "Tahan Air",
+      "abbr": ""
+    },
+    "방풍": {
+      "full": "Tahan Angin",
+      "abbr": ""
+    },
+    "투습": {
+      "full": "Breathable",
+      "abbr": ""
+    },
+    "발수": {
+      "full": "Tolak Air",
+      "abbr": ""
+    },
+    "보온": {
+      "full": "Hangat",
+      "abbr": ""
+    },
+    "경량": {
+      "full": "Ringan",
+      "abbr": ""
+    },
+    "신축성": {
+      "full": "Elastis",
+      "abbr": ""
+    },
+    "스판": {
+      "full": "Spandex",
+      "abbr": ""
+    },
+    "폴리": {
+      "full": "Polyester",
+      "abbr": ""
+    },
+    "나일론": {
+      "full": "Nilon",
+      "abbr": ""
+    },
+    "면": {
+      "full": "Katun",
+      "abbr": ""
+    },
+    "울": {
+      "full": "Wol",
+      "abbr": ""
+    },
+    "플리스": {
+      "full": "Fleece",
+      "abbr": ""
+    },
+    "고어텍스": {
+      "full": "Gore-Tex",
+      "abbr": ""
+    },
+    "멤브레인": {
+      "full": "Membran",
+      "abbr": ""
+    },
+    "바느질": {
+      "full": "Menjahit",
+      "abbr": ""
+    },
+    "바이어스": {
+      "full": "Bias",
+      "abbr": ""
+    },
+    "다트": {
+      "full": "Kupnat",
+      "abbr": ""
+    },
+    "주름": {
+      "full": "Lipatan",
+      "abbr": ""
+    },
+    "파이핑": {
+      "full": "Piping",
+      "abbr": ""
+    },
+    "바인딩": {
+      "full": "Binding",
+      "abbr": ""
+    },
+    "퀼팅": {
+      "full": "Quilting",
+      "abbr": ""
+    },
+    "자수": {
+      "full": "Sulam",
+      "abbr": ""
+    },
+    "실": {
+      "full": "Benang",
+      "abbr": ""
+    },
+    "바늘": {
+      "full": "Jarum",
+      "abbr": ""
+    },
+    "가위": {
+      "full": "Gunting",
+      "abbr": ""
+    },
+    "핀": {
+      "full": "Peniti",
+      "abbr": ""
+    },
+    "샘플": {
+      "full": "Sampel",
+      "abbr": ""
+    },
+    "생산": {
+      "full": "Produksi",
+      "abbr": ""
+    },
+    "납기": {
+      "full": "Pengiriman",
+      "abbr": ""
+    },
+    "품번": {
+      "full": "Nomor Gaya",
+      "abbr": ""
+    },
+    "색상": {
+      "full": "Warna",
+      "abbr": ""
+    },
+    "배색": {
+      "full": "Kombinasi Warna",
+      "abbr": ""
+    },
+    "프린트": {
+      "full": "Cetak",
+      "abbr": ""
+    },
+    "염색": {
+      "full": "Pewarnaan",
+      "abbr": ""
+    },
+    "워싱": {
+      "full": "Cuci",
+      "abbr": ""
+    },
+    "가공": {
+      "full": "Proses",
+      "abbr": ""
+    },
+    "카라": {
+      "full": "Kerah",
+      "abbr": ""
+    },
+    "커프스": {
+      "full": "Manset",
+      "abbr": ""
+    },
+    "요크": {
+      "full": "Yoke",
+      "abbr": ""
+    },
+    "벤트": {
+      "full": "Belahan",
+      "abbr": ""
+    },
+    "슬릿": {
+      "full": "Belahan",
+      "abbr": ""
+    },
+    "플랩": {
+      "full": "Tutup",
+      "abbr": ""
+    },
+    "웰트": {
+      "full": "Welt",
+      "abbr": ""
+    },
+    "패치": {
+      "full": "Tempel",
+      "abbr": ""
+    },
+    "벨트루프": {
+      "full": "Loop Sabuk",
+      "abbr": ""
+    },
+    "후크": {
+      "full": "Kait",
+      "abbr": ""
+    },
+    "스냅": {
+      "full": "Kancing Jepret",
+      "abbr": ""
+    },
+    "접음": {
+      "full": "Lipat",
+      "abbr": ""
+    },
+    "보강": {
+      "full": "Penguatan",
+      "abbr": ""
+    },
+    "반사": {
+      "full": "Reflektif",
+      "abbr": ""
+    }
   },
   "bengali": {
-    "남성": "পুরুষ",
-    "여성": "মহিলা",
-    "자켓": "জ্যাকেট",
-    "다운자켓": "ডাউন জ্যাকেট",
-    "후드": "হুড",
-    "에리": "কলার",
-    "봉제": "সেলাই",
-    "작업": "কাজ",
-    "원단": "কাপড়",
-    "안감": "আস্তরণ",
-    "겉감": "বাইরের স্তর",
-    "소매": "হাতা",
-    "밑단": "নিচের প্রান্ত",
-    "어깨": "কাঁধ",
-    "가슴": "বুক",
-    "허리": "কোমর",
-    "지퍼": "জিপার",
-    "스토퍼": "স্টপার",
-    "고리": "লুপ",
-    "테이프": "টেপ",
-    "앞판": "সামনের প্যানেল",
-    "뒷판": "পিছনের প্যানেল",
-    "로고": "লোগো",
-    "벨크로": "ভেলক্রো",
-    "밴드": "ব্যান্ড",
-    "아일렛": "আইলেট",
-    "스트링": "স্ট্রিং",
-    "주머니": "পকেট",
-    "포켓": "পকেট",
-    "메인": "প্রধান",
-    "라벨": "লেবেল",
-    "탈부착": "বিচ্ছিন্নযোগ্য",
-    "탈부착형": "বিচ্ছিন্নযোগ্য ধরন",
-    "블럭": "ব্লক",
-    "컬러": "রঙ",
-    "여름": "গ্রীষ্ম",
-    "겨울": "শীত",
-    "봄": "বসন্ত",
-    "가을": "শরৎ",
-    "사이즈": "সাইজ",
-    "치수": "মাপ",
-    "봉제사양": "সেলাই স্পেসিফিকেশন",
-    "부자재": "আনুষঙ্গিক",
-    "단추": "বোতাম",
-    "똑딱이": "স্ন্যাপ বোতাম",
-    "고무밴드": "ইলাস্টিক ব্যান্ড",
-    "드로우코드": "ড্রকর্ড",
-    "스트링스토퍼": "স্ট্রিং স্টপার",
-    "후드탈부착": "খোলা যায় এমন হুড",
-    "요척": "খরচ",
-
-    "겹누빔": "কুইল্টিং",
-    "고정박음": "বার ট্যাকিং",
-    "눌러박기": "টপ সেলাই",
-    "새발뜨기": "ক্রস সেলাই",
-    "속감침": "ব্লাইন্ড সেলাই",
-    "시접": "সীম অ্যালাউন্স",
-    "시접분": "সীম অ্যালাউন্স",
-    "통솔": "ফেল সীম",
-    "오버록": "ওভারলক",
-    "오바로크": "ওভারলক",
-    "상침": "টপ সেলাই",
-    "박음질": "সেলাই",
-    "미싱": "সেলাই মেশিন",
-    "재봉": "সেলাই",
-    "재단": "কাটা",
-    "패턴": "প্যাটার্ন",
-    "그레이딩": "গ্রেডিং",
-    "마킹": "মার্কিং",
-    "스프레딩": "স্প্রেডিং",
-
-    "끝손질": "ট্রিমিং",
-    "다림질": "ইস্ত্রি",
-    "다리미": "ইস্ত্রি",
-    "마감": "ফিনিশিং",
-    "불량": "ত্রুটি",
-    "검품": "মান পরীক্ষা",
-    "검침": "সুই সনাক্তকরণ",
-    "포장": "প্যাকিং",
-    "출하": "শিপিং",
-
-    "심지": "ইন্টারলাইনিং",
-    "접착심": "ফিউজিবল ইন্টারলাইনিং",
-    "어깨솜": "কাঁধের প্যাড",
-    "어깨패드": "কাঁধের প্যাড",
-    "충전재": "ভরাট",
-    "솜": "তুলা",
-    "덕다운": "হাঁসের পালক",
-    "구스다운": "রাজহাঁসের পালক",
-    "행택": "হ্যাং ট্যাগ",
-    "케어라벨": "কেয়ার লেবেল",
-    "사이즈라벨": "সাইজ লেবেল",
-    "메인라벨": "মেইন লেবেল",
-    "브랜드라벨": "ব্র্যান্ড লেবেল",
-    "워셔": "ওয়াশার",
-    "리벳": "রিভেট",
-    "버클": "বাকল",
-    "고무줄": "ইলাস্টিক",
-    "끈": "দড়ি",
-    "시보리": "রিব নিট",
-    "립": "রিব",
-    "니트립": "নিট রিব",
-
-    "옆선": "পাশের সীম",
-    "어깨선": "কাঁধের সীম",
-    "암홀": "আর্মহোল",
-    "소매통": "হাতার প্রস্থ",
-    "소매산": "স্লিভ ক্যাপ",
-    "네크라인": "নেকলাইন",
-    "목둘레": "গলার পরিধি",
-    "가슴둘레": "বুকের পরিধি",
-    "허리둘레": "কোমরের পরিধি",
-    "엉덩이둘레": "নিতম্বের পরিধি",
-    "총장": "মোট দৈর্ঘ্য",
-    "등길이": "পিঠের দৈর্ঘ্য",
-    "화장": "হাতার দৈর্ঘ্য",
-    "진동": "আর্মহোল গভীরতা",
-    "밑위": "রাইজ",
-    "인심": "ইনসীম",
-    "밑단둘레": "নিচের প্রান্তের পরিধি",
-
-    "기모": "ব্রাশড",
-    "방수": "ওয়াটারপ্রুফ",
-    "방풍": "উইন্ডপ্রুফ",
-    "투습": "শ্বাস-প্রশ্বাসযোগ্য",
-    "발수": "জল প্রতিরোধী",
-    "보온": "ইনসুলেশন",
-    "경량": "হালকা ওজন",
-    "신축성": "স্ট্রেচ",
-    "스판": "স্প্যান্ডেক্স",
-    "폴리": "পলিয়েস্টার",
-    "나일론": "নাইলন",
-    "면": "তুলা",
-    "울": "উল",
-    "플리스": "ফ্লিস",
-    "고어텍스": "গোর-টেক্স",
-    "멤브레인": "মেমব্রেন",
-
-    "바느질": "সুচের কাজ",
-    "바이어스": "বায়াস",
-    "다트": "ডার্ট",
-    "주름": "প্লিট",
-    "파이핑": "পাইপিং",
-    "바인딩": "বাইন্ডিং",
-    "퀼팅": "কুইল্টিং",
-    "자수": "এমব্রয়ডারি",
-    "실": "সুতা",
-    "바늘": "সুই",
-    "가위": "কাঁচি",
-    "핀": "পিন",
-    "샘플": "নমুনা",
-    "생산": "উৎপাদন",
-    "납기": "ডেলিভারি",
-    "품번": "স্টাইল নম্বর",
-    "색상": "রঙ",
-    "배색": "রঙের সমন্বয়",
-    "프린트": "প্রিন্ট",
-    "염색": "রং করা",
-    "워싱": "ধোয়া",
-    "가공": "প্রক্রিয়াকরণ",
-    "카라": "কলার",
-    "커프스": "কাফ",
-    "요크": "ইয়োক",
-    "벤트": "ভেন্ট",
-    "슬릿": "স্লিট",
-    "플랩": "ফ্ল্যাপ",
-    "웰트": "ওয়েল্ট",
-    "패치": "প্যাচ",
-    "벨트루프": "বেল্ট লুপ",
-    "후크": "হুক",
-    "스냅": "স্ন্যাপ",
-    "접음": "ভাঁজ",
-    "보강": "শক্তিশালীকরণ",
-    "반사": "প্রতিফলিত"
+    "남성": {
+      "full": "পুরুষ",
+      "abbr": ""
+    },
+    "여성": {
+      "full": "মহিলা",
+      "abbr": ""
+    },
+    "자켓": {
+      "full": "জ্যাকেট",
+      "abbr": ""
+    },
+    "다운자켓": {
+      "full": "ডাউন জ্যাকেট",
+      "abbr": ""
+    },
+    "후드": {
+      "full": "হুড",
+      "abbr": ""
+    },
+    "에리": {
+      "full": "কলার",
+      "abbr": ""
+    },
+    "봉제": {
+      "full": "সেলাই",
+      "abbr": ""
+    },
+    "작업": {
+      "full": "কাজ",
+      "abbr": ""
+    },
+    "원단": {
+      "full": "কাপড়",
+      "abbr": ""
+    },
+    "안감": {
+      "full": "আস্তরণ",
+      "abbr": ""
+    },
+    "겉감": {
+      "full": "বাইরের স্তর",
+      "abbr": ""
+    },
+    "소매": {
+      "full": "হাতা",
+      "abbr": ""
+    },
+    "밑단": {
+      "full": "নিচের প্রান্ত",
+      "abbr": ""
+    },
+    "어깨": {
+      "full": "কাঁধ",
+      "abbr": ""
+    },
+    "가슴": {
+      "full": "বুক",
+      "abbr": ""
+    },
+    "허리": {
+      "full": "কোমর",
+      "abbr": ""
+    },
+    "지퍼": {
+      "full": "জিপার",
+      "abbr": ""
+    },
+    "스토퍼": {
+      "full": "স্টপার",
+      "abbr": ""
+    },
+    "고리": {
+      "full": "লুপ",
+      "abbr": ""
+    },
+    "테이프": {
+      "full": "টেপ",
+      "abbr": ""
+    },
+    "앞판": {
+      "full": "সামনের প্যানেল",
+      "abbr": ""
+    },
+    "뒷판": {
+      "full": "পিছনের প্যানেল",
+      "abbr": ""
+    },
+    "로고": {
+      "full": "লোগো",
+      "abbr": ""
+    },
+    "벨크로": {
+      "full": "ভেলক্রো",
+      "abbr": ""
+    },
+    "밴드": {
+      "full": "ব্যান্ড",
+      "abbr": ""
+    },
+    "아일렛": {
+      "full": "আইলেট",
+      "abbr": ""
+    },
+    "스트링": {
+      "full": "স্ট্রিং",
+      "abbr": ""
+    },
+    "주머니": {
+      "full": "পকেট",
+      "abbr": ""
+    },
+    "포켓": {
+      "full": "পকেট",
+      "abbr": ""
+    },
+    "메인": {
+      "full": "প্রধান",
+      "abbr": ""
+    },
+    "라벨": {
+      "full": "লেবেল",
+      "abbr": ""
+    },
+    "탈부착": {
+      "full": "বিচ্ছিন্নযোগ্য",
+      "abbr": ""
+    },
+    "탈부착형": {
+      "full": "বিচ্ছিন্নযোগ্য ধরন",
+      "abbr": ""
+    },
+    "블럭": {
+      "full": "ব্লক",
+      "abbr": ""
+    },
+    "컬러": {
+      "full": "রঙ",
+      "abbr": ""
+    },
+    "여름": {
+      "full": "গ্রীষ্ম",
+      "abbr": ""
+    },
+    "겨울": {
+      "full": "শীত",
+      "abbr": ""
+    },
+    "봄": {
+      "full": "বসন্ত",
+      "abbr": ""
+    },
+    "가을": {
+      "full": "শরৎ",
+      "abbr": ""
+    },
+    "사이즈": {
+      "full": "সাইজ",
+      "abbr": ""
+    },
+    "치수": {
+      "full": "মাপ",
+      "abbr": ""
+    },
+    "봉제사양": {
+      "full": "সেলাই স্পেসিফিকেশন",
+      "abbr": ""
+    },
+    "부자재": {
+      "full": "আনুষঙ্গিক",
+      "abbr": ""
+    },
+    "단추": {
+      "full": "বোতাম",
+      "abbr": ""
+    },
+    "똑딱이": {
+      "full": "স্ন্যাপ বোতাম",
+      "abbr": ""
+    },
+    "고무밴드": {
+      "full": "ইলাস্টিক ব্যান্ড",
+      "abbr": ""
+    },
+    "드로우코드": {
+      "full": "ড্রকর্ড",
+      "abbr": ""
+    },
+    "스트링스토퍼": {
+      "full": "স্ট্রিং স্টপার",
+      "abbr": ""
+    },
+    "후드탈부착": {
+      "full": "খোলা যায় এমন হুড",
+      "abbr": ""
+    },
+    "요척": {
+      "full": "খরচ",
+      "abbr": ""
+    },
+    "겹누빔": {
+      "full": "কুইল্টিং",
+      "abbr": ""
+    },
+    "고정박음": {
+      "full": "বার ট্যাকিং",
+      "abbr": ""
+    },
+    "눌러박기": {
+      "full": "টপ সেলাই",
+      "abbr": ""
+    },
+    "새발뜨기": {
+      "full": "ক্রস সেলাই",
+      "abbr": ""
+    },
+    "속감침": {
+      "full": "ব্লাইন্ড সেলাই",
+      "abbr": ""
+    },
+    "시접": {
+      "full": "সীম অ্যালাউন্স",
+      "abbr": ""
+    },
+    "시접분": {
+      "full": "সীম অ্যালাউন্স",
+      "abbr": ""
+    },
+    "통솔": {
+      "full": "ফেল সীম",
+      "abbr": ""
+    },
+    "오버록": {
+      "full": "ওভারলক",
+      "abbr": ""
+    },
+    "오바로크": {
+      "full": "ওভারলক",
+      "abbr": ""
+    },
+    "상침": {
+      "full": "টপ সেলাই",
+      "abbr": ""
+    },
+    "박음질": {
+      "full": "সেলাই",
+      "abbr": ""
+    },
+    "미싱": {
+      "full": "সেলাই মেশিন",
+      "abbr": ""
+    },
+    "재봉": {
+      "full": "সেলাই",
+      "abbr": ""
+    },
+    "재단": {
+      "full": "কাটা",
+      "abbr": ""
+    },
+    "패턴": {
+      "full": "প্যাটার্ন",
+      "abbr": ""
+    },
+    "그레이딩": {
+      "full": "গ্রেডিং",
+      "abbr": ""
+    },
+    "마킹": {
+      "full": "মার্কিং",
+      "abbr": ""
+    },
+    "스프레딩": {
+      "full": "স্প্রেডিং",
+      "abbr": ""
+    },
+    "끝손질": {
+      "full": "ট্রিমিং",
+      "abbr": ""
+    },
+    "다림질": {
+      "full": "ইস্ত্রি",
+      "abbr": ""
+    },
+    "다리미": {
+      "full": "ইস্ত্রি",
+      "abbr": ""
+    },
+    "마감": {
+      "full": "ফিনিশিং",
+      "abbr": ""
+    },
+    "불량": {
+      "full": "ত্রুটি",
+      "abbr": ""
+    },
+    "검품": {
+      "full": "মান পরীক্ষা",
+      "abbr": ""
+    },
+    "검침": {
+      "full": "সুই সনাক্তকরণ",
+      "abbr": ""
+    },
+    "포장": {
+      "full": "প্যাকিং",
+      "abbr": ""
+    },
+    "출하": {
+      "full": "শিপিং",
+      "abbr": ""
+    },
+    "심지": {
+      "full": "ইন্টারলাইনিং",
+      "abbr": ""
+    },
+    "접착심": {
+      "full": "ফিউজিবল ইন্টারলাইনিং",
+      "abbr": ""
+    },
+    "어깨솜": {
+      "full": "কাঁধের প্যাড",
+      "abbr": ""
+    },
+    "어깨패드": {
+      "full": "কাঁধের প্যাড",
+      "abbr": ""
+    },
+    "충전재": {
+      "full": "ভরাট",
+      "abbr": ""
+    },
+    "솜": {
+      "full": "তুলা",
+      "abbr": ""
+    },
+    "덕다운": {
+      "full": "হাঁসের পালক",
+      "abbr": ""
+    },
+    "구스다운": {
+      "full": "রাজহাঁসের পালক",
+      "abbr": ""
+    },
+    "행택": {
+      "full": "হ্যাং ট্যাগ",
+      "abbr": ""
+    },
+    "케어라벨": {
+      "full": "কেয়ার লেবেল",
+      "abbr": ""
+    },
+    "사이즈라벨": {
+      "full": "সাইজ লেবেল",
+      "abbr": ""
+    },
+    "메인라벨": {
+      "full": "মেইন লেবেল",
+      "abbr": ""
+    },
+    "브랜드라벨": {
+      "full": "ব্র্যান্ড লেবেল",
+      "abbr": ""
+    },
+    "워셔": {
+      "full": "ওয়াশার",
+      "abbr": ""
+    },
+    "리벳": {
+      "full": "রিভেট",
+      "abbr": ""
+    },
+    "버클": {
+      "full": "বাকল",
+      "abbr": ""
+    },
+    "고무줄": {
+      "full": "ইলাস্টিক",
+      "abbr": ""
+    },
+    "끈": {
+      "full": "দড়ি",
+      "abbr": ""
+    },
+    "시보리": {
+      "full": "রিব নিট",
+      "abbr": ""
+    },
+    "립": {
+      "full": "রিব",
+      "abbr": ""
+    },
+    "니트립": {
+      "full": "নিট রিব",
+      "abbr": ""
+    },
+    "옆선": {
+      "full": "পাশের সীম",
+      "abbr": ""
+    },
+    "어깨선": {
+      "full": "কাঁধের সীম",
+      "abbr": ""
+    },
+    "암홀": {
+      "full": "আর্মহোল",
+      "abbr": ""
+    },
+    "소매통": {
+      "full": "হাতার প্রস্থ",
+      "abbr": ""
+    },
+    "소매산": {
+      "full": "স্লিভ ক্যাপ",
+      "abbr": ""
+    },
+    "네크라인": {
+      "full": "নেকলাইন",
+      "abbr": ""
+    },
+    "목둘레": {
+      "full": "গলার পরিধি",
+      "abbr": ""
+    },
+    "가슴둘레": {
+      "full": "বুকের পরিধি",
+      "abbr": ""
+    },
+    "허리둘레": {
+      "full": "কোমরের পরিধি",
+      "abbr": ""
+    },
+    "엉덩이둘레": {
+      "full": "নিতম্বের পরিধি",
+      "abbr": ""
+    },
+    "총장": {
+      "full": "মোট দৈর্ঘ্য",
+      "abbr": ""
+    },
+    "등길이": {
+      "full": "পিঠের দৈর্ঘ্য",
+      "abbr": ""
+    },
+    "화장": {
+      "full": "হাতার দৈর্ঘ্য",
+      "abbr": ""
+    },
+    "진동": {
+      "full": "আর্মহোল গভীরতা",
+      "abbr": ""
+    },
+    "밑위": {
+      "full": "রাইজ",
+      "abbr": ""
+    },
+    "인심": {
+      "full": "ইনসীম",
+      "abbr": ""
+    },
+    "밑단둘레": {
+      "full": "নিচের প্রান্তের পরিধি",
+      "abbr": ""
+    },
+    "기모": {
+      "full": "ব্রাশড",
+      "abbr": ""
+    },
+    "방수": {
+      "full": "ওয়াটারপ্রুফ",
+      "abbr": ""
+    },
+    "방풍": {
+      "full": "উইন্ডপ্রুফ",
+      "abbr": ""
+    },
+    "투습": {
+      "full": "শ্বাস-প্রশ্বাসযোগ্য",
+      "abbr": ""
+    },
+    "발수": {
+      "full": "জল প্রতিরোধী",
+      "abbr": ""
+    },
+    "보온": {
+      "full": "ইনসুলেশন",
+      "abbr": ""
+    },
+    "경량": {
+      "full": "হালকা ওজন",
+      "abbr": ""
+    },
+    "신축성": {
+      "full": "স্ট্রেচ",
+      "abbr": ""
+    },
+    "스판": {
+      "full": "স্প্যান্ডেক্স",
+      "abbr": ""
+    },
+    "폴리": {
+      "full": "পলিয়েস্টার",
+      "abbr": ""
+    },
+    "나일론": {
+      "full": "নাইলন",
+      "abbr": ""
+    },
+    "면": {
+      "full": "তুলা",
+      "abbr": ""
+    },
+    "울": {
+      "full": "উল",
+      "abbr": ""
+    },
+    "플리스": {
+      "full": "ফ্লিস",
+      "abbr": ""
+    },
+    "고어텍스": {
+      "full": "গোর-টেক্স",
+      "abbr": ""
+    },
+    "멤브레인": {
+      "full": "মেমব্রেন",
+      "abbr": ""
+    },
+    "바느질": {
+      "full": "সুচের কাজ",
+      "abbr": ""
+    },
+    "바이어스": {
+      "full": "বায়াস",
+      "abbr": ""
+    },
+    "다트": {
+      "full": "ডার্ট",
+      "abbr": ""
+    },
+    "주름": {
+      "full": "প্লিট",
+      "abbr": ""
+    },
+    "파이핑": {
+      "full": "পাইপিং",
+      "abbr": ""
+    },
+    "바인딩": {
+      "full": "বাইন্ডিং",
+      "abbr": ""
+    },
+    "퀼팅": {
+      "full": "কুইল্টিং",
+      "abbr": ""
+    },
+    "자수": {
+      "full": "এমব্রয়ডারি",
+      "abbr": ""
+    },
+    "실": {
+      "full": "সুতা",
+      "abbr": ""
+    },
+    "바늘": {
+      "full": "সুই",
+      "abbr": ""
+    },
+    "가위": {
+      "full": "কাঁচি",
+      "abbr": ""
+    },
+    "핀": {
+      "full": "পিন",
+      "abbr": ""
+    },
+    "샘플": {
+      "full": "নমুনা",
+      "abbr": ""
+    },
+    "생산": {
+      "full": "উৎপাদন",
+      "abbr": ""
+    },
+    "납기": {
+      "full": "ডেলিভারি",
+      "abbr": ""
+    },
+    "품번": {
+      "full": "স্টাইল নম্বর",
+      "abbr": ""
+    },
+    "색상": {
+      "full": "রঙ",
+      "abbr": ""
+    },
+    "배색": {
+      "full": "রঙের সমন্বয়",
+      "abbr": ""
+    },
+    "프린트": {
+      "full": "প্রিন্ট",
+      "abbr": ""
+    },
+    "염색": {
+      "full": "রং করা",
+      "abbr": ""
+    },
+    "워싱": {
+      "full": "ধোয়া",
+      "abbr": ""
+    },
+    "가공": {
+      "full": "প্রক্রিয়াকরণ",
+      "abbr": ""
+    },
+    "카라": {
+      "full": "কলার",
+      "abbr": ""
+    },
+    "커프스": {
+      "full": "কাফ",
+      "abbr": ""
+    },
+    "요크": {
+      "full": "ইয়োক",
+      "abbr": ""
+    },
+    "벤트": {
+      "full": "ভেন্ট",
+      "abbr": ""
+    },
+    "슬릿": {
+      "full": "স্লিট",
+      "abbr": ""
+    },
+    "플랩": {
+      "full": "ফ্ল্যাপ",
+      "abbr": ""
+    },
+    "웰트": {
+      "full": "ওয়েল্ট",
+      "abbr": ""
+    },
+    "패치": {
+      "full": "প্যাচ",
+      "abbr": ""
+    },
+    "벨트루프": {
+      "full": "বেল্ট লুপ",
+      "abbr": ""
+    },
+    "후크": {
+      "full": "হুক",
+      "abbr": ""
+    },
+    "스냅": {
+      "full": "স্ন্যাপ",
+      "abbr": ""
+    },
+    "접음": {
+      "full": "ভাঁজ",
+      "abbr": ""
+    },
+    "보강": {
+      "full": "শক্তিশালীকরণ",
+      "abbr": ""
+    },
+    "반사": {
+      "full": "প্রতিফলিত",
+      "abbr": ""
+    }
   }
 }

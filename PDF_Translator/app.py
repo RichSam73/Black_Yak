@@ -7,9 +7,15 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.7.0"
-VERSION_DATE = "2026-01-09"
+VERSION = "1.8.0"
+VERSION_DATE = "2026-01-10"
 VERSION_NOTES = """
+v1.8.0 (2026-01-10)
+- ★ 사전 구조 통합: {"한글": {"full": "번역", "abbr": "약어"}} 
+- ★ UI 약어 편집: 용어 사전에서 약어 직접 추가/수정 가능
+- 하드코딩된 ABBREVIATIONS 제거, 사전 기반 약어 시스템으로 전환
+- 장기적 확장성 개선 (category, note 등 필드 추가 용이)
+
 v1.7.0 (2026-01-09)
 - ★ 용어 사전 관리 기능: 의류 전문 용어 추가/수정/삭제 가능
 - ★ 사전 후처리: AI 번역 후 사전 용어로 자동 교정 (일관성 향상)
@@ -167,22 +173,22 @@ LANGUAGE_CONFIG = {
     }
 }
 
-# 약어 매핑 사전 (긴 텍스트 → 짧은 약어)
-ABBREVIATIONS = {
-    "Garment Matching": "G.M",
-    "G Matching": "G.M",
-    "Accessory Matching": "A.M",
-    "A Matching": "A.M",
-    "Consumption": "Cons.",
-    "NaturalZipper": "Nat.Zip",
-    "Natural Zipper": "Nat.Zip",
-    "FrontZipper": "Fr.Zip",
-    "Front Zipper": "Fr.Zip",
-    "SidePocket": "Side Pkt",
-    "Side Pocket": "Side Pkt",
-    "Factory Handling": "Fact.Hdl",
-    "Hood/Hem": "Hd/Hm",
-}
+# [레거시] 하드코딩된 약어 - 이제 garment_dict.json의 abbr 필드로 대체됨
+# ABBREVIATIONS = {
+#     "Garment Matching": "G.M",
+#     "G Matching": "G.M",
+#     "Accessory Matching": "A.M",
+#     "A Matching": "A.M",
+#     "Consumption": "Cons.",
+#     "NaturalZipper": "Nat.Zip",
+#     "Natural Zipper": "Nat.Zip",
+#     "FrontZipper": "Fr.Zip",
+#     "Front Zipper": "Fr.Zip",
+#     "SidePocket": "Side Pkt",
+#     "Side Pocket": "Side Pkt",
+#     "Factory Handling": "Fact.Hdl",
+#     "Hood/Hem": "Hd/Hm",
+# }
 
 # 의류 전문 용어 사전 파일 경로
 GARMENT_DICT_FILE = os.path.join(os.path.dirname(__file__), "garment_dict.json")
@@ -338,11 +344,16 @@ def apply_dict_preprocess(korean_text, target_lang):
     sorted_terms = sorted(dict_terms.items(), key=lambda x: len(x[0]), reverse=True)
 
     term_idx = 1
-    for korean_term, translation in sorted_terms:
+    for korean_term, term_data in sorted_terms:
         if korean_term in result:
             placeholder = f"<<TERM_{term_idx}>>"
             result = result.replace(korean_term, placeholder)
-            placeholder_map[placeholder] = translation
+            # 새 구조: term_data = {"full": "번역", "abbr": "약어"}
+            if isinstance(term_data, dict):
+                placeholder_map[placeholder] = term_data.get("full", "")
+            else:
+                # 레거시 호환: 단순 문자열인 경우
+                placeholder_map[placeholder] = term_data
             term_idx += 1
 
     return result, placeholder_map
@@ -1264,21 +1275,30 @@ def check_bbox_overlap(bbox1, bbox2):
     return True
 
 
-def abbreviate_text(text, used_abbreviations):
-    """긴 텍스트를 약어로 축약
+def abbreviate_text(text, used_abbreviations, target_lang="english"):
+    """긴 텍스트를 약어로 축약 (사전 기반)
 
     Args:
         text: 원본 텍스트
         used_abbreviations: 사용된 약어 추적용 set (수정됨)
+        target_lang: 대상 언어 (사전에서 약어 조회용)
 
     Returns:
         str: 축약된 텍스트
     """
     result = text
-    for full_text, abbr in ABBREVIATIONS.items():
-        if full_text in result:
-            result = result.replace(full_text, abbr)
-            used_abbreviations.add((abbr, full_text))  # (약어, 원문) 저장
+    
+    # 사전에서 약어 조회
+    if target_lang in GARMENT_DICT:
+        lang_dict = GARMENT_DICT[target_lang]
+        for korean_term, term_data in lang_dict.items():
+            if isinstance(term_data, dict):
+                full_text = term_data.get("full", "")
+                abbr = term_data.get("abbr", "")
+                if abbr and full_text in result:
+                    result = result.replace(full_text, abbr)
+                    used_abbreviations.add((abbr, full_text))  # (약어, 원문) 저장
+    
     return result
 
 
@@ -1385,7 +1405,7 @@ def draw_vertical_text(draw, text, x, y, font, fill, box_width, box_height):
         current_y += char_height
 
 
-def replace_text_in_image(image_path, translations, output_path):
+def replace_text_in_image(image_path, translations, output_path, target_lang="english"):
     """이미지에서 한글 영역을 지우고 번역된 텍스트로 교체 - v1.8.2 (영어 텍스트 유지, 겹침 감지용 포함)"""
     img = cv2.imread(image_path)
     height, width = img.shape[:2]
@@ -1528,7 +1548,7 @@ def replace_text_in_image(image_path, translations, output_path):
         display_text = info['text']
 
         if i in needs_abbreviation:
-            display_text = abbreviate_text(info['text'], used_abbreviations)
+            display_text = abbreviate_text(info['text'], used_abbreviations, target_lang)
 
         text_color = get_text_color_for_background(info['bg_color'])
         text_color_rgb = (text_color[2], text_color[1], text_color[0]) if text_color == (255, 255, 255) else text_color
@@ -1586,7 +1606,7 @@ def replace_text_in_image(image_path, translations, output_path):
     return output_path
 
 
-def generate_preview_image(image_base64, translations):
+def generate_preview_image(image_base64, translations, target_lang='english'):
     """미리보기 이미지 생성 (메모리에서 처리) - v1.8.0 (겹침 감지 + 약어)"""
     # base64 이미지를 numpy 배열로 변환
     image_data = base64.b64decode(image_base64)
@@ -1735,7 +1755,7 @@ def generate_preview_image(image_base64, translations):
 
         # 침범한 텍스트는 약어로 변환
         if i in needs_abbreviation:
-            display_text = abbreviate_text(info['text'], used_abbreviations)
+            display_text = abbreviate_text(info['text'], used_abbreviations, target_lang)
 
         text_color = get_text_color_for_background(info['bg_color'])
         text_color_rgb = (text_color[2], text_color[1], text_color[0]) if text_color == (255, 255, 255) else text_color
@@ -2335,7 +2355,7 @@ HTML_TEMPLATE = """
 
         /* 용어 사전 모달 스타일 */
         .dict-modal {
-            width: 700px;
+            width: 850px;
             max-height: 80vh;
         }
         .dict-tabs {
@@ -2411,6 +2431,14 @@ HTML_TEMPLATE = """
             font-weight: bold;
             position: sticky;
             top: 0;
+        }
+        .dict-table th:nth-child(1) { width: 25%; }  /* 한글 */
+        .dict-table th:nth-child(2) { width: 35%; }  /* 번역 */
+        .dict-table th:nth-child(3) { width: 20%; }  /* 약어 */
+        .dict-table th:nth-child(4) { width: 20%; }  /* 작업 */
+        .dict-table .abbr-cell {
+            color: #666;
+            font-style: italic;
         }
         .dict-table tr:hover {
             background: #f8f9fa;
@@ -2636,6 +2664,7 @@ HTML_TEMPLATE = """
                     <div class="dict-add-form">
                         <input type="text" id="dictKorean" placeholder="한글 용어">
                         <input type="text" id="dictTranslation" placeholder="번역">
+                        <input type="text" id="dictAbbr" placeholder="약어 (선택)">
                         <button type="button" class="btn-primary" id="addTermBtn">➕ 추가</button>
                     </div>
                     <div class="dict-search">
@@ -2647,6 +2676,7 @@ HTML_TEMPLATE = """
                                 <tr>
                                     <th>한글</th>
                                     <th>번역</th>
+                                    <th>약어</th>
                                     <th>작업</th>
                                 </tr>
                             </thead>
@@ -3145,28 +3175,39 @@ HTML_TEMPLATE = """
             showPreviewBtn.textContent = '⏳ 생성중...';
 
             try {
+                console.log('[Preview Debug] Sending request to /generate_preview...');
+                console.log('[Preview Debug] image length:', page.image ? page.image.length : 'null');
+                console.log('[Preview Debug] translations count:', page.translations ? page.translations.length : 0);
+                
                 const response = await fetch('/generate_preview', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         image: page.image,
-                        translations: page.translations
+                        translations: page.translations,
+                        target_lang: targetLang.value
                     })
                 });
 
+                console.log('[Preview Debug] Response status:', response.status);
                 const data = await response.json();
+                console.log('[Preview Debug] Response data:', data.success, data.error || 'OK');
 
                 if (data.success) {
                     previewCache[pageIdx] = data.preview;
                     previewImg.src = 'data:image/png;base64,' + data.preview;
+                    console.log('[Preview Debug] Preview loaded successfully');
                 } else {
                     console.error('Preview generation failed:', data.error);
+                    alert('미리보기 생성 실패: ' + data.error);
                     previewImg.src = 'data:image/png;base64,' + page.image;
                 }
             } catch (error) {
                 console.error('Preview error:', error);
+                alert('미리보기 오류: ' + error.message);
                 previewImg.src = 'data:image/png;base64,' + page.image;
             } finally {
+                console.log('[Preview Debug] Finally block executed');
                 showPreviewBtn.classList.remove('loading');
                 showPreviewBtn.textContent = '🔄 미리보기';
             }
@@ -3488,22 +3529,29 @@ HTML_TEMPLATE = """
             const searchTerm = dictSearch.value.toLowerCase();
 
             const entries = Object.entries(langDict)
-                .filter(([kr, trans]) =>
-                    kr.toLowerCase().includes(searchTerm) ||
-                    trans.toLowerCase().includes(searchTerm)
-                )
+                .filter(([kr, termData]) => {
+                    const full = typeof termData === 'object' ? termData.full : termData;
+                    const abbr = typeof termData === 'object' ? (termData.abbr || '') : '';
+                    return kr.toLowerCase().includes(searchTerm) ||
+                           full.toLowerCase().includes(searchTerm) ||
+                           abbr.toLowerCase().includes(searchTerm);
+                })
                 .sort((a, b) => a[0].localeCompare(b[0], 'ko'));
 
-            dictBody.innerHTML = entries.map(([korean, translation]) => `
+            dictBody.innerHTML = entries.map(([korean, termData]) => {
+                const full = typeof termData === 'object' ? termData.full : termData;
+                const abbr = typeof termData === 'object' ? (termData.abbr || '') : '';
+                return `
                 <tr data-korean="${korean}">
                     <td class="korean-cell">${korean}</td>
-                    <td class="trans-cell">${translation}</td>
+                    <td class="trans-cell">${full}</td>
+                    <td class="abbr-cell">${abbr}</td>
                     <td class="actions">
                         <button class="edit-btn" onclick="editTerm('${korean}')">✏️</button>
                         <button class="delete-btn" onclick="deleteTerm('${korean}')">🗑️</button>
                     </td>
                 </tr>
-            `).join('');
+            `}).join('');
 
             dictCount.textContent = `총 ${entries.length}개 용어`;
         }
@@ -3515,6 +3563,7 @@ HTML_TEMPLATE = """
         addTermBtn.addEventListener('click', async () => {
             const korean = dictKorean.value.trim();
             const translation = dictTranslation.value.trim();
+            const abbr = document.getElementById('dictAbbr').value.trim();
 
             if (!korean || !translation) {
                 alert('한글 용어와 번역을 모두 입력하세요.');
@@ -3525,13 +3574,14 @@ HTML_TEMPLATE = """
                 const res = await fetch(`/api/dictionary/${currentDictLang}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ korean, translation })
+                    body: JSON.stringify({ korean, translation, abbr })
                 });
                 const data = await res.json();
 
                 if (data.success) {
                     dictKorean.value = '';
                     dictTranslation.value = '';
+                    document.getElementById('dictAbbr').value = '';
                     await loadDictionary();
                 } else {
                     alert('추가 실패: ' + data.error);
@@ -3545,10 +3595,13 @@ HTML_TEMPLATE = """
         window.editTerm = function(korean) {
             const row = document.querySelector(`tr[data-korean="${korean}"]`);
             const transCell = row.querySelector('.trans-cell');
+            const abbrCell = row.querySelector('.abbr-cell');
             const actionsCell = row.querySelector('.actions');
             const currentTrans = transCell.textContent;
+            const currentAbbr = abbrCell.textContent;
 
-            transCell.innerHTML = `<input type="text" class="edit-input" value="${currentTrans}">`;
+            transCell.innerHTML = `<input type="text" class="edit-input edit-trans" value="${currentTrans}">`;
+            abbrCell.innerHTML = `<input type="text" class="edit-input edit-abbr" value="${currentAbbr}">`;
             actionsCell.innerHTML = `
                 <button class="save-btn" onclick="saveTerm('${korean}')">💾</button>
                 <button class="cancel-btn" onclick="renderDictTable()">✖️</button>
@@ -3559,8 +3612,10 @@ HTML_TEMPLATE = """
         // 용어 저장
         window.saveTerm = async function(korean) {
             const row = document.querySelector(`tr[data-korean="${korean}"]`);
-            const input = row.querySelector('.edit-input');
-            const translation = input.value.trim();
+            const transInput = row.querySelector('.edit-trans');
+            const abbrInput = row.querySelector('.edit-abbr');
+            const translation = transInput.value.trim();
+            const abbr = abbrInput ? abbrInput.value.trim() : '';
 
             if (!translation) {
                 alert('번역을 입력하세요.');
@@ -3571,7 +3626,7 @@ HTML_TEMPLATE = """
                 const res = await fetch(`/api/dictionary/${currentDictLang}/${encodeURIComponent(korean)}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ translation })
+                    body: JSON.stringify({ translation, abbr })
                 });
                 const data = await res.json();
 
@@ -3833,8 +3888,9 @@ def generate_preview():
         data = request.get_json()
         image_base64 = data.get('image')
         translations = data.get('translations', [])
+        target_lang = data.get('target_lang', 'english')
 
-        print(f"[generate_preview] Received {len(translations)} translations")
+        print(f"[generate_preview] Received {len(translations)} translations, target_lang={target_lang}")
         for i, t in enumerate(translations[:3]):  # 처음 3개만 출력
             print(f"  [{i}] bbox: {t.get('bbox', 'N/A')}, text: {t.get('text', 'N/A')[:20]}...")
 
@@ -3847,7 +3903,7 @@ def generate_preview():
 
         # 미리보기 이미지 생성
         print("[generate_preview] Calling generate_preview_image...")
-        preview_base64 = generate_preview_image(image_base64, translations)
+        preview_base64 = generate_preview_image(image_base64, translations, target_lang)
         print("[generate_preview] Preview generated successfully")
 
         return jsonify({
@@ -3887,7 +3943,7 @@ def generate():
                 # 이미지에 번역 적용
                 output_filename = f"translated_{timestamp}_page{i+1}_{target_lang}.png"
                 output_path = os.path.join(OUTPUT_FOLDER, output_filename)
-                replace_text_in_image(temp_img_path, translations, output_path)
+                replace_text_in_image(temp_img_path, translations, output_path, target_lang)
                 output_files.append(output_filename)
             else:
                 print(f"  No translations, skipping...")
@@ -3951,7 +4007,7 @@ def translate():
                 # 이미지 교체
                 output_filename = f"translated_{timestamp}_page{i+1}_{target_lang}.png"
                 output_path = os.path.join(OUTPUT_FOLDER, output_filename)
-                replace_text_in_image(img_path, translations, output_path)
+                replace_text_in_image(img_path, translations, output_path, target_lang)
                 output_files.append(output_filename)
             else:
                 print(f"  No Korean text found, skipping...")
@@ -4000,13 +4056,14 @@ def get_dictionary_by_language(language):
 
 @app.route('/api/dictionary/<language>', methods=['POST'])
 def add_term(language):
-    """용어 추가 (한글: 번역)"""
+    """용어 추가 (한글: {full: 번역, abbr: 약어})"""
     global GARMENT_DICT
     GARMENT_DICT = load_garment_dict()
 
     data = request.json
     korean = data.get('korean', '').strip()
     translation = data.get('translation', '').strip()
+    abbr = data.get('abbr', '').strip()
 
     if not korean or not translation:
         return jsonify({"error": "korean and translation are required"}), 400
@@ -4014,10 +4071,10 @@ def add_term(language):
     if language not in GARMENT_DICT:
         return jsonify({"error": f"Language '{language}' not found"}), 404
 
-    GARMENT_DICT[language][korean] = translation
+    GARMENT_DICT[language][korean] = {"full": translation, "abbr": abbr}
 
     if save_garment_dict(GARMENT_DICT):
-        return jsonify({"success": True, "korean": korean, "translation": translation})
+        return jsonify({"success": True, "korean": korean, "translation": translation, "abbr": abbr})
     return jsonify({"error": "Failed to save dictionary"}), 500
 
 @app.route('/api/dictionary/<language>/<korean>', methods=['PUT'])
@@ -4028,6 +4085,7 @@ def update_term(language, korean):
 
     data = request.json
     translation = data.get('translation', '').strip()
+    abbr = data.get('abbr', '').strip()
 
     if not translation:
         return jsonify({"error": "translation is required"}), 400
@@ -4038,10 +4096,10 @@ def update_term(language, korean):
     if korean not in GARMENT_DICT[language]:
         return jsonify({"error": f"Term '{korean}' not found"}), 404
 
-    GARMENT_DICT[language][korean] = translation
+    GARMENT_DICT[language][korean] = {"full": translation, "abbr": abbr}
 
     if save_garment_dict(GARMENT_DICT):
-        return jsonify({"success": True, "korean": korean, "translation": translation})
+        return jsonify({"success": True, "korean": korean, "translation": translation, "abbr": abbr})
     return jsonify({"error": "Failed to save dictionary"}), 500
 
 @app.route('/api/dictionary/<language>/<korean>', methods=['DELETE'])
