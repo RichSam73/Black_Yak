@@ -432,11 +432,11 @@ Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These 
 
 RULES:
 - Translate EVERY item, even if it contains English or numbers
-- Keep translations SHORT and professional
+- Use FULL words only, do NOT abbreviate (e.g., "Consumption" not "Cons.", "Management" not "Mgmt.")
 - Use format: "1. translation" (number + dot + space + translation)
 - Do NOT skip any item
 - Do NOT use markdown formatting like **bold**
-- IMPORTANT: Keep <<TERM_N>> placeholders exactly as they are (do not translate them)
+- CRITICAL: <<TERM_N>> placeholders are pre-translated dictionary terms. Keep them EXACTLY as they are. Do NOT translate, modify, or replace them.
 
 Korean texts:
 {korean_joined}
@@ -584,11 +584,11 @@ Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These 
 
 RULES:
 - Translate EVERY item, even if it contains English or numbers
-- Keep translations SHORT and professional
+- Use FULL words only, do NOT abbreviate (e.g., "Consumption" not "Cons.", "Management" not "Mgmt.")
 - Use format: "1. translation" (number + dot + space + translation)
 - Do NOT skip any item
 - Do NOT use markdown formatting like **bold**
-- IMPORTANT: Keep <<TERM_N>> placeholders exactly as they are (do not translate them)
+- CRITICAL: <<TERM_N>> placeholders are pre-translated dictionary terms. Keep them EXACTLY as they are. Do NOT translate, modify, or replace them.
 
 Korean texts:
 {korean_joined}
@@ -855,11 +855,11 @@ Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These 
 
 RULES:
 - Translate EVERY item, even if it contains English or numbers
-- Keep translations SHORT and professional
+- Use FULL words only, do NOT abbreviate (e.g., "Consumption" not "Cons.", "Management" not "Mgmt.")
 - Use format: "1. translation" (number + dot + space + translation)
 - Do NOT skip any item
 - Do NOT use markdown formatting like **bold**
-- IMPORTANT: Keep <<TERM_N>> placeholders exactly as they are (do not translate them)
+- CRITICAL: <<TERM_N>> placeholders are pre-translated dictionary terms. Keep them EXACTLY as they are. Do NOT translate, modify, or replace them.
 
 Korean texts:
 {korean_joined}
@@ -993,11 +993,11 @@ Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These 
 
 RULES:
 - Translate EVERY item, even if it contains English or numbers
-- Keep translations SHORT and professional
+- Use FULL words only, do NOT abbreviate (e.g., "Consumption" not "Cons.", "Management" not "Mgmt.")
 - Use format: "1. translation" (number + dot + space + translation)
 - Do NOT skip any item
 - Do NOT use markdown formatting like **bold**
-- IMPORTANT: Keep <<TERM_N>> placeholders exactly as they are (do not translate them)
+- CRITICAL: <<TERM_N>> placeholders are pre-translated dictionary terms. Keep them EXACTLY as they are. Do NOT translate, modify, or replace them.
 
 Korean texts:
 {korean_joined}
