@@ -7,9 +7,13 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.8.0"
-VERSION_DATE = "2026-01-10"
+VERSION = "1.8.1"
+VERSION_DATE = "2026-01-11"
 VERSION_NOTES = """
+v1.8.1 (2026-01-11)
+- 🐛 버그 수정: 번역 수정 후 확정 버튼 반복 클릭 시 미리보기 갱신되지 않던 문제 해결
+- 확정 버튼 클릭 시 캐시 무효화 + 미리보기 강제 갱신 로직 추가
+
 v1.8.0 (2026-01-10)
 - ★ 사전 구조 통합: {"한글": {"full": "번역", "abbr": "약어"}} 
 - ★ UI 약어 편집: 용어 사전에서 약어 직접 추가/수정 가능
@@ -3551,8 +3555,17 @@ HTML_TEMPLATE = """
         }
 
         // 확정 버튼
-        confirmBtn.addEventListener('click', () => {
+        confirmBtn.addEventListener('click', async () => {
             saveCurrentTranslations();
+            
+            // 미리보기 캐시 무효화 후 강제 갱신
+            invalidatePreviewCache(currentPage);
+            
+            // 미리보기 모드일 때만 이미지 갱신
+            if (showPreviewBtn.classList.contains('active')) {
+                await showPreviewImage(currentPage, true);  // forceRefresh = true
+            }
+            
             pagesData[currentPage].confirmed = true;
             confirmBtn.textContent = '✔ 확정됨';
             confirmBtn.classList.add('confirmed');
