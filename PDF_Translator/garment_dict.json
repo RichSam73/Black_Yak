@@ -1027,6 +1027,14 @@
     "정전기방지": {
       "full": "Anti-static",
       "abbr": "Anti-stat."
+    },
+    "G매칭": {
+      "full": "G.Matching",
+      "abbr": "G.Mtch"
+    },
+    "A매칭": {
+      "full": "A.Matching",
+      "abbr": "A.Mtch"
     }
   },
   "vietnamese": {

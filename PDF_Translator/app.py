@@ -86,6 +86,7 @@ import numpy as np
 from paddleocr import PaddleOCR
 import cv2
 import fitz  # PyMuPDF
+from img2table.document import Image as Img2TableImage  # 테이블 감지용
 
 # ★ 로깅 설정 (겹침 감지 디버깅용)
 LOG_FILE = os.path.join(os.path.dirname(__file__), 'overlap_debug.log')
@@ -357,6 +358,73 @@ def apply_dict_preprocess(korean_text, target_lang):
             term_idx += 1
 
     return result, placeholder_map
+
+
+def detect_table_regions(image_path, max_avg_row_height=50):
+    """img2table을 사용하여 테이블 영역 감지
+    
+    Args:
+        image_path: 이미지 경로
+        max_avg_row_height: 테이블로 인정할 최대 평균 행 높이 (기본 50px)
+    
+    Returns:
+        list: 테이블 영역 bbox 리스트 [(x1, y1, x2, y2), ...]
+    """
+    try:
+        img = Img2TableImage(src=image_path)
+        tables = img.extract_tables()
+        logger.info(f"[Table Detection] Found {len(tables)} raw tables")
+        
+        table_regions = []
+        for idx, table in enumerate(tables):
+            # 행 높이 계산
+            if hasattr(table, 'content') and table.content:
+                row_heights = []
+                for row in table.content:
+                    if row:
+                        for cell in row:
+                            if cell and hasattr(cell, 'bbox'):
+                                cell_bbox = cell.bbox
+                                if hasattr(cell_bbox, 'y1') and hasattr(cell_bbox, 'y2'):
+                                    row_heights.append(cell_bbox.y2 - cell_bbox.y1)
+                                break
+                
+                if row_heights:
+                    avg_row_height = sum(row_heights) / len(row_heights)
+                    logger.info(f"[Table Detection] Table #{idx} avg row height: {avg_row_height:.1f}px")
+                    if avg_row_height > max_avg_row_height:
+                        logger.info(f"[Table Detection] Table #{idx} skipped (height > {max_avg_row_height}px)")
+                        continue
+            
+            # bbox 추출
+            if hasattr(table, 'bbox'):
+                bbox = table.bbox
+                if hasattr(bbox, 'x1'):
+                    table_regions.append((bbox.x1, bbox.y1, bbox.x2, bbox.y2))
+                    logger.info(f"[Table Detection] Table #{idx} added: ({bbox.x1}, {bbox.y1}, {bbox.x2}, {bbox.y2})")
+        
+        logger.info(f"[Table Detection] Final: {len(table_regions)} valid tables")
+        return table_regions
+    except Exception as e:
+        logger.error(f"[Table Detection] Error: {e}")
+        return []
+
+
+def is_inside_table(bbox, table_regions):
+    """텍스트 bbox가 테이블 영역 안에 있는지 확인"""
+    if not table_regions:
+        return False
+    
+    # bbox 중심점 계산
+    xs = [p[0] for p in bbox]
+    ys = [p[1] for p in bbox]
+    center_x = (min(xs) + max(xs)) / 2
+    center_y = (min(ys) + max(ys)) / 2
+    
+    for (tx1, ty1, tx2, ty2) in table_regions:
+        if tx1 <= center_x <= tx2 and ty1 <= center_y <= ty2:
+            return True
+    return False
 
 
 def restore_placeholders(translated_text, placeholder_map):
@@ -1409,6 +1477,9 @@ def replace_text_in_image(image_path, translations, output_path, target_lang="en
     """이미지에서 한글 영역을 지우고 번역된 텍스트로 교체 - v1.8.2 (영어 텍스트 유지, 겹침 감지용 포함)"""
     img = cv2.imread(image_path)
     height, width = img.shape[:2]
+    
+    # ★ 테이블 영역 감지 (중앙 정렬 적용 여부 판단용)
+    table_regions = detect_table_regions(image_path)
 
     # 1단계: 한글 텍스트 영역만 배경색으로 지우기 (영어는 원본 유지)
     bg_colors = {}
@@ -1474,6 +1545,8 @@ def replace_text_in_image(image_path, translations, output_path, target_lang="en
         is_vertical = is_vertical_text(bbox)
         # 겹침 감지용: OCR bbox 사용 (같은 행 판단을 위해 원본 좌표 사용)
         cell_bbox = (x, int(min(ys)), box_width, box_height)
+        # ★ 테이블 안에 있는지 확인
+        in_table = is_inside_table(bbox, table_regions)
 
         text_render_info.append({
             'x': x, 'y': y, 'y_adjusted': y_adjusted,
@@ -1481,7 +1554,8 @@ def replace_text_in_image(image_path, translations, output_path, target_lang="en
             'text_width': text_width, 'text_height': actual_text_height,
             'cell_bbox': cell_bbox, 'bg_color': bg_color,
             'is_vertical': is_vertical, 'bbox': bbox,
-            'has_korean': item.get("has_korean", True)  # 한글 포함 여부 플래그
+            'has_korean': item.get("has_korean", True),  # 한글 포함 여부 플래그
+            'is_in_table': in_table  # ★ 테이블 내 여부
         })
 
     # 3단계: 겹침 감지 - 왼쪽 텍스트가 오른쪽 셀을 침범하는지 체크
@@ -1591,13 +1665,17 @@ def replace_text_in_image(image_path, translations, output_path, target_lang="en
                 # 텍스트가 셀보다 작음 → 셀 중앙에 배치
                 paste_y = cell_top + (cell_height - text_height_temp) // 2 + y_offset
 
-            # ★ X축 중앙 정렬: 원본 bbox 중앙 = 번역 텍스트 중앙
-            original_center_x = cell_left + cell_width // 2
-            paste_x = original_center_x - text_width_temp // 2
-            
-            # 왼쪽 경계 제한 (bbox 왼쪽을 넘지 않도록)
-            if paste_x < cell_left:
-                paste_x = cell_left
+            # ★ X축 정렬: 테이블 안이면 중앙, 아니면 왼쪽
+            if info.get('is_in_table', False):
+                # 테이블 내 텍스트 → 중앙 정렬
+                original_center_x = cell_left + cell_width // 2
+                paste_x = original_center_x - text_width_temp // 2
+                # 왼쪽 경계 제한
+                if paste_x < cell_left:
+                    paste_x = cell_left
+            else:
+                # 테이블 밖 텍스트 → 왼쪽 정렬
+                paste_x = info['x']
 
             # 원본 이미지에 붙여넣기
             img_result.paste(temp_img, (paste_x, paste_y), temp_img)
@@ -1623,6 +1701,15 @@ def generate_preview_image(image_base64, translations, target_lang='english'):
     nparr = np.frombuffer(image_data, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     height, width = img.shape[:2]
+    
+    # ★ 테이블 영역 감지 (중앙 정렬 적용 여부 판단용)
+    temp_img_path = os.path.join(UPLOAD_FOLDER, f"temp_table_detect_{id(image_base64)}.png")
+    cv2.imwrite(temp_img_path, img)
+    table_regions = detect_table_regions(temp_img_path)
+    try:
+        os.remove(temp_img_path)
+    except:
+        pass
 
     # 1단계: 한글 텍스트 영역만 배경색으로 지우기 (영어는 원본 유지)
     bg_colors = {}
@@ -1688,6 +1775,8 @@ def generate_preview_image(image_base64, translations, target_lang='english'):
         is_vertical = is_vertical_text(bbox)
         # 겹침 감지용: OCR bbox 사용 (같은 행 판단을 위해 원본 좌표 사용)
         cell_bbox = (x, int(min(ys)), box_width, box_height)
+        # ★ 테이블 안에 있는지 확인
+        in_table = is_inside_table(bbox, table_regions)
 
         text_render_info.append({
             'x': x, 'y': y, 'y_adjusted': y_adjusted,
@@ -1695,7 +1784,8 @@ def generate_preview_image(image_base64, translations, target_lang='english'):
             'text_width': text_width, 'text_height': actual_text_height,
             'cell_bbox': cell_bbox, 'bg_color': bg_color,
             'is_vertical': is_vertical, 'bbox': bbox,
-            'has_korean': item.get("has_korean", True)  # 한글 포함 여부 플래그
+            'has_korean': item.get("has_korean", True),  # 한글 포함 여부 플래그
+            'is_in_table': in_table  # ★ 테이블 내 여부
         })
 
     # 3단계: 겹침 감지 - 왼쪽 텍스트가 오른쪽 셀을 침범하는지 체크
@@ -1808,13 +1898,17 @@ def generate_preview_image(image_base64, translations, target_lang='english'):
                 # 텍스트가 셀보다 작음 → 셀 중앙에 배치
                 paste_y = cell_top + (cell_height - text_height_temp) // 2 + y_offset
 
-            # ★ X축 중앙 정렬: 원본 bbox 중앙 = 번역 텍스트 중앙
-            original_center_x = cell_left + cell_width // 2
-            paste_x = original_center_x - text_width_temp // 2
-            
-            # 왼쪽 경계 제한 (bbox 왼쪽을 넘지 않도록)
-            if paste_x < cell_left:
-                paste_x = cell_left
+            # ★ X축 정렬: 테이블 안이면 중앙, 아니면 왼쪽
+            if info.get('is_in_table', False):
+                # 테이블 내 텍스트 → 중앙 정렬
+                original_center_x = cell_left + cell_width // 2
+                paste_x = original_center_x - text_width_temp // 2
+                # 왼쪽 경계 제한
+                if paste_x < cell_left:
+                    paste_x = cell_left
+            else:
+                # 테이블 밖 텍스트 → 왼쪽 정렬
+                paste_x = info['x']
 
             # 원본 이미지에 붙여넣기
             img_result.paste(temp_img, (paste_x, paste_y), temp_img)
