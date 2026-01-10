@@ -4093,10 +4093,10 @@ if __name__ == '__main__':
     print(f"Version: {VERSION} ({VERSION_DATE})")
     print("Engine: PaddleOCR + VLM (qwen2.5vl)")
     print("Languages: English, Vietnamese, Chinese, Indonesian, Bengali")
-    print("Port: 6008")
+    print("Port: 6009")
     print("=" * 60)
 
     # OCR 엔진 미리 로드
     get_ocr_engine()
 
-    app.run(host='0.0.0.0', port=6008, debug=True)
+    app.run(host='0.0.0.0', port=6009, debug=True)
