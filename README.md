@@ -196,3 +196,345 @@ python test_all_tables.py
 3. **모델 데이터**
    - 최초 실행 시 PaddleOCR 학습 모델(약 500MB)이 자동 다운로드됩니다.
    - Ollama 모델: `ollama pull llama3.2-vision`
+
+---
+
+## Research 자료 모음
+
+이 섹션은 `Reference/research/README.md`와 `Reference/research/text_positioning/README.md`의 내용을 합친 것입니다.
+
+이 폴더는 웹 검색을 통해 수집한 연구 자료를 주제별로 정리한 것입니다.
+
+---
+
+### 폴더 구조
+
+```
+research/
+├── README.md                          # 이 파일
+├── text_removal_inpainting/           # 텍스트 제거 및 Inpainting
+│   ├── README.md                      # 검색 결과 요약 및 기술 정리
+│   └── code_samples.py                # 코드 샘플 모음
+└── text_positioning/                  # 텍스트 위치 배치
+    ├── README.md                      # 검색 결과 요약 및 기술 정리
+    └── code_samples.py                # 코드 샘플 모음
+```
+
+---
+
+### 검색 도구 목록
+
+| 도구 | MCP 이름 | 용도 |
+|------|----------|------|
+| Brave Search | `mcp__brave-search__brave_web_search` | 일반 웹 검색 |
+| Exa Search | `mcp__exa__web_search_exa` | Semantic 웹 검색 |
+| Exa Code Context | `mcp__exa__get_code_context_exa` | 코드/라이브러리 검색 |
+| WebSearch | Claude 내장 | 일반 웹 검색 |
+| GitHub Code Search | `mcp__github__search_code` | GitHub 코드 검색 |
+| GitHub File Contents | `mcp__github__get_file_contents` | GitHub 파일 내용 조회 |
+
+---
+
+### 주제별 요약
+
+#### 1. Text Removal & Inpainting (2026-01-08)
+
+**목적**: 이미지에서 텍스트를 깨끗하게 지우고 배경을 복원
+
+**핵심 방법**:
+1. **OpenCV Inpainting** - `cv2.inpaint()` (TELEA/NS 알고리즘)
+2. **LaMa Inpainting** - AI 기반 고품질 복원 (`pip install simple-lama-inpainting`)
+3. **배경색 샘플링** - 단순 배경에서 주변 색상으로 채우기
+
+**권장**: 기술서 문서는 대부분 흰색 배경이므로 OpenCV Inpainting으로 충분
+
+#### 2. Text Positioning (2026-01-08)
+
+**목적**: 번역된 텍스트를 원본 위치에 정확하게 배치
+
+**핵심 방법**:
+1. **Bounding Box 좌표 추출** - OCR 결과에서 min/max 좌표 계산
+2. **폰트 크기 자동 조절** - 박스에 맞는 최대 크기 탐색
+3. **텍스트 정렬** - 왼쪽/중앙/오른쪽 + 상단/중앙/하단
+4. **텍스트 줄바꿈** - 긴 텍스트 처리
+
+**권장**: 고정 폰트 크기 목록에서 맞는 크기 선택 + 왼쪽 정렬
+
+---
+
+### 사용 라이브러리 목록
+
+#### Python 패키지 (pip)
+
+| 라이브러리 | 설치 명령 | 용도 |
+|-----------|----------|------|
+| **OpenCV** | `pip install opencv-python` | 이미지 처리, Inpainting (`cv2.inpaint`) |
+| **Pillow (PIL)** | `pip install Pillow` | 이미지/텍스트 렌더링 (`ImageDraw`, `ImageFont`) |
+| **NumPy** | `pip install numpy` | 배열/마스크 처리 |
+| **simple-lama-inpainting** | `pip install simple-lama-inpainting` | AI 기반 고품질 Inpainting |
+| **lama-cleaner** | `pip install lama-cleaner` | GUI 포함 Inpainting 도구 |
+| **keras-ocr** | `pip install keras-ocr` | OCR + 텍스트 감지 |
+| **EasyOCR** | `pip install easyocr` | 다국어 OCR |
+| **PaddleOCR** | `pip install paddleocr paddlepaddle` | 고성능 OCR + 레이아웃 분석 |
+
+#### 핵심 함수/API
+
+| 함수 | 라이브러리 | 용도 |
+|------|----------|------|
+| `cv2.inpaint()` | OpenCV | 텍스트 영역 복원 (TELEA/NS) |
+| `cv2.fillPoly()` | OpenCV | 마스크 폴리곤 채우기 |
+| `cv2.dilate()` | OpenCV | 마스크 확장 |
+| `ImageDraw.text()` | Pillow | 텍스트 렌더링 |
+| `ImageDraw.textbbox()` | Pillow | 텍스트 바운딩 박스 계산 |
+| `ImageFont.truetype()` | Pillow | 폰트 로드 |
+| `SimpleLama()` | simple-lama | AI Inpainting |
+
+#### GitHub 참고 프로젝트
+
+| 프로젝트 | URL | 설명 |
+|----------|-----|------|
+| advimman/lama | https://github.com/advimman/lama | SOTA AI Inpainting 모델 |
+| yeungchenwa/OCR-SAM | https://github.com/yeungchenwa/OCR-SAM | OCR + SAM + Stable Diffusion |
+| manbehindthemadness/unscribe | https://github.com/manbehindthemadness/unscribe | LaMa + CRAFT 조합 |
+| boysugi20/python-image-translator | https://github.com/boysugi20/python-image-translator | EasyOCR + PIL 번역 |
+| bnsreenu/python_for_microscopists | https://github.com/bnsreenu/python_for_microscopists | 실용적 예제 코드 |
+
+---
+
+### 추가 예정 주제
+
+- [ ] OCR 정확도 향상
+- [ ] 테이블 구조 인식
+- [ ] 다국어 폰트 렌더링
+- [ ] PDF 처리 최적화
+
+---
+
+## Text Positioning 연구 자료
+
+**검색일**: 2026-01-08
+**검색 목적**: 번역된 텍스트를 원본 위치에 정확하게 배치하는 방법
+
+---
+
+### 검색 도구별 결과
+
+#### 1. WebSearch (Claude 내장)
+
+| 제목 | URL | 핵심 내용 |
+|------|-----|----------|
+| python-image-translator | https://github.com/boysugi20/python-image-translator | OCR bbox 기반 텍스트 교체 |
+| ImageTrans Tool | https://www.basiccat.org/details-about-image-text-removal-using-imagetrans/ | 전문 이미지 번역 도구 |
+
+#### 2. GitHub Code Search (`mcp__github__search_code`)
+
+| 프로젝트 | URL | 핵심 내용 |
+|----------|-----|----------|
+| Glossarion | https://github.com/Shirochi-stack/Glossarion | AI 기반 소설/만화 번역 |
+| Arabic-Translation | https://github.com/akhilesh-av/Arabic-Translation | 아랍어 이미지 번역 |
+| translatify | https://github.com/stephen-ics/translatify | 이미지 번역 앱 |
+
+#### 3. GitHub File Contents (`mcp__github__get_file_contents`)
+
+**python-image-translator/main.py** 전체 코드 분석:
+
+---
+
+### 핵심 기술 요약
+
+#### 1. Bounding Box에서 정확한 좌표 추출
+
+```python
+def get_text_position(bbox):
+    """OCR bbox에서 텍스트 위치 추출"""
+    x_min = int(min(p[0] for p in bbox))
+    y_min = int(min(p[1] for p in bbox))
+    x_max = int(max(p[0] for p in bbox))
+    y_max = int(max(p[1] for p in bbox))
+
+    box_width = x_max - x_min
+    box_height = y_max - y_min
+
+    return x_min, y_min, box_width, box_height
+```
+
+#### 2. 폰트 크기 자동 조절 (Fit to Box)
+
+```python
+from PIL import Image, ImageDraw, ImageFont
+
+def get_font_to_fit(image, text, width, height):
+    """박스에 맞는 최대 폰트 크기 찾기"""
+    draw = ImageDraw.Draw(image)
+
+    font = None
+    font_size = 1
+
+    # 점진적으로 폰트 크기 증가
+    for size in range(1, 500):
+        new_font = ImageFont.truetype("arial.ttf", size)  # 또는 load_default(size=size)
+        bbox = draw.textbbox((0, 0), text, font=new_font)
+
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+
+        # 박스를 넘어가면 이전 크기 사용
+        if text_width > width or text_height > height:
+            break
+
+        font = new_font
+        font_size = size
+
+    return font, font_size
+```
+
+#### 3. 텍스트 정렬 (왼쪽/중앙)
+
+```python
+def draw_text_aligned(draw, text, bbox, font, align="left"):
+    """정렬 방식에 따라 텍스트 배치"""
+    x_min, y_min, box_width, box_height = get_text_position(bbox)
+
+    # 텍스트 크기 계산
+    text_bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = text_bbox[2] - text_bbox[0]
+    text_height = text_bbox[3] - text_bbox[1]
+
+    # 수직 중앙 정렬
+    y = y_min + (box_height - text_height) // 2
+
+    if align == "center":
+        x = x_min + (box_width - text_width) // 2
+    elif align == "right":
+        x = x_min + box_width - text_width
+    else:  # left
+        x = x_min
+
+    return x, y
+```
+
+#### 4. 배경색 기반 텍스트 색상 결정
+
+```python
+def get_text_color(background_color):
+    """배경색 밝기에 따라 텍스트 색상 결정"""
+    r, g, b = background_color[:3]
+
+    # 휘도 계산 (ITU-R BT.601)
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+
+    if luminance > 0.5:
+        return "black"  # 밝은 배경 → 검은 텍스트
+    else:
+        return "white"  # 어두운 배경 → 흰 텍스트
+```
+
+#### 5. 완전한 텍스트 교체 함수
+
+```python
+from PIL import Image, ImageDraw, ImageFont
+import cv2
+import numpy as np
+
+def replace_text_complete(image_path, translations, output_path):
+    """텍스트 지우고 번역 텍스트로 교체"""
+
+    # OpenCV로 이미지 로드
+    img = cv2.imread(image_path)
+
+    # 1단계: 모든 텍스트 영역 Inpainting
+    for item in translations:
+        bbox = item["bbox"]
+        img = erase_text_inpaint(img, bbox)
+
+    # 2단계: PIL로 변환하여 텍스트 삽입
+    img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img_pil)
+
+    for item in translations:
+        bbox = item["bbox"]
+        translated_text = item["translated"]
+
+        # 위치 및 크기 계산
+        x_min, y_min, box_width, box_height = get_text_position(bbox)
+
+        # 폰트 크기 자동 조절
+        font, _ = get_font_to_fit(img_pil, translated_text, box_width, box_height)
+
+        # 텍스트 위치 계산 (왼쪽 정렬)
+        x, y = draw_text_aligned(draw, translated_text, bbox, font, align="left")
+
+        # 텍스트 그리기
+        draw.text((x, y), translated_text, fill="black", font=font)
+
+    # 저장
+    img_pil.save(output_path)
+    return img_pil
+```
+
+---
+
+### 문제 해결 팁
+
+#### 문제 1: 텍스트가 박스를 벗어남
+
+**원인**: 번역 텍스트가 원본보다 길 때
+**해결**:
+- 폰트 크기 자동 축소
+- 긴 텍스트는 줄바꿈 처리
+
+```python
+def wrap_text(text, font, max_width, draw):
+    """텍스트를 max_width에 맞게 줄바꿈"""
+    words = text.split()
+    lines = []
+    current_line = []
+
+    for word in words:
+        test_line = ' '.join(current_line + [word])
+        bbox = draw.textbbox((0, 0), test_line, font=font)
+        if bbox[2] - bbox[0] <= max_width:
+            current_line.append(word)
+        else:
+            if current_line:
+                lines.append(' '.join(current_line))
+            current_line = [word]
+
+    if current_line:
+        lines.append(' '.join(current_line))
+
+    return '\n'.join(lines)
+```
+
+#### 문제 2: 원본 텍스트가 완전히 지워지지 않음
+
+**원인**: Inpainting 마스크가 텍스트 경계를 정확히 커버하지 못함
+**해결**:
+- 마스크 dilate iterations 증가 (3→5)
+- inpaintRadius 증가 (5→7)
+
+#### 문제 3: 번역 텍스트 위치가 어긋남
+
+**원인**: bbox 좌표 계산 오류
+**해결**:
+- `min(xs)`, `min(ys)`로 정확한 시작점 계산
+- PIL의 textbbox 오프셋 보정
+
+---
+
+### 적용 권장사항
+
+| 상황 | 권장 방법 |
+|------|----------|
+| 짧은 텍스트 (1-2 단어) | 폰트 크기 자동 조절 + 중앙 정렬 |
+| 긴 텍스트 (문장) | 줄바꿈 처리 + 왼쪽 정렬 |
+| 테이블 셀 | 고정 폰트 크기 + 왼쪽 상단 정렬 |
+| 제목 | 중앙 정렬 + 큰 폰트 |
+
+---
+
+### 참고 프로젝트
+
+1. **boysugi20/python-image-translator** - EasyOCR + PIL 기반 번역
+2. **Shirochi-stack/Glossarion** - AI 기반 만화 번역
+3. **ImageTrans (BasicCAT)** - 전문 이미지 번역 도구
