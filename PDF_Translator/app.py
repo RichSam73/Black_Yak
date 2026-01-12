@@ -1729,11 +1729,19 @@ def replace_text_in_image(image_path, translations, output_path, target_lang="en
                 break
 
         text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
+        actual_text_width = text_bbox_actual[2] - text_bbox_actual[0]
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
         text_top_offset = text_bbox_actual[1]  # textbbox의 top offset (글리프 상단까지 거리)
 
-        # 텍스트 높이를 OCR bbox 높이로 제한 (셀 경계 침범 방지)
-        render_height = min(actual_text_height, box_height)
+        # ★ 스케일링 반영: 텍스트가 셀보다 크면 리사이즈된 폭/높이 계산
+        if actual_text_height > box_height:
+            ratio = box_height / actual_text_height
+            text_width = max(1, int(actual_text_width * ratio))  # 스케일링된 폭
+            render_height = box_height
+            actual_text_height = box_height # 정보 업데이트
+        else:
+            text_width = actual_text_width # 원본 폭
+            render_height = actual_text_height
 
         # Y축 중앙 정렬: 셀 중앙에 텍스트 중앙을 맞춤
         cell_top = int(min(ys))
@@ -1855,11 +1863,25 @@ def replace_text_in_image(image_path, translations, output_path, target_lang="en
             # 셀 높이에 맞춰 추가 crop 및 위치 계산
             y_offset = 2  # 글자를 아래로 내리는 오프셋 (픽셀)
             if text_height_temp > cell_height:
-                # 텍스트가 셀보다 큼 → 중앙 부분만 잘라냄
-                crop_top = (text_height_temp - cell_height) // 2
-                crop_bottom = crop_top + cell_height
-                temp_img = temp_img.crop((0, crop_top, text_width_temp, crop_bottom))
+                # 텍스트가 셀보다 큼 → LANCZOS 리사이즈 (잘림 방지)
+                ratio = cell_height / text_height_temp
+                new_width = max(1, int(text_width_temp * ratio))
+                new_height = cell_height
+                
+                # 리사이즈
+                try:
+                    resample_filter = Image.Resampling.LANCZOS
+                except AttributeError:
+                    resample_filter = Image.LANCZOS
+                
+                temp_img = temp_img.resize((new_width, new_height), resample=resample_filter)
+                
+                # 붙여넣기 위치 (resize 했으므로 crop 불필요)
                 paste_y = cell_top + y_offset
+                
+                # 리사이즈된 크기로 업데이트 (정렬용)
+                text_width_temp = new_width
+                text_height_temp = new_height
             else:
                 # 텍스트가 셀보다 작음 → 셀 중앙에 배치
                 paste_y = cell_top + (cell_height - text_height_temp) // 2 + y_offset
@@ -1959,11 +1981,19 @@ def generate_preview_image(image_base64, translations, target_lang='english'):
                 break
 
         text_bbox_actual = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
+        actual_text_width = text_bbox_actual[2] - text_bbox_actual[0]
         actual_text_height = text_bbox_actual[3] - text_bbox_actual[1]
         text_top_offset = text_bbox_actual[1]  # textbbox의 top offset (글리프 상단까지 거리)
 
-        # 텍스트 높이를 OCR bbox 높이로 제한 (셀 경계 침범 방지)
-        render_height = min(actual_text_height, box_height)
+        # ★ 스케일링 반영: 텍스트가 셀보다 크면 리사이즈된 폭/높이 계산
+        if actual_text_height > box_height:
+            ratio = box_height / actual_text_height
+            text_width = max(1, int(actual_text_width * ratio))  # 스케일링된 폭
+            render_height = box_height
+            actual_text_height = box_height # 정보 업데이트
+        else:
+            text_width = actual_text_width # 원본 폭
+            render_height = actual_text_height
 
         # Y축 중앙 정렬: 셀 중앙에 텍스트 중앙을 맞춤
         cell_top = int(min(ys))
@@ -2088,11 +2118,25 @@ def generate_preview_image(image_base64, translations, target_lang='english'):
             # 셀 높이에 맞춰 추가 crop 및 위치 계산
             y_offset = 2  # 글자를 아래로 내리는 오프셋 (픽셀)
             if text_height_temp > cell_height:
-                # 텍스트가 셀보다 큼 → 중앙 부분만 잘라냄
-                crop_top = (text_height_temp - cell_height) // 2
-                crop_bottom = crop_top + cell_height
-                temp_img = temp_img.crop((0, crop_top, text_width_temp, crop_bottom))
+                # 텍스트가 셀보다 큼 → LANCZOS 리사이즈 (잘림 방지)
+                ratio = cell_height / text_height_temp
+                new_width = max(1, int(text_width_temp * ratio))
+                new_height = cell_height
+                
+                # 리사이즈
+                try:
+                    resample_filter = Image.Resampling.LANCZOS
+                except AttributeError:
+                    resample_filter = Image.LANCZOS
+                
+                temp_img = temp_img.resize((new_width, new_height), resample=resample_filter)
+                
+                # 붙여넣기 위치 (resize 했으므로 crop 불필요)
                 paste_y = cell_top + y_offset
+                
+                # 리사이즈된 크기로 업데이트 (정렬용)
+                text_width_temp = new_width
+                text_height_temp = new_height
             else:
                 # 텍스트가 셀보다 작음 → 셀 중앙에 배치
                 paste_y = cell_top + (cell_height - text_height_temp) // 2 + y_offset

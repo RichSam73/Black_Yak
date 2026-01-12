@@ -59,6 +59,45 @@ research/
 
 ---
 
+## 사용 라이브러리 목록
+
+### Python 패키지 (pip)
+
+| 라이브러리 | 설치 명령 | 용도 |
+|-----------|----------|------|
+| **OpenCV** | `pip install opencv-python` | 이미지 처리, Inpainting (`cv2.inpaint`) |
+| **Pillow (PIL)** | `pip install Pillow` | 이미지/텍스트 렌더링 (`ImageDraw`, `ImageFont`) |
+| **NumPy** | `pip install numpy` | 배열/마스크 처리 |
+| **simple-lama-inpainting** | `pip install simple-lama-inpainting` | AI 기반 고품질 Inpainting |
+| **lama-cleaner** | `pip install lama-cleaner` | GUI 포함 Inpainting 도구 |
+| **keras-ocr** | `pip install keras-ocr` | OCR + 텍스트 감지 |
+| **EasyOCR** | `pip install easyocr` | 다국어 OCR |
+| **PaddleOCR** | `pip install paddleocr paddlepaddle` | 고성능 OCR + 레이아웃 분석 |
+
+### 핵심 함수/API
+
+| 함수 | 라이브러리 | 용도 |
+|------|-----------|------|
+| `cv2.inpaint()` | OpenCV | 텍스트 영역 복원 (TELEA/NS) |
+| `cv2.fillPoly()` | OpenCV | 마스크 폴리곤 채우기 |
+| `cv2.dilate()` | OpenCV | 마스크 확장 |
+| `ImageDraw.text()` | Pillow | 텍스트 렌더링 |
+| `ImageDraw.textbbox()` | Pillow | 텍스트 바운딩 박스 계산 |
+| `ImageFont.truetype()` | Pillow | 폰트 로드 |
+| `SimpleLama()` | simple-lama | AI Inpainting |
+
+### GitHub 참고 프로젝트
+
+| 프로젝트 | URL | 설명 |
+|----------|-----|------|
+| advimman/lama | https://github.com/advimman/lama | SOTA AI Inpainting 모델 |
+| yeungchenwa/OCR-SAM | https://github.com/yeungchenwa/OCR-SAM | OCR + SAM + Stable Diffusion |
+| manbehindthemadness/unscribe | https://github.com/manbehindthemadness/unscribe | LaMa + CRAFT 조합 |
+| boysugi20/python-image-translator | https://github.com/boysugi20/python-image-translator | EasyOCR + PIL 번역 |
+| bnsreenu/python_for_microscopists | https://github.com/bnsreenu/python_for_microscopists | 실용적 예제 코드 |
+
+---
+
 ## 추가 예정 주제
 
 - [ ] OCR 정확도 향상
