@@ -6,20 +6,21 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install system dependencies
+# Updated packages: libgl1 (new name for libgl1-mesa-glx in newer Debian)
+# libglib2.0-0 is still required for cv2
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Fix: Adjust copy paths for Root Context
-# Assuming build context is root, we copy from PDF_API/
 COPY PDF_API/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy all files from PDF_API to /app
 COPY PDF_API/ .
 
-# Dependencies for OpenCV just in case
+# Environment
 ENV PORT=8080
 EXPOSE 8080
 
