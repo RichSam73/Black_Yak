@@ -7,9 +7,14 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.8.2"
-VERSION_DATE = "2026-01-11"
+VERSION = "1.8.3"
+VERSION_DATE = "2026-01-20"
 VERSION_NOTES = """
+v1.8.3 (2026-01-20)
+- ★ 한글 폰트 수정: arial.ttf → malgun.ttf (맑은 고딕)
+- 한글 텍스트가 □□□로 깨지는 문제 해결
+- 다국어(한중일) 텍스트 렌더링 지원
+
 v1.8.2 (2026-01-11)
 - ★ Placeholder 복원 강화: AI가 변형한 다양한 TERM 패턴 처리
 - TERM_1, TERM 1, <TERM_1>, [TERM_1] 등 모든 변형 자동 복원
@@ -1616,10 +1621,10 @@ def render_legend(draw, used_abbreviations, image_width, legend_y, font_size=8):
 
     # 폰트 로드
     try:
-        font = ImageFont.truetype("arial.ttf", font_size)
+        font = ImageFont.truetype("malgun.ttf", font_size)
     except:
         try:
-            font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", font_size)
+            font = ImageFont.truetype("C:/Windows/Fonts/malgun.ttf", font_size)
         except:
             font = ImageFont.load_default()
 
@@ -1653,10 +1658,10 @@ def draw_vertical_text(draw, text, x, y, font, fill, box_width, box_height):
     font_size = max(font_size, 6)  # 최소 6px
     
     try:
-        adjusted_font = ImageFont.truetype("arial.ttf", font_size)
+        adjusted_font = ImageFont.truetype("malgun.ttf", font_size)
     except:
         try:
-            adjusted_font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", font_size)
+            adjusted_font = ImageFont.truetype("C:/Windows/Fonts/malgun.ttf", font_size)
         except:
             adjusted_font = font
     
@@ -1713,10 +1718,10 @@ def replace_text_in_image(image_path, translations, output_path, target_lang="en
         text_width = 0
         for size in font_sizes:
             try:
-                font = ImageFont.truetype("arial.ttf", size)
+                font = ImageFont.truetype("malgun.ttf", size)
             except:
                 try:
-                    font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", size)
+                    font = ImageFont.truetype("C:/Windows/Fonts/malgun.ttf", size)
                 except:
                     font = ImageFont.load_default()
                     break
@@ -1965,10 +1970,10 @@ def generate_preview_image(image_base64, translations, target_lang='english'):
         text_width = 0
         for size in font_sizes:
             try:
-                font = ImageFont.truetype("arial.ttf", size)
+                font = ImageFont.truetype("malgun.ttf", size)
             except:
                 try:
-                    font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", size)
+                    font = ImageFont.truetype("C:/Windows/Fonts/malgun.ttf", size)
                 except:
                     font = ImageFont.load_default()
                     break
