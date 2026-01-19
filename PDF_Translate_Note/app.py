@@ -7,9 +7,14 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.9.0"
-VERSION_DATE = "2026-01-12"
+VERSION = "1.9.1"
+VERSION_DATE = "2026-01-20"
 VERSION_NOTES = """
+v1.9.1 (2026-01-20)
+- ★ 한글 폰트 수정: arial.ttf → malgun.ttf (맑은 고딕)
+- 한글 텍스트가 □□□로 깨지는 문제 해결
+- 다국어(한중일) 텍스트 렌더링 지원
+
 v1.9.0 (2026-01-12)
 - ★ 번역 완료 후 메모 추가 기능 (우클릭 메뉴)
 - 메모 스타일: 크기/색/굵기/배경/테두리/투명도/줄바꿈
@@ -93,6 +98,7 @@ import tempfile
 import re
 import requests
 import logging
+import time
 from collections import Counter
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed  # 병렬 처리용
@@ -103,6 +109,10 @@ from paddleocr import PaddleOCR
 import cv2
 import fitz  # PyMuPDF
 from img2table.document import Image as Img2TableImage  # 테이블 감지용
+
+# Google Cloud Vision OCR
+from google.cloud import vision
+from google.oauth2 import service_account
 
 # ★ 로깅 설정 (겹침 감지 디버깅용)
 LOG_FILE = os.path.join(os.path.dirname(__file__), 'overlap_debug.log')
@@ -138,22 +148,101 @@ CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
+# ★ 하드코딩된 API 키 (Private repo 전용)
+HARDCODED_API_KEYS = {
+    "openai": "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",
+    "claude_sije": "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",
+    "claude_seam": "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",
+    "gemini": "AIzaSyCTIENSGbL_K6dreyMC7TwdD1yOtDnAmsI"
+}
+
+# ★ Google Cloud Vision OCR 설정
+VISION_KEY_PATH = os.path.join(os.path.dirname(__file__), "vision-key.json")
+vision_client = None
+
+def get_vision_client():
+    """Google Cloud Vision 클라이언트 (lazy initialization)"""
+    global vision_client
+    if vision_client is None and os.path.exists(VISION_KEY_PATH):
+        credentials = service_account.Credentials.from_service_account_file(VISION_KEY_PATH)
+        vision_client = vision.ImageAnnotatorClient(credentials=credentials)
+    return vision_client
+
+def ocr_with_google_vision(image_path):
+    """Google Cloud Vision API로 OCR 수행
+
+    Returns:
+        list: PaddleOCR과 동일한 형식 [[bbox, (text, confidence)], ...]
+              bbox = [[x1,y1], [x2,y1], [x2,y2], [x1,y2]]
+    """
+    client = get_vision_client()
+    if client is None:
+        print("[Vision OCR] Client not available, falling back to PaddleOCR")
+        return None
+
+    start_time = time.time()
+
+    with open(image_path, 'rb') as f:
+        content = f.read()
+
+    image = vision.Image(content=content)
+    response = client.text_detection(image=image)
+
+    if response.error.message:
+        print(f"[Vision OCR] Error: {response.error.message}")
+        return None
+
+    texts = response.text_annotations
+
+    if not texts:
+        print("[Vision OCR] No text detected")
+        return []
+
+    # 첫 번째는 전체 텍스트이므로 스킵, 나머지가 개별 단어/문장
+    results = []
+    for text in texts[1:]:  # Skip first (full text)
+        vertices = text.bounding_poly.vertices
+
+        # Google Vision BBox 그대로 사용 (축소하면 지우기 영역과 불일치 발생)
+        x1 = vertices[0].x
+        y1 = vertices[0].y
+        x2 = vertices[1].x
+        y2 = vertices[2].y
+
+        # bbox 형식: [[x1,y1], [x2,y1], [x2,y2], [x1,y2]]
+        bbox = [
+            [x1, y1],
+            [x2, y1],
+            [x2, y2],
+            [x1, y2]
+        ]
+        results.append([bbox, (text.description, 0.99)])  # 신뢰도 0.99 고정
+
+    elapsed = time.time() - start_time
+    print(f"[Vision OCR] Detected {len(results)} texts in {elapsed:.2f}s")
+
+    return results
+
 # AI 모델 설정
 AI_MODELS = {
     "ollama": {
         "models": ["qwen2.5vl:latest", "llava:latest", "bakllava:latest"],
         "default": "qwen2.5vl:latest"
     },
-    "claude": {
+    "claude_sije": {
         "models": ["claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"],
         "default": "claude-sonnet-4-20250514"
     },
+    "claude_seam": {
+        "models": ["claude-haiku-4-20250514", "claude-3-5-haiku-20241022", "claude-sonnet-4-20250514", "claude-opus-4-20250514"],
+        "default": "claude-haiku-4-20250514"
+    },
     "openai": {
-        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
-        "default": "gpt-4o"
+        "models": ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
+        "default": "gpt-4o-mini"
     },
     "gemini": {
-        "models": ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+        "models": ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
         "default": "gemini-2.0-flash"
     }
 }
@@ -246,16 +335,19 @@ ocr_engine = None
 def get_ocr_engine():
     global ocr_engine
     if ocr_engine is None:
-        print("[init] PaddleOCR engine (korean)...")
-        # 전처리 비활성화: bbox 좌표가 원본 이미지와 정확히 일치하도록 함
-        # 감지 임계값 낮춰서 더 많은 텍스트 인식 (영어 포함)
+        import os
+        # ★ 연결 체크 비활성화 (속도 향상)
+        os.environ['DISABLE_MODEL_SOURCE_CHECK'] = 'True'
+
+        print("[init] PaddleOCR engine (korean, optimized)...")
         ocr_engine = PaddleOCR(
             lang="korean",
             use_doc_orientation_classify=False,  # 문서 방향 분류 끄기
             use_doc_unwarping=False,             # 문서 왜곡 보정 끄기
             use_textline_orientation=False,      # 텍스트라인 방향 분류 끄기
-            det_db_thresh=0.2,                   # 텍스트 감지 임계값 낮춤 (기본 0.3)
-            det_db_box_thresh=0.4                # 박스 임계값 낮춤 (기본 0.6)
+            text_det_thresh=0.2,                 # 텍스트 감지 임계값 (신규 파라미터)
+            text_det_box_thresh=0.4,             # 박스 임계값 (신규 파라미터)
+            device='cpu',                        # CPU 명시 (GPU 체크 생략)
         )
         print("[init] PaddleOCR engine ready")
     return ocr_engine
@@ -399,16 +491,76 @@ def get_ocr_results_batch(image_paths):
     total_time = time.time() - batch_start
     total_texts = sum(len(t) for t in all_texts)
     print(f"[Batch OCR] TOTAL: {total_time:.2f}s for {len(image_paths)} pages, {total_texts} texts", flush=True)
-    
+
     return all_texts
+
+
+def get_ocr_results_with_engine(image_paths, ocr_engine='paddleocr'):
+    """OCR 엔진을 선택하여 배치 OCR 수행
+
+    Args:
+        image_paths: 이미지 경로 리스트
+        ocr_engine: 'paddleocr' 또는 'google_vision'
+
+    Returns:
+        list: 각 이미지별 OCR 결과 리스트
+    """
+    import time
+
+    if ocr_engine == 'google_vision':
+        # Google Cloud Vision API 사용
+        print(f"[Vision OCR] Processing {len(image_paths)} pages with Google Vision...", flush=True)
+        batch_start = time.time()
+        all_texts = []
+
+        for page_idx, img_path in enumerate(image_paths):
+            vision_result = ocr_with_google_vision(img_path)
+
+            if vision_result is None:
+                # Vision 실패 시 PaddleOCR fallback
+                print(f"[Vision OCR] Page {page_idx+1}: Falling back to PaddleOCR", flush=True)
+                paddle_result = get_ocr_results(img_path)
+                all_texts.append(paddle_result)
+            else:
+                # Vision 결과를 표준 형식으로 변환
+                texts = []
+                for item in vision_result:
+                    bbox, (text, confidence) = item
+                    has_korean = any('\uac00' <= c <= '\ud7a3' for c in text)
+                    texts.append({
+                        "bbox": bbox,
+                        "text": text,
+                        "confidence": confidence,
+                        "has_korean": has_korean
+                    })
+                all_texts.append(texts)
+                print(f"  [Page {page_idx+1}] Vision: {len(texts)} texts", flush=True)
+
+        total_time = time.time() - batch_start
+        total_texts = sum(len(t) for t in all_texts)
+        print(f"[Vision OCR] TOTAL: {total_time:.2f}s for {len(image_paths)} pages, {total_texts} texts", flush=True)
+        return all_texts
+    else:
+        # PaddleOCR 배치 처리 (기존 함수 사용)
+        return get_ocr_results_batch(image_paths)
 
 
 def translate_with_dict(korean_text, target_lang):
     """사전 기반 번역 (fallback용)"""
     result = korean_text
     if target_lang in GARMENT_DICT:
-        for kor, trans in GARMENT_DICT[target_lang].items():
-            result = result.replace(kor, trans)
+        # 긴 용어부터 처리 (복합어 우선)
+        sorted_terms = sorted(GARMENT_DICT[target_lang].items(), key=lambda x: len(x[0]), reverse=True)
+        for kor, term_data in sorted_terms:
+            if kor in result:
+                # 새 구조: term_data = {"full": "번역", "abbr": "약어"}
+                if isinstance(term_data, dict):
+                    translation = term_data.get("full", "")
+                else:
+                    # 레거시 호환: 단순 문자열
+                    translation = term_data
+                if translation:
+                    result = result.replace(kor, translation)
     return result
 
 
@@ -605,11 +757,13 @@ def translate_with_claude(image_path, texts, target_lang, api_key, model=None):
     """Claude API로 이미지 컨텍스트와 함께 번역 (Placeholder 방식 적용)"""
     import time
     api_start = time.time()
-    
+
     print(f"[Claude] translate_with_claude called - texts: {len(texts)}, model: {model}", flush=True)
+    logger.info(f"[Claude] translate_with_claude called - texts: {len(texts)}, model: {model}")
     if model is None:
         model = AI_MODELS["claude"]["default"]
     print(f"[Claude] Using model: {model}", flush=True)
+    logger.info(f"[Claude] Using model: {model}")
     lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
 
     # 이미지를 base64로 인코딩
@@ -694,6 +848,7 @@ Korean texts:
         )
         api_time = time.time() - request_start
         print(f"[Claude] API response status: {response.status_code} (took {api_time:.2f}s)", flush=True)
+        logger.info(f"[Claude] API response status: {response.status_code} (took {api_time:.2f}s)")
 
         if response.status_code == 200:
             result = response.json()
@@ -742,6 +897,7 @@ Korean texts:
                     })
         else:
             print(f"[Claude] API error: {response.status_code} - {response.text}", flush=True)
+            logger.error(f"[Claude] API error: {response.status_code} - {response.text}")
             # fallback: 사전 번역 (한글만), 영어는 원본 유지
             for item in texts:
                 if item.get("has_korean", True):
@@ -752,6 +908,7 @@ Korean texts:
 
     except Exception as e:
         print(f"[Claude] Exception: {e}", flush=True)
+        logger.error(f"[Claude] Exception: {e}")
         for item in texts:
             if item.get("has_korean", True):
                 translated = translate_with_dict(item["text"], target_lang)
@@ -761,6 +918,7 @@ Korean texts:
 
     total_time = time.time() - api_start
     print(f"[Claude] TOTAL: {total_time:.2f}s for {len(texts)} texts ({len(korean_list)} Korean)", flush=True)
+    logger.info(f"[Claude] TOTAL: {total_time:.2f}s for {len(texts)} texts ({len(korean_list)} Korean)")
     return translations
 
 
@@ -903,8 +1061,65 @@ Korean texts:
     return translations
 
 
+# ★ 배치 청크 크기: 순서 유지를 위해 100개씩 나눠서 처리
+BATCH_CHUNK_SIZE = 200
+
+
+def _translate_chunk_with_gemini(chunk_texts, lang_config, api_key, model, chunk_idx, total_chunks):
+    """청크 단위로 Gemini API 호출 (내부 함수)"""
+    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(chunk_texts)])
+
+    prompt = f"""This is a garment/clothing technical specification document (tech pack).
+Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
+Keep translations SHORT and professional. Only respond with numbered translations in {lang_config['prompt_lang']}.
+There are {len(chunk_texts)} items. Translate ALL of them in the EXACT same order.
+IMPORTANT: Keep <<TERM_N>> placeholders exactly as they are (do not translate them).
+IMPORTANT: Respond with the EXACT SAME numbering (1 to {len(chunk_texts)}).
+
+Korean texts:
+{korean_joined}
+
+{lang_config['prompt_lang']} translations (numbering 1-{len(chunk_texts)}, SHORT answers only):"""
+
+    url = f"{GEMINI_API_URL}/{model}:generateContent?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"maxOutputTokens": 8192}
+    }
+
+    print(f"[Chunk {chunk_idx+1}/{total_chunks}] Sending {len(chunk_texts)} texts to Gemini...", flush=True)
+
+    response = requests.post(url, headers=headers, json=payload, timeout=120)
+
+    if response.status_code == 200:
+        result = response.json()
+        response_text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+
+        # 응답 파싱
+        lines = response_text.split("\n")
+        chunk_dict = {}
+        for line in lines:
+            line = line.strip()
+            match = re.match(r'^[\*\-\s]*(\d+)[\.\)\:\*\s]+(.+)', line)
+            if match:
+                try:
+                    idx = int(match.group(1)) - 1
+                    trans = match.group(2).strip().strip('*').strip()
+                    if 0 <= idx < len(chunk_texts) and trans:
+                        chunk_dict[idx] = trans
+                except ValueError:
+                    continue
+
+        print(f"[Chunk {chunk_idx+1}/{total_chunks}] Got {len(chunk_dict)}/{len(chunk_texts)} translations", flush=True)
+        return chunk_dict
+    else:
+        print(f"[Chunk {chunk_idx+1}/{total_chunks}] API error: {response.status_code}", flush=True)
+        return {}
+
+
 def translate_batch_with_gemini(all_pages_texts, target_lang, api_key, model=None):
-    """Google Gemini API로 모든 페이지의 텍스트를 한 번에 번역 (배치 모드, Placeholder 방식)
+    """Google Gemini API로 모든 페이지의 텍스트를 청크 단위로 번역 (배치 모드, Placeholder 방식)
 
     Args:
         all_pages_texts: [{page_idx: int, texts: [{text, bbox}, ...]}, ...]
@@ -917,19 +1132,20 @@ def translate_batch_with_gemini(all_pages_texts, target_lang, api_key, model=Non
     """
     import time
     batch_start = time.time()
-    
+
     if model is None:
         model = AI_MODELS["gemini"]["default"]
     lang_config = LANGUAGE_CONFIG.get(target_lang, LANGUAGE_CONFIG["english"])
-    
+
     total_pages = len(all_pages_texts)
     total_texts = sum(len(p["texts"]) for p in all_pages_texts)
     print(f"[Gemini Batch] Starting batch translation: {total_pages} pages, {total_texts} texts", flush=True)
 
     # 모든 페이지의 텍스트를 하나의 리스트로 합침 (페이지 구분 포함)
+    # ★ 모든 텍스트를 번역 API에 전송 (이전 작동 버전과 동일)
     all_korean = []
     all_placeholder_maps = []  # ★ 각 텍스트별 플레이스홀더 매핑
-    page_text_counts = []  # 각 페이지별 텍스트 개수
+    page_text_counts = []  # ★ 페이지별 텍스트 개수 (결과 분배용)
 
     for page_data in all_pages_texts:
         page_texts = page_data["texts"]
@@ -943,92 +1159,66 @@ def translate_batch_with_gemini(all_pages_texts, target_lang, api_key, model=Non
     if not all_korean:
         return {page_data["page_idx"]: [] for page_data in all_pages_texts}
 
-    # 전체 텍스트를 번호로 조인
-    korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(all_korean)])
-
-    prompt = f"""This is a garment/clothing technical specification document (tech pack).
-Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
-Keep translations SHORT and professional. Only respond with numbered translations in {lang_config['prompt_lang']}.
-There are {len(all_korean)} items total from multiple pages. Translate ALL of them.
-IMPORTANT: Keep <<TERM_N>> placeholders exactly as they are (do not translate them).
-
-Korean texts:
-{korean_joined}
-
-{lang_config['prompt_lang']} translations (same numbering 1-{len(all_korean)}, SHORT answers only):"""
+    # ★ 청크 단위로 나눠서 번역 (순서 유지를 위해)
+    trans_dict = {}
+    total_chunks = (len(all_korean) + BATCH_CHUNK_SIZE - 1) // BATCH_CHUNK_SIZE
+    print(f"[Gemini Batch] Splitting into {total_chunks} chunks of {BATCH_CHUNK_SIZE} texts each", flush=True)
 
     try:
-        url = f"{GEMINI_API_URL}/{model}:generateContent?key={api_key}"
+        for chunk_idx in range(total_chunks):
+            chunk_start = chunk_idx * BATCH_CHUNK_SIZE
+            chunk_end = min(chunk_start + BATCH_CHUNK_SIZE, len(all_korean))
+            chunk_texts = all_korean[chunk_start:chunk_end]
 
-        headers = {"Content-Type": "application/json"}
+            # 청크 번역
+            chunk_result = _translate_chunk_with_gemini(
+                chunk_texts, lang_config, api_key, model, chunk_idx, total_chunks
+            )
 
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"maxOutputTokens": 8192}
-        }
+            # 결과를 전체 인덱스로 변환하여 저장
+            for local_idx, trans in chunk_result.items():
+                global_idx = chunk_start + local_idx
+                trans_dict[global_idx] = trans
 
-        print(f"[Batch Translation] Sending {len(all_korean)} texts to Gemini...", flush=True)
+            # ★ 진행 상황 업데이트 (청크 완료 후)
+            update_progress("번역", chunk_end, len(all_korean),
+                          f"{chunk_end}/{len(all_korean)}개 번역 완료 (Gemini 배치)")
 
-        response = requests.post(url, headers=headers, json=payload, timeout=180)
+        print(f"[Gemini Batch] Total translations: {len(trans_dict)}/{len(all_korean)}", flush=True)
 
-        if response.status_code == 200:
-            result = response.json()
-            response_text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+        # 페이지별로 결과 분배 (이전 작동 버전과 동일한 단순 로직)
+        result_by_page = {}
+        current_idx = 0
 
-            # 디버깅: 원본 응답 일부 출력
-            print(f"[Batch Translation] Response preview (first 500 chars):\n{response_text[:500]}", flush=True)
+        for page_idx, page_data in enumerate(all_pages_texts):
+            page_translations = []
+            page_text_count = page_text_counts[page_idx]
 
-            # 응답 파싱 (정규표현식으로 다양한 형식 지원: 1. 1) **1.** 등)
-            lines = response_text.split("\n")
-            trans_dict = {}
-            for line in lines:
-                line = line.strip()
-                # 다양한 번호 형식 지원: "1.", "1)", "**1.**", "1 .", "1:", "- 1." 등
-                match = re.match(r'^[\*\-\s]*(\d+)[\.\)\:\*\s]+(.+)', line)
-                if match:
-                    try:
-                        idx = int(match.group(1)) - 1
-                        trans = match.group(2).strip().strip('*').strip()
-                        if 0 <= idx < len(all_korean) and trans:
-                            trans_dict[idx] = trans
-                    except ValueError:
-                        continue
+            for i in range(page_text_count):
+                item = page_data["texts"][i]
+                if current_idx in trans_dict:
+                    translated = trans_dict[current_idx]
+                    pmap = all_placeholder_maps[current_idx]
+                    # ★ 플레이스홀더를 사전 번역으로 복원
+                    if pmap:
+                        translated = restore_placeholders(translated, pmap)
+                    # ★ 남은 플레이스홀더 제거 (Gemini가 잘못 복사한 경우)
+                    if '<<TERM_' in translated:
+                        translated = re.sub(r'<<TERM_\d+>>', '', translated).strip()
+                else:
+                    translated = item["text"]
 
-            print(f"[Batch Translation] Got {len(trans_dict)}/{len(all_korean)} translations", flush=True)
+                page_translations.append({
+                    **item,
+                    "translated": translated
+                })
+                current_idx += 1
 
-            # 페이지별로 결과 분배
-            result_by_page = {}
-            current_idx = 0
+            result_by_page[page_data["page_idx"]] = page_translations
 
-            for page_data in all_pages_texts:
-                page_idx = page_data["page_idx"]
-                page_texts = page_data["texts"]
-                page_translations = []
-
-                for item in page_texts:
-                    if current_idx in trans_dict:
-                        translated = trans_dict[current_idx]
-                        # ★ 플레이스홀더를 사전 번역으로 복원
-                        if all_placeholder_maps[current_idx]:
-                            translated = restore_placeholders(translated, all_placeholder_maps[current_idx])
-                    else:
-                        translated = translate_with_dict(item["text"], target_lang)
-
-                    page_translations.append({
-                        **item,
-                        "translated": translated
-                    })
-                    current_idx += 1
-
-                result_by_page[page_idx] = page_translations
-
-            total_time = time.time() - batch_start
-            print(f"[Gemini Batch] TOTAL: {total_time:.2f}s for {total_pages} pages, {total_texts} texts (1 API call)", flush=True)
-            return result_by_page
-        else:
-            print(f"Gemini Batch API error: {response.status_code} - {response.text}", flush=True)
-            # fallback: 사전 번역
-            return _fallback_batch_translation(all_pages_texts, target_lang)
+        total_time = time.time() - batch_start
+        print(f"[Gemini Batch] TOTAL: {total_time:.2f}s for {total_pages} pages, {total_texts} texts ({total_chunks} API calls)", flush=True)
+        return result_by_page
 
     except Exception as e:
         print(f"Gemini Batch API error: {e}", flush=True)
@@ -1236,7 +1426,7 @@ def translate_with_vlm(image_path, texts, target_lang, ai_engine="ollama", api_k
     """VLM으로 이미지 컨텍스트와 함께 번역 (Ollama, Claude, GPT-4, Gemini)"""
 
     # Claude API 선택 시
-    if ai_engine == "claude" and api_key:
+    if ai_engine in ("claude_sije", "claude_seam") and api_key:
         return translate_with_claude(image_path, texts, target_lang, api_key, model)
 
     # OpenAI GPT-4 API 선택 시
@@ -1465,10 +1655,10 @@ def erase_text_region(img, bbox):
     x_max = int(max(p[0] for p in bbox))
     y_max = int(max(p[1] for p in bbox))
 
-    # ★ Y축만 축소하여 수평선(셀 경계) 보호
-    # margin_x = 1: X축은 기존대로 약간 확장
-    # margin_y = -2: Y축은 안쪽으로 축소 (위아래 2px씩 보호)
-    margin_x = 1
+    # ★ 지우기 영역 설정 (Google Vision용)
+    # margin_x = 3: X축 좌우 3px 확장 (한글 잔여 제거)
+    # margin_y = -2: Y축 상하 2px 축소 (테이블 선 보호)
+    margin_x = 3
     margin_y = -2
     x_min_ext = max(0, x_min - margin_x)
     y_min_ext = max(0, y_min - margin_y)  # y_min + 3 (아래로 축소)
@@ -1621,10 +1811,10 @@ def render_legend(draw, used_abbreviations, image_width, legend_y, font_size=8):
 
     # 폰트 로드
     try:
-        font = ImageFont.truetype("arial.ttf", font_size)
+        font = ImageFont.truetype("malgun.ttf", font_size)
     except:
         try:
-            font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", font_size)
+            font = ImageFont.truetype("C:/Windows/Fonts/malgun.ttf", font_size)
         except:
             font = ImageFont.load_default()
 
@@ -1658,10 +1848,10 @@ def draw_vertical_text(draw, text, x, y, font, fill, box_width, box_height):
     font_size = max(font_size, 6)  # 최소 6px
     
     try:
-        adjusted_font = ImageFont.truetype("arial.ttf", font_size)
+        adjusted_font = ImageFont.truetype("malgun.ttf", font_size)
     except:
         try:
-            adjusted_font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", font_size)
+            adjusted_font = ImageFont.truetype("C:/Windows/Fonts/malgun.ttf", font_size)
         except:
             adjusted_font = font
     
@@ -1726,7 +1916,7 @@ def load_memo_font(font_size, bold=False):
     font_candidates = []
     if bold:
         font_candidates.extend(["arialbd.ttf", "C:/Windows/Fonts/arialbd.ttf"])
-    font_candidates.extend(["arial.ttf", "C:/Windows/Fonts/arial.ttf"])
+    font_candidates.extend(["malgun.ttf", "C:/Windows/Fonts/malgun.ttf"])
 
     for font_path in font_candidates:
         try:
@@ -1900,10 +2090,10 @@ def replace_text_in_image(image_path, translations, output_path, target_lang="en
         text_width = 0
         for size in font_sizes:
             try:
-                font = ImageFont.truetype("arial.ttf", size)
+                font = ImageFont.truetype("malgun.ttf", size)
             except:
                 try:
-                    font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", size)
+                    font = ImageFont.truetype("C:/Windows/Fonts/malgun.ttf", size)
                 except:
                     font = ImageFont.load_default()
                     break
@@ -2048,7 +2238,7 @@ def replace_text_in_image(image_path, translations, output_path, target_lang="en
             temp_img = temp_img.crop((text_left, text_top, text_bbox_temp[2], text_bbox_temp[3]))
 
             # 셀 높이에 맞춰 추가 crop 및 위치 계산
-            y_offset = 2  # 글자를 아래로 내리는 오프셋 (픽셀)
+            y_offset = 0  # ★ 중앙 정렬 (오프셋 제거 - BBox와 일치)
             if text_height_temp > cell_height:
                 # 텍스트가 셀보다 큼 → LANCZOS 리사이즈 (잘림 방지)
                 ratio = cell_height / text_height_temp
@@ -2153,10 +2343,10 @@ def generate_preview_image(image_base64, translations, target_lang='english'):
         text_width = 0
         for size in font_sizes:
             try:
-                font = ImageFont.truetype("arial.ttf", size)
+                font = ImageFont.truetype("malgun.ttf", size)
             except:
                 try:
-                    font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", size)
+                    font = ImageFont.truetype("C:/Windows/Fonts/malgun.ttf", size)
                 except:
                     font = ImageFont.load_default()
                     break
@@ -2304,7 +2494,7 @@ def generate_preview_image(image_base64, translations, target_lang='english'):
             temp_img = temp_img.crop((text_left, text_top, text_bbox_temp[2], text_bbox_temp[3]))
 
             # 셀 높이에 맞춰 추가 crop 및 위치 계산
-            y_offset = 2  # 글자를 아래로 내리는 오프셋 (픽셀)
+            y_offset = 0  # ★ 중앙 정렬 (오프셋 제거 - BBox와 일치)
             if text_height_temp > cell_height:
                 # 텍스트가 셀보다 큼 → LANCZOS 리사이즈 (잘림 방지)
                 ratio = cell_height / text_height_temp
@@ -2472,6 +2662,27 @@ HTML_TEMPLATE = """
             background: #ccc;
             cursor: not-allowed;
         }
+        .current-ocr-display {
+            padding: 3px 10px;
+            border: 2px solid #28a745;
+            border-radius: 10px;
+            background: #e8f5e9;
+            color: #28a745;
+            font-size: 0.7em;
+            font-weight: bold;
+        }
+        .current-ai-display {
+            padding: 3px 12px;
+            border: 2px solid #007bff;
+            border-radius: 10px;
+            background: #e7f1ff;
+            color: #007bff;
+            font-size: 0.7em;
+            font-weight: bold;
+            min-width: 180px;
+            text-align: center;
+            white-space: nowrap;
+        }
         .settings-btn {
             padding: 3px 8px;
             border: 2px solid #6c757d;
@@ -2596,6 +2807,18 @@ HTML_TEMPLATE = """
             border: 2px solid #ddd;
             border-radius: 8px;
             font-size: 1em;
+            /* API 키 복사 방지 */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+        .api-key-input-wrapper input::selection {
+            background: transparent;
+        }
+        .api-key-input-wrapper input::-moz-selection {
+            background: transparent;
         }
         .api-key-input-wrapper input:focus {
             outline: none;
@@ -3301,6 +3524,8 @@ HTML_TEMPLATE = """
             <button type="button" class="translate-btn" id="translateBtn" disabled>🚀 번역</button>
             <button type="button" class="dict-btn" id="dictBtn" title="용어 사전 관리">📖</button>
             <button type="button" class="settings-btn" id="settingsBtn">⚙️</button>
+            <span id="currentOcrDisplay" class="current-ocr-display">PaddleOCR v5</span>
+            <span id="currentAiDisplay" class="current-ai-display">GPT-4o-mini</span>
         </div>
 
         <!-- 설정 모달 -->
@@ -3312,14 +3537,24 @@ HTML_TEMPLATE = """
                 </div>
                 <div class="modal-body">
                     <div class="setting-group">
+                        <label>OCR 엔진 선택</label>
+                        <select id="ocrEngineSelect">
+                            <option value="paddleocr" selected>🖥️ PaddleOCR v5 (로컬, 무료)</option>
+                            <option value="google_vision">☁️ Google Vision API (클라우드, 빠름)</option>
+                        </select>
+                        <p class="setting-hint">PaddleOCR v5: 무료, 로컬 처리 | Google Vision API: 월 1,000장 무료, 이후 $1.50/1,000장</p>
+                    </div>
+
+                    <div class="setting-group">
                         <label>AI 엔진 선택</label>
                         <select id="aiEngineSelect">
-                            <option value="ollama" selected>🖥️ Ollama (로컬) - 무료</option>
-                            <option value="claude">🟣 Claude API</option>
-                            <option value="openai">🟢 OpenAI GPT-4</option>
+                            <option value="openai" selected>🟢 OpenAI GPT</option>
+                            <option value="claude_sije">🟣 Claude (Sije)</option>
+                            <option value="claude_seam">🟣 Claude (SEAM)</option>
                             <option value="gemini">🔵 Google Gemini</option>
+                            <option value="ollama">🖥️ Ollama (로컬)</option>
                         </select>
-                        <p class="setting-hint">Ollama는 로컬에서 실행되며 API 키가 필요 없습니다.</p>
+                        <p class="setting-hint">API 키가 서버에 설정되어 있습니다.</p>
                     </div>
 
                     <div class="setting-group api-key-group" id="apiKeyGroup" style="display: none;">
@@ -3341,6 +3576,21 @@ HTML_TEMPLATE = """
                         <p class="setting-hint" id="modelHint">선택한 AI 엔진에서 사용할 모델을 선택하세요.</p>
                     </div>
 
+                    <div class="setting-group">
+                        <label>번역 처리 방식</label>
+                        <div style="display: flex; gap: 20px; margin-top: 8px;">
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <input type="radio" name="translateMode" id="translateModeSequential" value="sequential" checked>
+                                <span>📄 순차 (페이지별)</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <input type="radio" name="translateMode" id="translateModeBatch" value="batch">
+                                <span>📦 배치 (전체 일괄)</span>
+                            </label>
+                        </div>
+                        <p class="setting-hint">순차: 안정적, 토큰 한도 내 처리 | 배치: 빠름, 긴 문서 시 토큰 초과 위험</p>
+                    </div>
+
                     <div class="setting-info">
                         <h4>AI별 특징</h4>
                         <ul>
@@ -3354,6 +3604,27 @@ HTML_TEMPLATE = """
                 <div class="modal-footer">
                     <button type="button" class="btn-secondary" id="cancelSettings">취소</button>
                     <button type="button" class="btn-primary" id="saveSettings">저장</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 비밀번호 확인 모달 -->
+        <div class="modal-overlay" id="passwordModal">
+            <div class="modal-content" style="max-width: 350px;">
+                <div class="modal-header">
+                    <h2>🔐 설정 접근</h2>
+                    <button class="modal-close" id="closePassword">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="setting-group">
+                        <label>비밀번호를 입력하세요</label>
+                        <input type="password" id="settingsPassword" placeholder="비밀번호" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                        <p class="setting-hint" id="passwordError" style="color: #e74c3c; display: none;">비밀번호가 틀렸습니다.</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="cancelPassword">취소</button>
+                    <button type="button" class="btn-primary" id="confirmPassword">확인</button>
                 </div>
             </div>
         </div>
@@ -3616,10 +3887,34 @@ HTML_TEMPLATE = """
         const modelSelect = document.getElementById('modelSelect');
         const modelHint = document.getElementById('modelHint');
 
+        // 비밀번호 모달 관련 요소
+        const passwordModal = document.getElementById('passwordModal');
+        const settingsPassword = document.getElementById('settingsPassword');
+        const confirmPassword = document.getElementById('confirmPassword');
+        const cancelPassword = document.getElementById('cancelPassword');
+        const closePassword = document.getElementById('closePassword');
+        const passwordError = document.getElementById('passwordError');
+
+        // 설정 비밀번호
+        const SETTINGS_PASSWORD_HASH = 'suk1892!';
+        // 세션 기반 인증 (페이지 새로고침하면 다시 비밀번호 필요)
+        let isSettingsAuthenticated = false;
+
+        // API 키 복사 방지
+        apiKeyInput.addEventListener('copy', (e) => e.preventDefault());
+        apiKeyInput.addEventListener('cut', (e) => e.preventDefault());
+        apiKeyInput.addEventListener('contextmenu', (e) => e.preventDefault());
+
         // AI 설정 상태 (localStorage에서 로드)
-        let currentAiEngine = localStorage.getItem('pdf_translator_ai_engine') || 'ollama';
+        let currentAiEngine = localStorage.getItem('pdf_translator_ai_engine') || 'openai';
         let currentModel = localStorage.getItem('pdf_translator_model') || '';
         let apiKeys = JSON.parse(localStorage.getItem('pdf_translator_api_keys') || '{}');
+
+        // OCR 엔진 설정
+        let currentOcrEngine = localStorage.getItem('pdf_translator_ocr_engine') || 'paddleocr';
+
+        // 번역 처리 방식 설정
+        let currentTranslateMode = localStorage.getItem('pdf_translator_translate_mode') || 'sequential';
 
         // AI 모델 정보
         const aiModels = {
@@ -3632,7 +3927,7 @@ HTML_TEMPLATE = """
                     'bakllava:latest': 'LLaVA 기반, 균형잡힌 성능'
                 }
             },
-            claude: {
+            claude_sije: {
                 models: ['claude-opus-4-20250514', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'],
                 default: 'claude-sonnet-4-20250514',
                 hints: {
@@ -3642,41 +3937,56 @@ HTML_TEMPLATE = """
                     'claude-3-haiku-20240307': '빠르고 저렴'
                 }
             },
-            openai: {
-                models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
-                default: 'gpt-4o',
+            claude_seam: {
+                models: ['claude-haiku-4-20250514', 'claude-3-5-haiku-20241022', 'claude-sonnet-4-20250514', 'claude-opus-4-20250514'],
+                default: 'claude-haiku-4-20250514',
                 hints: {
-                    'gpt-4o': '최신 멀티모달, 고성능 (권장)',
-                    'gpt-4o-mini': '저렴하고 빠름',
+                    'claude-haiku-4-20250514': 'Haiku 4.5 - 최신, 빠르고 저렴 (권장)',
+                    'claude-3-5-haiku-20241022': 'Haiku 3.5 - 빠르고 저렴',
+                    'claude-sonnet-4-20250514': 'Sonnet 4 - 고성능',
+                    'claude-opus-4-20250514': 'Opus 4.5 - 최고 성능 (비용 높음)'
+                }
+            },
+            openai: {
+                models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo'],
+                default: 'gpt-4o-mini',
+                hints: {
+                    'gpt-4o-mini': '저렴하고 빠름 (권장)',
+                    'gpt-4o': '최신 멀티모달, 고성능',
                     'gpt-4-turbo': '안정적, Vision 지원'
                 }
             },
             gemini: {
-                models: ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+                models: ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
                 default: 'gemini-2.0-flash',
                 hints: {
-                    'gemini-2.0-flash': '최신 모델, 빠르고 저렴 (권장)',
-                    'gemini-1.5-flash': '빠른 속도, 비용 효율',
-                    'gemini-1.5-pro': '고성능, 복잡한 작업용'
+                    'gemini-2.0-flash': '빠르고 저렴 (권장)',
+                    'gemini-2.5-flash': '65K 출력 토큰, 긴 문서용',
+                    'gemini-2.5-pro': '고성능, 복잡한 작업용'
                 }
             }
         };
 
-        // API 키 힌트 정보
+        // API 키 힌트 정보 (하드코딩으로 인해 사용되지 않음)
         const apiKeyInfo = {
-            claude: {
-                label: 'Claude API Key',
-                hint: 'Anthropic Console에서 발급받은 API 키를 입력하세요.',
+            claude_sije: {
+                label: 'Claude API Key (Sije)',
+                hint: '서버에 설정되어 있습니다.',
+                placeholder: 'sk-ant-...'
+            },
+            claude_seam: {
+                label: 'Claude API Key (SEAM)',
+                hint: '서버에 설정되어 있습니다.',
                 placeholder: 'sk-ant-...'
             },
             openai: {
                 label: 'OpenAI API Key',
-                hint: 'OpenAI Platform에서 발급받은 API 키를 입력하세요.',
+                hint: '서버에 설정되어 있습니다.',
                 placeholder: 'sk-...'
             },
             gemini: {
                 label: 'Google Gemini API Key',
-                hint: 'Google AI Studio에서 발급받은 API 키를 입력하세요.',
+                hint: '서버에 설정되어 있습니다.',
                 placeholder: 'AIza...'
             }
         };
@@ -3684,9 +3994,35 @@ HTML_TEMPLATE = """
         // 초기 설정 UI 업데이트
         function initSettings() {
             aiEngineSelect.value = currentAiEngine;
+            document.getElementById('ocrEngineSelect').value = currentOcrEngine;
+            // 번역 처리 방식 라디오 버튼 설정
+            const translateModeRadio = document.querySelector(`input[name="translateMode"][value="${currentTranslateMode}"]`);
+            if (translateModeRadio) translateModeRadio.checked = true;
             updateApiKeyVisibility();
             updateModelOptions();
         }
+
+        // 툴바 요소
+        const currentOcrDisplay = document.getElementById('currentOcrDisplay');
+        const currentAiDisplay = document.getElementById('currentAiDisplay');
+
+        // AI 모델 표시명 매핑
+        const aiDisplayNames = {
+            openai: 'GPT-4o-mini',
+            claude_sije: 'Claude-Sije',
+            claude_seam: 'Claude-SEAM',
+            gemini: 'Gemini',
+            ollama: 'Ollama'
+        };
+
+        // 페이지 로드 시 툴바 초기화 (DOMContentLoaded 후 실행)
+        document.addEventListener('DOMContentLoaded', function initToolbar() {
+            // OCR 표시 초기화
+            updateOcrDisplay();
+
+            // AI 표시 초기화 (모델명 포함)
+            updateAiDisplay();
+        });
 
         // API 키 입력 필드 표시/숨김
         function updateApiKeyVisibility() {
@@ -3703,6 +4039,22 @@ HTML_TEMPLATE = """
             }
         }
 
+        // 모델 ID → 표시명 매핑
+        const modelDisplayNames = {
+            'claude-haiku-4-20250514': 'Claude Haiku 4.5',
+            'claude-3-5-haiku-20241022': 'Claude Haiku 3.5',
+            'claude-sonnet-4-20250514': 'Claude Sonnet 4',
+            'claude-3-5-sonnet-20241022': 'Claude Sonnet 3.5',
+            'claude-opus-4-20250514': 'Claude Opus 4.5',
+            'claude-3-haiku-20240307': 'Claude Haiku 3',
+            'gpt-4o-mini': 'GPT-4o-mini',
+            'gpt-4o': 'GPT-4o',
+            'gpt-4-turbo': 'GPT-4 Turbo',
+            'gemini-2.0-flash': 'Gemini 2.0 Flash',
+            'gemini-1.5-flash': 'Gemini 1.5 Flash',
+            'gemini-1.5-pro': 'Gemini 1.5 Pro'
+        };
+
         // 모델 선택 옵션 업데이트
         function updateModelOptions() {
             const engine = aiEngineSelect.value;
@@ -3715,7 +4067,7 @@ HTML_TEMPLATE = """
             modelInfo.models.forEach(model => {
                 const option = document.createElement('option');
                 option.value = model;
-                option.textContent = model;
+                option.textContent = modelDisplayNames[model] || model;
                 if (model === modelInfo.default) {
                     option.textContent += ' (기본)';
                 }
@@ -3742,10 +4094,55 @@ HTML_TEMPLATE = """
             modelHint.textContent = hint;
         }
 
-        // 설정 모달 열기
+        // 설정 모달 열기 (비밀번호 확인 필요)
         settingsBtn.addEventListener('click', () => {
-            initSettings();
-            settingsModal.classList.add('active');
+            if (isSettingsAuthenticated) {
+                // 이미 인증됨 - 바로 설정 모달 열기
+                initSettings();
+                settingsModal.classList.add('active');
+            } else {
+                // 비밀번호 확인 필요
+                settingsPassword.value = '';
+                passwordError.style.display = 'none';
+                passwordModal.classList.add('active');
+                settingsPassword.focus();
+            }
+        });
+
+        // 비밀번호 확인
+        confirmPassword.addEventListener('click', () => {
+            if (settingsPassword.value === SETTINGS_PASSWORD_HASH) {
+                // 인증 성공
+                isSettingsAuthenticated = true;
+                localStorage.setItem('pdf_translator_auth', 'true');
+                passwordModal.classList.remove('active');
+                initSettings();
+                settingsModal.classList.add('active');
+            } else {
+                // 인증 실패
+                passwordError.style.display = 'block';
+                settingsPassword.value = '';
+                settingsPassword.focus();
+            }
+        });
+
+        // 비밀번호 모달에서 Enter 키 처리
+        settingsPassword.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                confirmPassword.click();
+            }
+        });
+
+        // 비밀번호 모달 닫기
+        function closePasswordModal() {
+            passwordModal.classList.remove('active');
+            settingsPassword.value = '';
+            passwordError.style.display = 'none';
+        }
+        closePassword.addEventListener('click', closePasswordModal);
+        cancelPassword.addEventListener('click', closePasswordModal);
+        passwordModal.addEventListener('click', (e) => {
+            if (e.target === passwordModal) closePasswordModal();
         });
 
         // 설정 모달 닫기
@@ -3782,12 +4179,18 @@ HTML_TEMPLATE = """
         saveSettings.addEventListener('click', () => {
             const engine = aiEngineSelect.value;
             const model = modelSelect.value;
+            const ocrEngine = document.getElementById('ocrEngineSelect').value;
+            const translateMode = document.querySelector('input[name="translateMode"]:checked').value;
             currentAiEngine = engine;
             currentModel = model;
+            currentOcrEngine = ocrEngine;
+            currentTranslateMode = translateMode;
 
             // localStorage에 저장
             localStorage.setItem('pdf_translator_ai_engine', engine);
             localStorage.setItem(`pdf_translator_model_${engine}`, model);
+            localStorage.setItem('pdf_translator_ocr_engine', ocrEngine);
+            localStorage.setItem('pdf_translator_translate_mode', translateMode);
 
             // API 키 저장 (Ollama 제외)
             if (engine !== 'ollama' && apiKeyInput.value) {
@@ -3795,17 +4198,50 @@ HTML_TEMPLATE = """
                 localStorage.setItem('pdf_translator_api_keys', JSON.stringify(apiKeys));
             }
 
+            // AI 및 OCR 표시 업데이트
+            updateAiDisplay();
+            updateOcrDisplay();
+
             closeModal();
+            const ocrName = ocrEngine === 'google_vision' ? 'Google Vision API' : 'PaddleOCR v5';
             status.className = 'status success';
-            status.innerHTML = `✅ ${getEngineName(engine)} - ${model} 설정 완료`;
+            status.innerHTML = `✅ OCR: ${ocrName} | AI: ${getEngineName(engine)} - ${model} 설정 완료`;
         });
+
+        // AI 표시 업데이트 함수
+        function updateAiDisplay() {
+            const engineName = aiDisplayNames[currentAiEngine] || 'GPT-4o-mini';
+            // 저장된 모델 또는 기본 모델 가져오기
+            const savedModel = localStorage.getItem(`pdf_translator_model_${currentAiEngine}`);
+            const modelName = savedModel || aiModels[currentAiEngine]?.default || '';
+            // 모델명에서 핵심 부분만 추출 - 버전 명확히 표시
+            let shortModel = modelName;
+            if (modelName.includes('claude-haiku-4')) shortModel = 'Haiku 4.5';
+            else if (modelName.includes('claude-3-5-haiku')) shortModel = 'Haiku 3.5';
+            else if (modelName.includes('claude-sonnet-4')) shortModel = 'Sonnet 4';
+            else if (modelName.includes('claude-3-5-sonnet')) shortModel = 'Sonnet 3.5';
+            else if (modelName.includes('claude-opus-4')) shortModel = 'Opus 4.5';
+            else if (modelName.includes('gpt-4o-mini')) shortModel = 'GPT-4o-mini';
+            else if (modelName.includes('gpt-4o')) shortModel = 'GPT-4o';
+            else if (modelName.includes('gemini-2.0')) shortModel = 'Gemini 2.0 Flash';
+            else if (modelName.includes('gemini-1.5')) shortModel = 'Gemini 1.5 Flash';
+
+            currentAiDisplay.textContent = `${engineName} (${shortModel})`;
+        }
+
+        // OCR 표시 업데이트 함수
+        function updateOcrDisplay() {
+            const ocrName = currentOcrEngine === 'google_vision' ? 'Google Vision API' : 'PaddleOCR v5';
+            currentOcrDisplay.textContent = ocrName;
+        }
 
         // 엔진 이름 반환
         function getEngineName(engine) {
             const names = {
                 ollama: 'Ollama (로컬)',
-                claude: 'Claude',
-                openai: 'GPT-4',
+                claude_sije: 'Claude (Sije)',
+                claude_seam: 'Claude (SEAM)',
+                openai: 'OpenAI GPT',
                 gemini: 'Gemini'
             };
             return names[engine] || engine;
@@ -3884,6 +4320,8 @@ HTML_TEMPLATE = """
             formData.append('target_lang', targetLang.value);
             formData.append('ai_engine', currentAiEngine);
             formData.append('model', getCurrentModel());
+            formData.append('ocr_engine', currentOcrEngine);
+            formData.append('translate_mode', currentTranslateMode);
             const apiKey = getCurrentApiKey();
             if (apiKey) {
                 formData.append('api_key', apiKey);
@@ -4947,13 +5385,21 @@ def analyze():
 
         file = request.files['file']
         target_lang = request.form.get('target_lang', 'english')
-        ai_engine = request.form.get('ai_engine', 'ollama')
+        ai_engine = request.form.get('ai_engine', 'openai')
         api_key = request.form.get('api_key', None)
         model = request.form.get('model', None)
+        ocr_engine = request.form.get('ocr_engine', 'paddleocr')
+        translate_mode = request.form.get('translate_mode', 'sequential')  # 'batch' 또는 'sequential'
 
-        print(f"[AI Engine] {ai_engine}, [Model] {model}", flush=True)
+        # ★ 하드코딩된 API 키 우선 사용
+        if ai_engine in HARDCODED_API_KEYS:
+            api_key = HARDCODED_API_KEYS[ai_engine]
+
+        print(f"[AI Engine] {ai_engine}, [Model] {model}, [OCR Engine] {ocr_engine}, [Translate Mode] {translate_mode}", flush=True)
+        logger.info(f"[AI Engine] {ai_engine}, [Model] {model}, [OCR Engine] {ocr_engine}, [Translate Mode] {translate_mode}")
         print(f"[Debug] ai_engine raw: '{request.form.get('ai_engine')}' -> parsed: '{ai_engine}'", flush=True)
         print(f"[Debug] api_key present: {bool(api_key)}, length: {len(api_key) if api_key else 0}", flush=True)
+        logger.info(f"[Debug] api_key present: {bool(api_key)}, length: {len(api_key) if api_key else 0}")
 
         if file.filename == '':
             return jsonify({"success": False, "error": "파일이 선택되지 않았습니다"})
@@ -4980,13 +5426,14 @@ def analyze():
         import time  # 성능 측정용
 
         # ===== 1단계: 배치 OCR (모든 페이지 한번에) =====
-        update_progress("OCR", 1, total_pages, f"전체 {total_pages}개 페이지 일괄 OCR 처리 중...")
-        print(f"[Batch OCR] Processing {total_pages} pages at once...", flush=True)
-        
+        ocr_name = 'Vision' if ocr_engine == 'google_vision' else 'PaddleOCR'
+        update_progress("OCR", 1, total_pages, f"전체 {total_pages}개 페이지 일괄 OCR 처리 중... ({ocr_name})")
+        print(f"[{ocr_name}] Processing {total_pages} pages at once...", flush=True)
+
         ocr_start = time.time()
-        all_ocr_results = get_ocr_results_batch(image_paths)
+        all_ocr_results = get_ocr_results_with_engine(image_paths, ocr_engine)
         ocr_time = time.time() - ocr_start
-        print(f"[TIMING] OCR took {ocr_time:.2f}s for {total_pages} pages", flush=True)
+        print(f"[TIMING] OCR ({ocr_name}) took {ocr_time:.2f}s for {total_pages} pages", flush=True)
         
         # OCR 결과와 이미지 정보 결합
         for i, (img_path, texts) in enumerate(zip(image_paths, all_ocr_results)):
@@ -5005,30 +5452,65 @@ def analyze():
         # ===== 2단계: 번역 (엔진별 최적화) =====
         total_texts = sum(len(p["texts"]) for p in all_pages_data)
         translate_start = time.time()
-        
-        if ai_engine == "gemini" and api_key and total_texts > 0:
-            # Gemini: 배치 번역 (1회 API 호출)
-            update_progress("번역", 1, 1, f"전체 {total_texts}개 텍스트 일괄 번역 중... (Gemini 배치)")
-            print(f"[Gemini Batch] Total {total_texts} texts from {total_pages} pages", flush=True)
-            
-            batch_input = [{"page_idx": p["page_idx"], "texts": p["texts"]} for p in all_pages_data]
-            translations_by_page = translate_batch_with_gemini(batch_input, target_lang, api_key, model)
-            
-            translate_time = time.time() - translate_start
-            print(f"[TIMING] Gemini Batch Translation took {translate_time:.2f}s for {total_texts} texts", flush=True)
 
-            for page_data in all_pages_data:
-                page_idx = page_data["page_idx"]
-                translations = translations_by_page.get(page_idx, [])
-                pages.append({
-                    "image": page_data["image_base64"],
-                    "image_path": page_data["img_path"],
-                    "translations": translations,
-                    "confirmed": False
-                })
+        logger.info(f"[Translation Start] ai_engine='{ai_engine}', total_texts={total_texts}, api_key_present={bool(api_key)}")
+        print(f"[Translation Start] ai_engine='{ai_engine}', total_texts={total_texts}, api_key_present={bool(api_key)}", flush=True)
+
+        if ai_engine == "gemini" and api_key and total_texts > 0:
+            logger.info(f"[Translation] Using GEMINI branch, translate_mode={translate_mode}")
+
+            if translate_mode == "batch":
+                # Gemini 배치 모드: 청크 단위로 API 호출 (100개씩)
+                num_chunks = (total_texts + BATCH_CHUNK_SIZE - 1) // BATCH_CHUNK_SIZE
+                update_progress("번역", 0, total_texts, f"전체 {total_texts}개 텍스트 일괄 번역 중... (Gemini 배치)")
+                print(f"[Gemini Batch] Total {total_texts} texts from {total_pages} pages", flush=True)
+
+                batch_input = [{"page_idx": p["page_idx"], "texts": p["texts"]} for p in all_pages_data]
+                translations_by_page = translate_batch_with_gemini(batch_input, target_lang, api_key, model)
+
+                translate_time = time.time() - translate_start
+                print(f"[TIMING] Gemini Batch Translation took {translate_time:.2f}s for {total_texts} texts", flush=True)
+
+                for page_data in all_pages_data:
+                    page_idx = page_data["page_idx"]
+                    translations = translations_by_page.get(page_idx, [])
+                    pages.append({
+                        "image": page_data["image_base64"],
+                        "image_path": page_data["img_path"],
+                        "translations": translations,
+                        "confirmed": False
+                    })
+            else:
+                # Gemini 순차 모드: 페이지별 API 호출 (안정적, 토큰 한도 내 처리)
+                print(f"[Gemini Sequential] Processing {total_pages} pages one by one", flush=True)
+
+                for page_data in all_pages_data:
+                    page_idx = page_data["page_idx"]
+                    page_texts = page_data["texts"]
+                    update_progress("번역", page_idx + 1, total_pages,
+                                   f"페이지 {page_idx + 1}/{total_pages} - {len(page_texts)}개 텍스트 번역 중... (Gemini 순차)")
+
+                    if page_texts:
+                        # 단일 페이지를 배치로 전송
+                        batch_input = [{"page_idx": page_idx, "texts": page_texts}]
+                        translations_by_page = translate_batch_with_gemini(batch_input, target_lang, api_key, model)
+                        translations = translations_by_page.get(page_idx, [])
+                    else:
+                        translations = []
+
+                    pages.append({
+                        "image": page_data["image_base64"],
+                        "image_path": page_data["img_path"],
+                        "translations": translations,
+                        "confirmed": False
+                    })
+
+                translate_time = time.time() - translate_start
+                print(f"[TIMING] Gemini Sequential Translation took {translate_time:.2f}s for {total_texts} texts ({total_pages} pages)", flush=True)
                 
-        elif ai_engine in ("claude", "openai") and api_key and total_texts > 0:
+        elif ai_engine in ("claude_sije", "claude_seam", "openai") and api_key and total_texts > 0:
             # Claude/OpenAI: 병렬 번역 (동시 API 호출)
+            logger.info(f"[Translation] Using CLAUDE/OPENAI branch - ai_engine='{ai_engine}'")
             update_progress("번역", 1, 1, f"전체 {total_texts}개 텍스트 병렬 번역 중... ({ai_engine.upper()} 병렬)")
             print(f"[Parallel Translation] {ai_engine.upper()} - {total_pages} pages", flush=True)
             
@@ -5051,6 +5533,8 @@ def analyze():
                 
         else:
             # Ollama 등: 순차 번역 (로컬 모델은 병렬화 이점 적음)
+            logger.info(f"[Translation] Fallback to VLM - ai_engine='{ai_engine}', api_key={bool(api_key)}, total_texts={total_texts}")
+            print(f"[Translation] Fallback to VLM - ai_engine='{ai_engine}', api_key={bool(api_key)}, total_texts={total_texts}", flush=True)
             for page_data in all_pages_data:
                 update_progress("번역", page_data["page_idx"]+1, total_pages,
                                f"페이지 {page_data['page_idx']+1}/{total_pages} - {len(page_data['texts'])}개 텍스트 번역 중...")
@@ -5088,11 +5572,15 @@ def retranslate():
     try:
         data = request.get_json()
         target_lang = data.get('target_lang', 'english')
-        ai_engine = data.get('ai_engine', 'ollama')
+        ai_engine = data.get('ai_engine', 'openai')
         api_key = data.get('api_key', None)
         model = data.get('model', None)
         image_base64 = data.get('image', None)
         texts = data.get('texts', [])
+
+        # ★ 하드코딩된 API 키 우선 사용
+        if ai_engine in HARDCODED_API_KEYS:
+            api_key = HARDCODED_API_KEYS[ai_engine]
 
         print(f"[Retranslate] AI Engine: {ai_engine}, Model: {model}, Target: {target_lang}")
 
@@ -5146,8 +5634,10 @@ def generate_preview():
         target_lang = data.get('target_lang', 'english')
 
         print(f"[generate_preview] Received {len(translations)} translations, target_lang={target_lang}")
-        for i, t in enumerate(translations[:3]):  # 처음 3개만 출력
-            print(f"  [{i}] bbox: {t.get('bbox', 'N/A')}, text: {t.get('text', 'N/A')[:20]}...")
+        for i, t in enumerate(translations[:5]):  # 처음 5개만 출력
+            text_val = t.get('text', 'N/A')
+            trans_val = t.get('translated', 'N/A')
+            print(f"  [{i}] text: '{text_val[:30] if text_val else 'N/A'}' -> translated: '{trans_val[:30] if trans_val else 'N/A'}'")
 
         if not image_base64:
             return jsonify({"success": False, "error": "이미지가 없습니다"})
