@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+
+# Logs
+*.log
+overlap_debug.log
+
+# Development files
+*.md
+claude.md
+vision_ocr_fix.py
+
+# Environment
+.env
+.env.local
+*.env
+
+# API Keys (never include in image)
+vision-key.json
+*-key.json
+*.pem
+*.key
+
+# Output (generated at runtime)
+output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db

@@ -7,9 +7,14 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.8.3"
+VERSION = "1.8.4"
 VERSION_DATE = "2026-01-20"
 VERSION_NOTES = """
+v1.8.4 (2026-01-20)
+- ★ PDF 미리보기 확대/축소 기능: +/- 버튼으로 25% 단위 확대/축소
+- Ctrl+마우스휠로 확대/축소 가능
+- 오른쪽 번역 패널 크기는 유지 (독립적 확대/축소)
+
 v1.8.3 (2026-01-20)
 - ★ 한글 폰트 수정: arial.ttf → malgun.ttf (맑은 고딕)
 - 한글 텍스트가 □□□로 깨지는 문제 해결
@@ -2621,10 +2626,50 @@ HTML_TEMPLATE = """
             align-items: flex-start;
         }
         .preview-image img {
-            max-width: 100%;
-            max-height: 100%;
+            max-width: none;
+            max-height: none;
             object-fit: contain;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            transform-origin: top center;
+            transition: transform 0.2s ease;
+        }
+        /* 확대/축소 컨트롤 */
+        .zoom-controls {
+            display: flex;
+            gap: 4px;
+            background: #e9ecef;
+            padding: 2px 4px;
+            border-radius: 6px;
+            align-items: center;
+        }
+        .zoom-btn {
+            width: 26px;
+            height: 26px;
+            padding: 0;
+            border: none;
+            background: transparent;
+            color: #667eea;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: bold;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .zoom-btn:hover {
+            background: rgba(102, 126, 234, 0.2);
+        }
+        .zoom-btn:active {
+            transform: scale(0.95);
+        }
+        .zoom-level {
+            font-size: 0.75em;
+            color: #666;
+            min-width: 42px;
+            text-align: center;
+            font-weight: bold;
         }
 
         /* 우측: 번역 테이블 */
@@ -3084,6 +3129,12 @@ HTML_TEMPLATE = """
             <div class="preview-panel" id="previewPanel">
                 <div class="preview-header">
                     <span class="page-info" id="pageInfo">페이지 1 / 1</span>
+                    <div class="zoom-controls">
+                        <button class="zoom-btn" id="zoomOut" title="축소">−</button>
+                        <span class="zoom-level" id="zoomLevel">100%</span>
+                        <button class="zoom-btn" id="zoomIn" title="확대">+</button>
+                        <button class="zoom-btn" id="zoomReset" title="원래 크기" style="font-size:0.75em;">↺</button>
+                    </div>
                     <div class="preview-toggle">
                         <button class="toggle-btn active" id="showOriginal">📄 원본</button>
                         <button class="toggle-btn" id="showPreview">🔄 미리보기</button>
@@ -3132,6 +3183,10 @@ HTML_TEMPLATE = """
         let currentPage = 0;
         let totalPages = 0;
         let pagesData = [];  // [{image: base64, texts: [...], translations: [...], confirmed: bool}]
+        let currentZoom = 100;  // 현재 확대 비율 (%)
+        const ZOOM_MIN = 25;
+        const ZOOM_MAX = 400;
+        const ZOOM_STEP = 25;
 
         // DOM 요소
         const fileInput = document.getElementById('fileInput');
@@ -3150,6 +3205,12 @@ HTML_TEMPLATE = """
         const confirmBtn = document.getElementById('confirmBtn');
         const results = document.getElementById('results');
 
+        // 확대/축소 컨트롤
+        const zoomIn = document.getElementById('zoomIn');
+        const zoomOut = document.getElementById('zoomOut');
+        const zoomReset = document.getElementById('zoomReset');
+        const zoomLevel = document.getElementById('zoomLevel');
+
         // 미리보기 토글 버튼
         const showOriginalBtn = document.getElementById('showOriginal');
         const showPreviewBtn = document.getElementById('showPreview');
@@ -3157,6 +3218,27 @@ HTML_TEMPLATE = """
         // 미리보기 상태
         let isPreviewMode = false;
         let previewCache = {};  // 페이지별 미리보기 캐시
+
+        // 확대/축소 함수
+        function applyZoom(zoom) {
+            currentZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
+            previewImg.style.transform = `scale(${currentZoom / 100})`;
+            zoomLevel.textContent = `${currentZoom}%`;
+        }
+        
+        // 확대/축소 이벤트 리스너
+        zoomIn.addEventListener('click', () => applyZoom(currentZoom + ZOOM_STEP));
+        zoomOut.addEventListener('click', () => applyZoom(currentZoom - ZOOM_STEP));
+        zoomReset.addEventListener('click', () => applyZoom(100));
+        
+        // 마우스 휠로 확대/축소 (Ctrl + 휠)
+        document.querySelector('.preview-image').addEventListener('wheel', (e) => {
+            if (e.ctrlKey) {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+                applyZoom(currentZoom + delta);
+            }
+        }, { passive: false });
 
         // 설정 관련 요소
         const settingsBtn = document.getElementById('settingsBtn');
