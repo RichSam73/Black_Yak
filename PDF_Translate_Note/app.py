@@ -7,9 +7,22 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.9.1"
+VERSION = "1.9.6"
 VERSION_DATE = "2026-01-20"
 VERSION_NOTES = """
+v1.9.6 (2026-01-20)
+- ★ Gemini 프롬프트 강화: 괄호 설명 추가 금지
+- ★ Google Vision 병합 gap 증가: 20→35px, 10→15px (더 적극적 병합)
+
+v1.9.5 (2026-01-20)
+- ★ Google Vision OCR 단어 병합: 인접 단어를 PaddleOCR처럼 그룹화
+- "행거" + "루프" → "행거루프" 병합으로 번역 겹침 해결
+- horizontal_gap=20px, vertical_threshold=10px 기준
+
+v1.9.4 (2026-01-20)
+- ★ API 키 보안 강화: 하드코딩 → 환경변수(.env) 방식
+- .gitignore에 .env 추가 (GitHub 노출 방지)
+
 v1.9.1 (2026-01-20)
 - ★ 한글 폰트 수정: arial.ttf → malgun.ttf (맑은 고딕)
 - 한글 텍스트가 □□□로 깨지는 문제 해결
@@ -172,8 +185,99 @@ def get_vision_client():
         vision_client = vision.ImageAnnotatorClient(credentials=credentials)
     return vision_client
 
+def merge_adjacent_words(words, horizontal_gap=20, vertical_threshold=10):
+    """인접한 단어들을 하나의 텍스트 박스로 병합 (PaddleOCR 스타일)
+    
+    Args:
+        words: [(text, bbox), ...] where bbox = [x1, y1, x2, y2]
+        horizontal_gap: 이 픽셀 이내면 같은 그룹으로 병합
+        vertical_threshold: y좌표 차이가 이 이내면 같은 줄로 판단
+    
+    Returns:
+        list: [[bbox, (merged_text, confidence)], ...]
+    """
+    if not words:
+        return []
+    
+    # y좌표 기준으로 정렬 (같은 줄끼리 묶기)
+    sorted_words = sorted(words, key=lambda w: (w[1][1], w[1][0]))  # y, x 순
+    
+    merged_results = []
+    current_group = [sorted_words[0]]
+    
+    for word in sorted_words[1:]:
+        text, bbox = word
+        x1, y1, x2, y2 = bbox
+        
+        # 현재 그룹의 마지막 단어
+        last_text, last_bbox = current_group[-1]
+        last_x1, last_y1, last_x2, last_y2 = last_bbox
+        
+        # 같은 줄인지 확인 (y좌표 차이)
+        y_center = (y1 + y2) / 2
+        last_y_center = (last_y1 + last_y2) / 2
+        same_line = abs(y_center - last_y_center) <= vertical_threshold
+        
+        # 수평 간격 확인
+        h_gap = x1 - last_x2
+        close_enough = h_gap <= horizontal_gap and h_gap >= -5  # 약간 겹쳐도 허용
+        
+        if same_line and close_enough:
+            # 같은 그룹에 추가
+            current_group.append(word)
+        else:
+            # 현재 그룹 병합 후 새 그룹 시작
+            merged_results.append(_merge_word_group(current_group))
+            current_group = [word]
+    
+    # 마지막 그룹 처리
+    if current_group:
+        merged_results.append(_merge_word_group(current_group))
+    
+    return merged_results
+
+
+def _merge_word_group(group):
+    """단어 그룹을 하나의 텍스트 박스로 병합"""
+    # ★ bbox 확장 패딩 (한글 완전히 덮기 위해)
+    PADDING_X = 2  # 좌우 확장
+    PADDING_Y = 2  # 상하 확장
+    
+    if len(group) == 1:
+        text, bbox = group[0]
+        x1, y1, x2, y2 = bbox
+        # 패딩 적용
+        x1 = max(0, x1 - PADDING_X)
+        y1 = max(0, y1 - PADDING_Y)
+        x2 = x2 + PADDING_X
+        y2 = y2 + PADDING_Y
+        return [
+            [[x1, y1], [x2, y1], [x2, y2], [x1, y2]],
+            (text, 0.99)
+        ]
+    
+    # 텍스트 합치기 (x좌표 순으로 정렬)
+    sorted_group = sorted(group, key=lambda w: w[1][0])
+    merged_text = "".join([w[0] for w in sorted_group])
+    
+    # BBox 병합 (전체를 감싸는 박스) + 패딩
+    all_x1 = max(0, min(w[1][0] for w in group) - PADDING_X)
+    all_y1 = max(0, min(w[1][1] for w in group) - PADDING_Y)
+    all_x2 = max(w[1][2] for w in group) + PADDING_X
+    all_y2 = max(w[1][3] for w in group) + PADDING_Y
+    
+    bbox = [
+        [all_x1, all_y1],
+        [all_x2, all_y1],
+        [all_x2, all_y2],
+        [all_x1, all_y2]
+    ]
+    
+    return [bbox, (merged_text, 0.99)]
+
+
 def ocr_with_google_vision(image_path):
-    """Google Cloud Vision API로 OCR 수행
+    """Google Cloud Vision API로 OCR 수행 (단어 병합 버전)
 
     Returns:
         list: PaddleOCR과 동일한 형식 [[bbox, (text, confidence)], ...]
@@ -202,28 +306,21 @@ def ocr_with_google_vision(image_path):
         print("[Vision OCR] No text detected")
         return []
 
-    # 첫 번째는 전체 텍스트이므로 스킵, 나머지가 개별 단어/문장
-    results = []
-    for text in texts[1:]:  # Skip first (full text)
+    # 첫 번째는 전체 텍스트이므로 스킵, 나머지가 개별 단어
+    words = []
+    for text in texts[1:]:
         vertices = text.bounding_poly.vertices
-
-        # Google Vision BBox 그대로 사용 (축소하면 지우기 영역과 불일치 발생)
         x1 = vertices[0].x
         y1 = vertices[0].y
         x2 = vertices[1].x
         y2 = vertices[2].y
+        words.append((text.description, [x1, y1, x2, y2]))
 
-        # bbox 형식: [[x1,y1], [x2,y1], [x2,y2], [x1,y2]]
-        bbox = [
-            [x1, y1],
-            [x2, y1],
-            [x2, y2],
-            [x1, y2]
-        ]
-        results.append([bbox, (text.description, 0.99)])  # 신뢰도 0.99 고정
+    # ★ 인접 단어 병합 (PaddleOCR 스타일) - gap 증가로 더 적극적 병합
+    results = merge_adjacent_words(words, horizontal_gap=35, vertical_threshold=15)
 
     elapsed = time.time() - start_time
-    print(f"[Vision OCR] Detected {len(results)} texts in {elapsed:.2f}s")
+    print(f"[Vision OCR] Detected {len(texts)-1} words → Merged to {len(results)} groups in {elapsed:.2f}s")
 
     return results
 
@@ -1079,11 +1176,12 @@ Keep translations SHORT and professional. Only respond with numbered translation
 There are {len(chunk_texts)} items. Translate ALL of them in the EXACT same order.
 IMPORTANT: Keep <<TERM_N>> placeholders exactly as they are (do not translate them).
 IMPORTANT: Respond with the EXACT SAME numbering (1 to {len(chunk_texts)}).
+IMPORTANT: DO NOT add any explanations, notes, or comments in parentheses. Translation ONLY.
 
 Korean texts:
 {korean_joined}
 
-{lang_config['prompt_lang']} translations (numbering 1-{len(chunk_texts)}, SHORT answers only):"""
+{lang_config['prompt_lang']} translations (numbering 1-{len(chunk_texts)}, SHORT answers only, NO explanations):"""
 
     url = f"{GEMINI_API_URL}/{model}:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
