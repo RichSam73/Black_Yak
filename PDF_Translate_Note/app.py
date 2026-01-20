@@ -3149,6 +3149,13 @@ HTML_TEMPLATE = """
             word-break: break-word;
             line-height: 1.2;
             user-select: none;
+            resize: both;
+            overflow: hidden;
+            min-width: 80px;
+            min-height: 30px;
+        }
+        .memo-item:hover {
+            outline: 1px solid rgba(102, 126, 234, 0.5);
         }
         .memo-item.selected {
             outline: 2px dashed #667eea;
@@ -3420,16 +3427,6 @@ HTML_TEMPLATE = """
         }
         .memo-default-btn:hover {
             background: #f5f5f5;
-        }
-        /* 메모 박스 리사이즈 핸들 */
-        .memo-item {
-            resize: both;
-            overflow: hidden;
-            min-width: 80px;
-            min-height: 30px;
-        }
-        .memo-item:hover {
-            outline: 2px solid #667eea;
         }
 
         /* 용어 사전 모달 스타일 */
@@ -3910,7 +3907,7 @@ HTML_TEMPLATE = """
                         <div class="memo-toolbar-row row2">
                             <div class="memo-toolbar-group">
                                 <label>테두리</label>
-                                <input type="number" id="memoBorderWidth" min="0" max="10" value="1" title="테두리 두께">
+                                <input type="number" id="memoBorderWidth" min="0" max="10" value="0" title="테두리 두께">
                                 <input type="color" id="memoBorderColor" value="#333333" title="테두리 색">
                             </div>
                             <div class="memo-toolbar-group">
@@ -4009,7 +4006,7 @@ HTML_TEMPLATE = """
             opacity: 0.9,
             backgroundEnabled: true,
             backgroundColor: '#ffffff',
-            borderWidth: 1,
+            borderWidth: 0,
             borderColor: '#333333'
         };
 
