@@ -3235,10 +3235,11 @@ HTML_TEMPLATE = """
         document.querySelector('.preview-image').addEventListener('wheel', (e) => {
             if (e.ctrlKey) {
                 e.preventDefault();
+                e.stopPropagation();
                 const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
                 applyZoom(currentZoom + delta);
             }
-        }, { passive: false });
+        }, { passive: false, capture: true });
 
         // 설정 관련 요소
         const settingsBtn = document.getElementById('settingsBtn');

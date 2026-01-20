@@ -3310,76 +3310,126 @@ HTML_TEMPLATE = """
             border-color: #ffc107;
             background: #fffde7;
         }
+        /* 메모 스타일 패널 - 2줄 컴팩트 툴바 */
         .memo-panel {
             border-top: 1px solid #eee;
             background: #fafbff;
-            padding: 10px 12px;
+            padding: 6px 10px;
         }
-        .memo-panel-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 6px;
-        }
-        .memo-panel-title {
-            font-weight: bold;
-            color: #333;
-            font-size: 0.9em;
-        }
-        .memo-selected-label {
-            font-size: 0.8em;
-            color: #666;
-        }
-        .memo-hint {
-            font-size: 0.8em;
-            color: #666;
-            margin-bottom: 8px;
-        }
-        .memo-controls {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px 12px;
-        }
-        .memo-field {
+        .memo-toolbar {
             display: flex;
             flex-direction: column;
             gap: 4px;
+        }
+        .memo-toolbar-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .memo-toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0 6px;
+            border-right: 1px solid #ddd;
+        }
+        .memo-toolbar-group:last-child {
+            border-right: none;
+        }
+        .memo-toolbar-row.row2 {
+            display: none;
+        }
+        .memo-panel.expanded .memo-toolbar-row.row2 {
+            display: flex;
+        }
+        .memo-toolbar label {
+            color: #555;
+            font-size: 0.75em;
+            white-space: nowrap;
+        }
+        .memo-toolbar input[type="number"] {
+            width: 45px;
+            padding: 2px 4px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
             font-size: 0.8em;
         }
-        .memo-field label {
-            font-weight: 600;
-            color: #444;
-        }
-        .memo-field input[type="number"] {
-            padding: 4px 6px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-size: 0.9em;
-        }
-        .memo-field input[type="range"] {
-            width: 100%;
-        }
-        .memo-field .inline {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .memo-field .inline input[type="number"] {
-            width: 70px;
-        }
-        .memo-field .inline input[type="color"] {
-            width: 34px;
-            height: 28px;
+        .memo-toolbar input[type="color"] {
+            width: 22px;
+            height: 22px;
             padding: 0;
             border: 1px solid #ccc;
-            border-radius: 4px;
+            border-radius: 3px;
+            cursor: pointer;
         }
-        .memo-toggle {
-            display: flex;
-            align-items: center;
-            gap: 6px;
+        .memo-toolbar input[type="range"] {
+            width: 70px;
+            height: 4px;
+        }
+        .memo-toolbar input[type="checkbox"] {
+            margin: 0;
+            width: 14px;
+            height: 14px;
+        }
+        .memo-toolbar-btn {
+            padding: 3px 6px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            background: #fff;
+            cursor: pointer;
+            font-size: 0.8em;
             font-weight: 600;
-            color: #444;
+            min-width: 24px;
+            text-align: center;
+        }
+        .memo-toolbar-btn:hover {
+            background: #f0f0f0;
+        }
+        .memo-toolbar-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        .memo-expand-btn {
+            padding: 2px 8px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            background: #fff;
+            cursor: pointer;
+            font-size: 0.8em;
+            margin-left: auto;
+        }
+        .memo-expand-btn:hover {
+            background: #f0f0f0;
+        }
+        .memo-toolbar-title {
+            font-weight: bold;
+            color: #333;
+            font-size: 0.85em;
+        }
+        .memo-default-btn {
+            padding: 2px 6px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            background: #fff;
+            cursor: pointer;
+            font-size: 0.7em;
+            color: #666;
+            margin-left: auto;
+        }
+        .memo-default-btn:hover {
+            background: #f5f5f5;
+        }
+        /* 메모 박스 리사이즈 핸들 */
+        .memo-item {
+            resize: both;
+            overflow: hidden;
+            min-width: 80px;
+            min-height: 30px;
+        }
+        .memo-item:hover {
+            outline: 2px solid #667eea;
         }
 
         /* 용어 사전 모달 스타일 */
@@ -3833,55 +3883,44 @@ HTML_TEMPLATE = """
                     </table>
                 </div>
                 <div class="memo-panel" id="memoPanel">
-                    <div class="memo-panel-header">
-                        <span class="memo-panel-title">메모 스타일</span>
-                        <span class="memo-selected-label" id="memoSelectedLabel">기본 스타일</span>
-                    </div>
-                    <div class="memo-hint">우클릭 메뉴로 메모 추가/편집/삭제 (번역 미리보기에서만 표시, 폰트는 번역 기본 고정)</div>
-                    <div class="memo-controls">
-                        <div class="memo-field">
-                            <label for="memoFontSize">글자 크기</label>
-                            <input type="number" id="memoFontSize" min="6" max="72" value="14">
-                        </div>
-                        <div class="memo-field">
-                            <label for="memoTextColor">글자 색</label>
-                            <input type="color" id="memoTextColor" value="#111111">
-                        </div>
-                        <div class="memo-field">
-                            <label class="memo-toggle" for="memoBold">
-                                <input type="checkbox" id="memoBold">
-                                굵게
-                            </label>
-                        </div>
-                        <div class="memo-field">
-                            <label for="memoWidth">메모 너비</label>
-                            <input type="number" id="memoWidth" min="80" max="800" value="220">
-                        </div>
-                        <div class="memo-field">
-                            <label for="memoPadding">내부 여백</label>
-                            <input type="number" id="memoPadding" min="0" max="40" value="6">
-                        </div>
-                        <div class="memo-field">
-                            <label for="memoOpacity">투명도</label>
-                            <input type="range" id="memoOpacity" min="0" max="100" value="90">
-                        </div>
-                        <div class="memo-field">
-                            <label class="memo-toggle" for="memoBgEnabled">
-                                <input type="checkbox" id="memoBgEnabled" checked>
-                                배경 표시
-                            </label>
-                            <div class="inline">
-                                <input type="color" id="memoBgColor" value="#ffffff">
+                    <div class="memo-toolbar">
+                        <!-- 1줄: 핵심 옵션 -->
+                        <div class="memo-toolbar-row">
+                            <span class="memo-toolbar-title">메모</span>
+                            <div class="memo-toolbar-group">
+                                <input type="number" id="memoFontSize" min="6" max="72" value="14" title="글자 크기">
+                                <input type="color" id="memoTextColor" value="#111111" title="글자 색">
+                                <button type="button" class="memo-toolbar-btn" id="memoBoldBtn" title="굵게">B</button>
                             </div>
-                        </div>
-                        <div class="memo-field">
-                            <label for="memoBorderWidth">테두리</label>
-                            <div class="inline">
-                                <input type="number" id="memoBorderWidth" min="0" max="10" value="1">
-                                <input type="color" id="memoBorderColor" value="#333333">
+                            <div class="memo-toolbar-group">
+                                <label>너비</label>
+                                <input type="number" id="memoWidth" min="80" max="800" value="220" title="메모 너비">
                             </div>
+                            <div class="memo-toolbar-group">
+                                <label>여백</label>
+                                <input type="number" id="memoPadding" min="0" max="40" value="6" title="내부 여백">
+                            </div>
+                            <div class="memo-toolbar-group">
+                                <input type="checkbox" id="memoBgEnabled" checked title="배경 표시">
+                                <input type="color" id="memoBgColor" value="#ffffff" title="배경 색">
+                            </div>
+                            <button type="button" class="memo-expand-btn" id="memoExpandBtn" title="더보기"></button>
+                        </div>
+                        <!-- 2줄: 추가 옵션 (접힘) -->
+                        <div class="memo-toolbar-row row2">
+                            <div class="memo-toolbar-group">
+                                <label>테두리</label>
+                                <input type="number" id="memoBorderWidth" min="0" max="10" value="1" title="테두리 두께">
+                                <input type="color" id="memoBorderColor" value="#333333" title="테두리 색">
+                            </div>
+                            <div class="memo-toolbar-group">
+                                <label>투명도</label>
+                                <input type="range" id="memoOpacity" min="0" max="100" value="90" title="투명도">
+                            </div>
+                            <button type="button" class="memo-default-btn" id="memoDefaultBtn">기본값</button>
                         </div>
                     </div>
+                    <input type="checkbox" id="memoBold" style="display:none">
                 </div>
             </div>
         </div>
@@ -3935,7 +3974,7 @@ HTML_TEMPLATE = """
         const memoEditorText = document.getElementById('memoEditorText');
         const memoEditorSave = document.getElementById('memoEditorSave');
         const memoEditorCancel = document.getElementById('memoEditorCancel');
-        const memoSelectedLabel = document.getElementById('memoSelectedLabel');
+        const memoBoldBtn = document.getElementById('memoBoldBtn');
         const memoFontSize = document.getElementById('memoFontSize');
         const memoTextColor = document.getElementById('memoTextColor');
         const memoBold = document.getElementById('memoBold');
@@ -4746,7 +4785,8 @@ HTML_TEMPLATE = """
             memoBorderWidth.value = style.borderWidth;
             memoBorderColor.value = style.borderColor;
             memoBgColor.disabled = !memoBgEnabled.checked;
-            memoSelectedLabel.textContent = memo ? `선택됨 (${memo.id})` : '기본 스타일';
+            // 굵게 버튼 상태 동기화
+            memoBoldBtn.classList.toggle('active', style.bold);
             memoControlSync = false;
         }
 
@@ -4825,6 +4865,19 @@ HTML_TEMPLATE = """
                     e.stopPropagation();
                     setSelectedMemo(memo.id);
                 });
+
+                // 메모 박스 리사이즈 감지 (드래그로 크기 조절)
+                const resizeObserver = new ResizeObserver((entries) => {
+                    for (const entry of entries) {
+                        const newWidth = Math.round(entry.contentRect.width + (style.padding * 2));
+                        if (newWidth !== style.width && newWidth >= 80) {
+                            memo.style = memo.style || {};
+                            memo.style.width = newWidth;
+                            memoWidth.value = newWidth;
+                        }
+                    }
+                });
+                resizeObserver.observe(memoEl);
 
                 memoLayer.appendChild(memoEl);
             });
@@ -4974,6 +5027,37 @@ HTML_TEMPLATE = """
         window.addEventListener('resize', renderMemos);
         previewImg.addEventListener('load', () => {
             renderMemos();
+        });
+
+        // 메모 패널 펼침/접힘 토글
+        const memoExpandBtn = document.getElementById('memoExpandBtn');
+        const memoPanel = document.getElementById('memoPanel');
+        memoExpandBtn.addEventListener('click', () => {
+            memoPanel.classList.toggle('expanded');
+        });
+
+        // 굵게 버튼 (B) 토글
+        const memoBoldBtn = document.getElementById('memoBoldBtn');
+        memoBoldBtn.addEventListener('click', () => {
+            memoBold.checked = !memoBold.checked;
+            memoBoldBtn.classList.toggle('active', memoBold.checked);
+            applyMemoStyle('bold', memoBold.checked);
+        });
+
+        // 기본값 버튼
+        const memoDefaultBtn = document.getElementById('memoDefaultBtn');
+        memoDefaultBtn.addEventListener('click', () => {
+            memoFontSize.value = memoDefaults.fontSize;
+            memoTextColor.value = '#111111';
+            memoBold.checked = false;
+            memoBoldBtn.classList.remove('active');
+            memoWidth.value = memoDefaults.width;
+            memoPadding.value = memoDefaults.padding;
+            memoOpacity.value = memoDefaults.opacity * 100;
+            memoBgEnabled.checked = true;
+            memoBgColor.value = '#ffffff';
+            memoBorderWidth.value = memoDefaults.borderWidth;
+            memoBorderColor.value = '#333333';
         });
 
         memoFontSize.addEventListener('input', () => {
