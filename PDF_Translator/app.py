@@ -3232,17 +3232,19 @@ HTML_TEMPLATE = """
         zoomReset.addEventListener('click', () => applyZoom(100));
         
         // 마우스 휠로 확대/축소 (Ctrl + 휠) - PDF 영역에서만
+        // Chrome 73+ 에서는 document/window 레벨이 아닌 특정 요소에 직접 바인딩해야 함
         const previewImageContainer = document.querySelector('.preview-image');
         
-        // document 레벨에서 캡처하여 브라우저 기본 동작 차단
-        document.addEventListener('wheel', (e) => {
-            if (e.ctrlKey && previewImageContainer && previewImageContainer.contains(e.target)) {
+        // onwheel 프로퍼티로 직접 바인딩 (Chrome에서 확실히 동작)
+        previewImageContainer.onwheel = function(e) {
+            if (e.ctrlKey) {
                 e.preventDefault();
                 e.stopPropagation();
                 const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
                 applyZoom(currentZoom + delta);
+                return false;
             }
-        }, { passive: false, capture: true });
+        };
 
         // 설정 관련 요소
         const settingsBtn = document.getElementById('settingsBtn');

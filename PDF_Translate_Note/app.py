@@ -3904,7 +3904,7 @@ HTML_TEMPLATE = """
                                 <input type="checkbox" id="memoBgEnabled" checked title="배경 표시">
                                 <input type="color" id="memoBgColor" value="#ffffff" title="배경 색">
                             </div>
-                            <button type="button" class="memo-expand-btn" id="memoExpandBtn" title="더보기"></button>
+                            <button type="button" class="memo-expand-btn" id="memoExpandBtn" title="더보기">▼</button>
                         </div>
                         <!-- 2줄: 추가 옵션 (접힘) -->
                         <div class="memo-toolbar-row row2">
@@ -5033,7 +5033,8 @@ HTML_TEMPLATE = """
         const memoExpandBtn = document.getElementById('memoExpandBtn');
         const memoPanel = document.getElementById('memoPanel');
         memoExpandBtn.addEventListener('click', () => {
-            memoPanel.classList.toggle('expanded');
+            const isExpanded = memoPanel.classList.toggle('expanded');
+            memoExpandBtn.textContent = isExpanded ? '▲' : '▼';
         });
 
         // 굵게 버튼 (B) 토글
