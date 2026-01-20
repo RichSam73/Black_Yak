@@ -408,7 +408,13 @@ def translate_with_dict(korean_text, target_lang):
     result = korean_text
     if target_lang in GARMENT_DICT:
         for kor, trans in GARMENT_DICT[target_lang].items():
-            result = result.replace(kor, trans)
+            # ★ 새 dict 구조 지원: {"full": "...", "abbr": "..."}
+            if isinstance(trans, dict):
+                trans_text = trans.get("full", "")
+            else:
+                trans_text = trans
+            if trans_text:
+                result = result.replace(kor, trans_text)
     return result
 
 
@@ -4182,7 +4188,7 @@ def analyze():
             print(f"[Parallel Translation] {ai_engine.upper()} - {total_pages} pages", flush=True)
             
             translations_by_page = translate_pages_parallel(
-                all_pages_data, target_lang, ai_engine, api_key, model, max_workers=3
+                all_pages_data, target_lang, ai_engine, api_key, model, max_workers=5
             )
             
             translate_time = time.time() - translate_start
