@@ -3231,9 +3231,12 @@ HTML_TEMPLATE = """
         zoomOut.addEventListener('click', () => applyZoom(currentZoom - ZOOM_STEP));
         zoomReset.addEventListener('click', () => applyZoom(100));
         
-        // 마우스 휠로 확대/축소 (Ctrl + 휠)
-        document.querySelector('.preview-image').addEventListener('wheel', (e) => {
-            if (e.ctrlKey) {
+        // 마우스 휠로 확대/축소 (Ctrl + 휠) - PDF 영역에서만
+        const previewImageContainer = document.querySelector('.preview-image');
+        
+        // document 레벨에서 캡처하여 브라우저 기본 동작 차단
+        document.addEventListener('wheel', (e) => {
+            if (e.ctrlKey && previewImageContainer && previewImageContainer.contains(e.target)) {
                 e.preventDefault();
                 e.stopPropagation();
                 const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;

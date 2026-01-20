@@ -5037,7 +5037,6 @@ HTML_TEMPLATE = """
         });
 
         // 굵게 버튼 (B) 토글
-        const memoBoldBtn = document.getElementById('memoBoldBtn');
         memoBoldBtn.addEventListener('click', () => {
             memoBold.checked = !memoBold.checked;
             memoBoldBtn.classList.toggle('active', memoBold.checked);
