@@ -7,20 +7,9 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.9.3"
+VERSION = "1.9.1"
 VERSION_DATE = "2026-01-20"
 VERSION_NOTES = """
-v1.9.3 (2026-01-20)
-- ★ Google Vision OCR 개선: TEXT_DETECTION → DOCUMENT_TEXT_DETECTION
-- ★ 인접 텍스트 병합 기능 추가 (merge_adjacent_texts)
-- 복합어 분리 문제 해결 ("행거루프", "삼각고리", "콘사" 등)
-- 번역 시 글자 겹침 현상 해결
-
-v1.9.2 (2026-01-20)
-- ★ BBox 마진 조정: margin_y -2 → 0
-- 한글 텍스트 완전 제거 (번역 텍스트 겹침 해결)
-- OCR bbox가 테이블 선 외부에 있으므로 선 침범 최소화
-
 v1.9.1 (2026-01-20)
 - ★ 한글 폰트 수정: arial.ttf → malgun.ttf (맑은 고딕)
 - 한글 텍스트가 □□□로 깨지는 문제 해결
@@ -125,6 +114,10 @@ from img2table.document import Image as Img2TableImage  # 테이블 감지용
 from google.cloud import vision
 from google.oauth2 import service_account
 
+# ★ 환경변수에서 API 키 로드
+from dotenv import load_dotenv
+load_dotenv()  # .env 파일 로드
+
 # ★ 로깅 설정 (겹침 감지 디버깅용)
 LOG_FILE = os.path.join(os.path.dirname(__file__), 'overlap_debug.log')
 
@@ -159,12 +152,12 @@ CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
-# ★ 하드코딩된 API 키 (Private repo 전용)
+# ★ API 키 (환경변수에서 로드 - .env 파일 사용)
 HARDCODED_API_KEYS = {
-    "openai": "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",
-    "claude_sije": "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",
-    "claude_seam": "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",
-    "gemini": "AIzaSyCTIENSGbL_K6dreyMC7TwdD1yOtDnAmsI"
+    "openai": os.environ.get("OPENAI_API_KEY", ""),
+    "claude_sije": os.environ.get("CLAUDE_API_KEY_SIJE", ""),
+    "claude_seam": os.environ.get("CLAUDE_API_KEY_SEAM", ""),
+    "gemini": os.environ.get("GEMINI_API_KEY", "")
 }
 
 # ★ Google Cloud Vision OCR 설정
@@ -180,12 +173,7 @@ def get_vision_client():
     return vision_client
 
 def ocr_with_google_vision(image_path):
-    """Google Cloud Vision API로 OCR 수행 (v2: DOCUMENT_TEXT_DETECTION 사용)
-
-    ★ 변경사항 (v1.9.3):
-    - TEXT_DETECTION → DOCUMENT_TEXT_DETECTION
-    - 단어(WORD) 단위로 그룹화하여 복합어 분리 방지
-    - "행거루프", "삼각고리" 등이 하나의 텍스트로 인식됨
+    """Google Cloud Vision API로 OCR 수행
 
     Returns:
         list: PaddleOCR과 동일한 형식 [[bbox, (text, confidence)], ...]
@@ -202,57 +190,40 @@ def ocr_with_google_vision(image_path):
         content = f.read()
 
     image = vision.Image(content=content)
-    
-    # ★ 핵심 변경: text_detection → document_text_detection
-    # document_text_detection은 단어(WORD) 단위로 그룹화하여 반환
-    response = client.document_text_detection(image=image)
+    response = client.text_detection(image=image)
 
     if response.error.message:
         print(f"[Vision OCR] Error: {response.error.message}")
         return None
 
-    if not response.full_text_annotation:
+    texts = response.text_annotations
+
+    if not texts:
         print("[Vision OCR] No text detected")
         return []
 
-    # DOCUMENT_TEXT_DETECTION 결과 파싱
-    # 구조: pages → blocks → paragraphs → words → symbols
+    # 첫 번째는 전체 텍스트이므로 스킵, 나머지가 개별 단어/문장
     results = []
-    
-    for page in response.full_text_annotation.pages:
-        for block in page.blocks:
-            for paragraph in block.paragraphs:
-                for word in paragraph.words:
-                    # 단어의 모든 symbol 텍스트 합치기
-                    word_text = ''.join([symbol.text for symbol in word.symbols])
-                    
-                    if not word_text.strip():
-                        continue
-                    
-                    # 단어 bounding box 추출
-                    vertices = word.bounding_box.vertices
-                    
-                    x_coords = [v.x if hasattr(v, 'x') else 0 for v in vertices]
-                    y_coords = [v.y if hasattr(v, 'y') else 0 for v in vertices]
-                    
-                    x1, x2 = min(x_coords), max(x_coords)
-                    y1, y2 = min(y_coords), max(y_coords)
-                    
-                    # bbox 형식: [[x1,y1], [x2,y1], [x2,y2], [x1,y2]]
-                    bbox = [
-                        [x1, y1],
-                        [x2, y1],
-                        [x2, y2],
-                        [x1, y2]
-                    ]
-                    
-                    # confidence 추출
-                    confidence = word.confidence if hasattr(word, 'confidence') and word.confidence else 0.99
-                    
-                    results.append([bbox, (word_text, confidence)])
+    for text in texts[1:]:  # Skip first (full text)
+        vertices = text.bounding_poly.vertices
+
+        # Google Vision BBox 그대로 사용 (축소하면 지우기 영역과 불일치 발생)
+        x1 = vertices[0].x
+        y1 = vertices[0].y
+        x2 = vertices[1].x
+        y2 = vertices[2].y
+
+        # bbox 형식: [[x1,y1], [x2,y1], [x2,y2], [x1,y2]]
+        bbox = [
+            [x1, y1],
+            [x2, y1],
+            [x2, y2],
+            [x1, y2]
+        ]
+        results.append([bbox, (text.description, 0.99)])  # 신뢰도 0.99 고정
 
     elapsed = time.time() - start_time
-    print(f"[Vision OCR v2] Detected {len(results)} words in {elapsed:.2f}s (DOCUMENT_TEXT_DETECTION)")
+    print(f"[Vision OCR] Detected {len(results)} texts in {elapsed:.2f}s")
 
     return results
 
@@ -572,130 +543,10 @@ def get_ocr_results_with_engine(image_paths, ocr_engine='paddleocr'):
         total_time = time.time() - batch_start
         total_texts = sum(len(t) for t in all_texts)
         print(f"[Vision OCR] TOTAL: {total_time:.2f}s for {len(image_paths)} pages, {total_texts} texts", flush=True)
-        
-        # ★ 인접 텍스트 병합 적용
-        merged_results = [merge_adjacent_texts(page_texts) for page_texts in all_texts]
-        return merged_results
+        return all_texts
     else:
         # PaddleOCR 배치 처리 (기존 함수 사용)
-        paddle_results = get_ocr_results_batch(image_paths)
-        # ★ 인접 텍스트 병합 적용
-        merged_results = [merge_adjacent_texts(page_texts) for page_texts in paddle_results]
-        return merged_results
-
-
-def merge_adjacent_texts(texts, horizontal_gap=15, vertical_threshold=10):
-    """인접한 텍스트 박스를 병합 (글자 겹침 방지)
-    
-    ★ v1.9.3 추가: OCR이 "콘사"를 "콘"+"사"로 분리 인식하면
-    번역 시 "Cone"+"Thread"가 겹치는 문제 해결
-    
-    Args:
-        texts: OCR 결과 리스트 [{"bbox": [...], "text": "...", ...}, ...]
-        horizontal_gap: 수평 방향 병합 임계값 (픽셀) - 이 거리 이내면 병합
-        vertical_threshold: 수직 방향 허용 오차 (픽셀) - Y좌표 차이 허용값
-    
-    Returns:
-        병합된 텍스트 리스트
-    """
-    if not texts or len(texts) <= 1:
-        return texts
-    
-    def get_bbox_coords(bbox):
-        """bbox에서 좌표 추출: (x_min, y_min, x_max, y_max)"""
-        x_coords = [p[0] for p in bbox]
-        y_coords = [p[1] for p in bbox]
-        return min(x_coords), min(y_coords), max(x_coords), max(y_coords)
-    
-    def make_bbox(x1, y1, x2, y2):
-        """좌표로 bbox 생성"""
-        return [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
-    
-    def should_merge(t1, t2):
-        """두 텍스트를 병합해야 하는지 확인"""
-        x1_min, y1_min, x1_max, y1_max = get_bbox_coords(t1["bbox"])
-        x2_min, y2_min, x2_max, y2_max = get_bbox_coords(t2["bbox"])
-        
-        # Y 좌표 중심이 비슷해야 함 (같은 줄)
-        y1_center = (y1_min + y1_max) / 2
-        y2_center = (y2_min + y2_max) / 2
-        
-        if abs(y1_center - y2_center) > vertical_threshold:
-            return False
-        
-        # X 좌표가 인접해야 함 (t1이 왼쪽, t2가 오른쪽)
-        # gap = t2의 왼쪽 - t1의 오른쪽
-        gap = x2_min - x1_max
-        
-        # 약간 겹치거나(-5px) horizontal_gap 이내면 병합
-        return -5 <= gap <= horizontal_gap
-    
-    # 결과를 리스트로 복사
-    result = [dict(t) for t in texts]
-    
-    # X 좌표 기준으로 정렬 (왼쪽 → 오른쪽)
-    result.sort(key=lambda t: get_bbox_coords(t["bbox"])[0])
-    
-    # 반복적으로 병합
-    merged = True
-    iteration = 0
-    while merged and iteration < 10:  # 무한루프 방지
-        merged = False
-        iteration += 1
-        new_result = []
-        used = set()
-        
-        for i, t1 in enumerate(result):
-            if i in used:
-                continue
-            
-            current = dict(t1)
-            current["bbox"] = list(t1["bbox"])  # 깊은 복사
-            
-            for j, t2 in enumerate(result):
-                if i >= j or j in used:
-                    continue
-                
-                if should_merge(current, t2):
-                    used.add(j)
-                    merged = True
-                    
-                    # bbox 병합
-                    x1_min, y1_min, x1_max, y1_max = get_bbox_coords(current["bbox"])
-                    x2_min, y2_min, x2_max, y2_max = get_bbox_coords(t2["bbox"])
-                    
-                    new_bbox = make_bbox(
-                        min(x1_min, x2_min),
-                        min(y1_min, y2_min),
-                        max(x1_max, x2_max),
-                        max(y1_max, y2_max)
-                    )
-                    current["bbox"] = new_bbox
-                    
-                    # 텍스트 병합 (왼쪽→오른쪽 순서)
-                    if x1_min <= x2_min:
-                        current["text"] = current["text"] + t2["text"]
-                    else:
-                        current["text"] = t2["text"] + current["text"]
-                    
-                    # has_korean 업데이트
-                    current["has_korean"] = current.get("has_korean", False) or t2.get("has_korean", False)
-                    
-                    # confidence 평균
-                    c1 = current.get("confidence", 1.0)
-                    c2 = t2.get("confidence", 1.0)
-                    current["confidence"] = (c1 + c2) / 2
-            
-            new_result.append(current)
-        
-        result = new_result
-    
-    original_count = len(texts)
-    merged_count = len(result)
-    if original_count != merged_count:
-        print(f"[Text Merge] {original_count} → {merged_count} texts (merged {original_count - merged_count})", flush=True)
-    
-    return result
+        return get_ocr_results_batch(image_paths)
 
 
 def translate_with_dict(korean_text, target_lang):
@@ -1810,9 +1661,9 @@ def erase_text_region(img, bbox):
 
     # ★ 지우기 영역 설정 (Google Vision용)
     # margin_x = 3: X축 좌우 3px 확장 (한글 잔여 제거)
-    # margin_y = 0: Y축 마진 없음 (한글 완전 제거, 테이블 선은 OCR bbox 외부에 있음)
+    # margin_y = -2: Y축 상하 2px 축소 (테이블 선 보호)
     margin_x = 3
-    margin_y = 0
+    margin_y = -2
     x_min_ext = max(0, x_min - margin_x)
     y_min_ext = max(0, y_min - margin_y)  # y_min + 3 (아래로 축소)
     x_max_ext = min(width, x_max + margin_x)
