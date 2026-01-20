@@ -538,3 +538,36 @@ def wrap_text(text, font, max_width, draw):
 1. **boysugi20/python-image-translator** - EasyOCR + PIL 기반 번역
 2. **Shirochi-stack/Glossarion** - AI 기반 만화 번역
 3. **ImageTrans (BasicCAT)** - 전문 이미지 번역 도구
+
+
+## PDF 작업 가이드
+
+PDF 관련 작업 시 `~/.claude/skills/pdf/` 폴더의 문서 참조:
+- SKILL.md: 기본 가이드 (병합, 분할, 텍스트/테이블 추출, 생성)
+- FORMS.md: PDF 폼 작성 (fillable fields, annotation 방식)
+- REFERENCE.md: 고급 기능, 성능 최적화
+
+### 권장 라이브러리 (작업별)
+| 작업 | 라이브러리 |
+|------|-----------|
+| 텍스트 추출 | pdfplumber |
+| 테이블 추출 | pdfplumber + pandas |
+| PDF 생성 | reportlab |
+| 병합/분할/회전 | pypdf |
+| 빠른 렌더링 | pypdfium2 |
+| 스캔 PDF OCR | pytesseract + pdf2image |
+| 폼 작성 | pypdf 또는 pdf-lib (JS) |
+
+### 성능 팁
+- 대용량 텍스트 추출: `pdftotext` CLI가 가장 빠름
+- 이미지 추출: `pdfimages` CLI 사용
+- 대용량 PDF: chunk 단위 처리
+
+
+C:\Users\suksu\.claude\
+├── CLAUDE.md          ← 전역 설정 (여기에 PDF 가이드 추가)
+└── skills\
+    └── pdf\
+        ├── SKILL.md
+        ├── FORMS.md
+        └── REFERENCE.md
