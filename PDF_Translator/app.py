@@ -3231,12 +3231,12 @@ HTML_TEMPLATE = """
         zoomOut.addEventListener('click', () => applyZoom(currentZoom - ZOOM_STEP));
         zoomReset.addEventListener('click', () => applyZoom(100));
         
-        // 마우스 휠로 확대/축소 (Ctrl + 휠) - PDF 영역에서만
-        // Chrome 73+ 에서는 특정 요소에 addEventListener + { passive: false } 필수
+        // 마우스 휠로 확대/축소 (Alt + 휠) - PDF 영역에서만
+        // Ctrl+휠은 브라우저 줌이라 막을 수 없음, Alt+휠 사용
         const previewImageContainer = document.querySelector('.preview-image');
         
         previewImageContainer.addEventListener('wheel', function(e) {
-            if (e.ctrlKey) {
+            if (e.altKey) {
                 e.preventDefault();
                 e.stopPropagation();
                 const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;

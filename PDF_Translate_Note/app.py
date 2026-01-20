@@ -3132,6 +3132,15 @@ HTML_TEMPLATE = """
             position: relative;
             display: inline-block;
         }
+        .arrow-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
         .memo-layer {
             position: absolute;
             top: 0;
@@ -3852,6 +3861,7 @@ HTML_TEMPLATE = """
                 <div class="preview-image">
                     <div class="preview-stage" id="previewStage">
                         <img id="previewImg" src="" alt="페이지 프리뷰">
+                        <svg class="arrow-layer" id="arrowLayer"></svg>
                         <div class="memo-layer" id="memoLayer"></div>
                     </div>
                 </div>
@@ -3959,6 +3969,7 @@ HTML_TEMPLATE = """
         const previewStage = document.getElementById('previewStage');
         const previewImg = document.getElementById('previewImg');
         const memoLayer = document.getElementById('memoLayer');
+        const arrowLayer = document.getElementById('arrowLayer');
         const pageInfo = document.getElementById('pageInfo');
         const prevPageBtn = document.getElementById('prevPageBtn');
         const nextPageBtn = document.getElementById('nextPageBtn');
@@ -3997,6 +4008,7 @@ HTML_TEMPLATE = """
         let memoEditorState = null;
         let memoContextState = null;
         let memoDragState = null;
+        let arrowDragState = null;  // 화살표 드래그 상태
         const memoDefaults = {
             fontSize: 14,
             color: '#111111',
@@ -4744,9 +4756,9 @@ HTML_TEMPLATE = """
             memoEditorText.value = '';
         }
 
-        function openMemoEditor({ mode, memoId, position, clientX, clientY }) {
-            memoEditorState = { mode, memoId, position };
-            memoEditorTitle.textContent = mode === 'edit' ? '메모 편집' : '메모 추가';
+        function openMemoEditor({ mode, memoId, position, clientX, clientY, arrow = null }) {
+            memoEditorState = { mode, memoId, position, arrow };
+            memoEditorTitle.textContent = mode === 'edit' ? '메모 편집' : (arrow ? '메모 추가 (화살표)' : '메모 추가');
             if (mode === 'edit' && memoId) {
                 const memo = getMemoById(memoId);
                 memoEditorText.value = memo ? memo.text : '';
@@ -4878,6 +4890,33 @@ HTML_TEMPLATE = """
 
                 memoLayer.appendChild(memoEl);
             });
+
+            // 화살표 렌더링
+            renderArrows(memos, stageWidth, stageHeight);
+        }
+
+        function renderArrows(memos, stageWidth, stageHeight) {
+            let arrowsHtml = `
+                <defs>
+                    <marker id="arrowhead-saved" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#ff6b6b"/>
+                    </marker>
+                </defs>
+            `;
+            memos.forEach(memo => {
+                if (memo.arrow) {
+                    const memoX = memo.x * stageWidth;
+                    const memoY = memo.y * stageHeight;
+                    const targetX = memo.arrow.targetX * stageWidth;
+                    const targetY = memo.arrow.targetY * stageHeight;
+                    arrowsHtml += `
+                        <line x1="${memoX}" y1="${memoY}" x2="${targetX}" y2="${targetY}"
+                              stroke="#ff6b6b" stroke-width="2" marker-end="url(#arrowhead-saved)"
+                              data-memo-id="${memo.id}"/>
+                    `;
+                }
+            });
+            arrowLayer.innerHTML = arrowsHtml;
         }
 
         function onMemoDrag(e) {
@@ -4910,9 +4949,90 @@ HTML_TEMPLATE = """
             renderMemos();
         }
 
-        memoLayer.addEventListener('contextmenu', (e) => {
+        // 화살표 드래그 헬퍼 함수
+        function drawTempArrow(x1, y1, x2, y2) {
+            arrowLayer.innerHTML = `
+                <defs>
+                    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#667eea"/>
+                    </marker>
+                </defs>
+                <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"
+                      stroke="#667eea" stroke-width="2" marker-end="url(#arrowhead)"/>
+            `;
+        }
+        function clearTempArrow() {
+            arrowLayer.innerHTML = '';
+        }
+
+        // 우클릭 + 드래그로 화살표 생성
+        previewStage.addEventListener('mousedown', (e) => {
+            if (e.button !== 2) return;  // 우클릭만
+            if (!isPreviewMode) return;
+
+            const memoEl = e.target.closest('.memo-item');
+            if (memoEl) return;  // 메모 위에서는 기존 동작
+
+            const rect = getStageRect();
+            const startX = e.clientX - rect.left;
+            const startY = e.clientY - rect.top;
+            const startPosition = clientToStageRatio(e.clientX, e.clientY);
+
+            arrowDragState = {
+                startX, startY,
+                startPosition,
+                startClientX: e.clientX,
+                startClientY: e.clientY,
+                hasDragged: false
+            };
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!arrowDragState) return;
+
+            const dx = e.clientX - arrowDragState.startClientX;
+            const dy = e.clientY - arrowDragState.startClientY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance > 10) {
+                arrowDragState.hasDragged = true;
+                const rect = getStageRect();
+                const currentX = e.clientX - rect.left;
+                const currentY = e.clientY - rect.top;
+                // 화살표: 현재 위치(메모박스) → 시작 위치(화살촉)
+                drawTempArrow(currentX, currentY, arrowDragState.startX, arrowDragState.startY);
+            }
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (!arrowDragState) return;
+
+            if (arrowDragState.hasDragged) {
+                clearTempArrow();
+                const endPosition = clientToStageRatio(e.clientX, e.clientY);
+                // 메모 에디터 열기 (화살표 정보 포함)
+                openMemoEditor({
+                    mode: 'add',
+                    memoId: null,
+                    position: endPosition,  // 메모박스 위치
+                    clientX: e.clientX,
+                    clientY: e.clientY,
+                    arrow: {
+                        targetX: arrowDragState.startPosition.x,  // 화살촉 위치
+                        targetY: arrowDragState.startPosition.y
+                    }
+                });
+            }
+            arrowDragState = null;
+        });
+
+        previewStage.addEventListener('contextmenu', (e) => {
             if (!isPreviewMode) return;
             e.preventDefault();
+
+            // 드래그 중이면 컨텍스트 메뉴 무시
+            if (arrowDragState && arrowDragState.hasDragged) return;
+
             const memoEl = e.target.closest('.memo-item');
             const position = clientToStageRatio(e.clientX, e.clientY);
 
@@ -4992,6 +5112,13 @@ HTML_TEMPLATE = """
                         y: memoEditorState.position.y,
                         style: { ...memoDefaults }
                     };
+                    // 화살표 정보 추가
+                    if (memoEditorState.arrow) {
+                        memo.arrow = {
+                            targetX: memoEditorState.arrow.targetX,
+                            targetY: memoEditorState.arrow.targetY
+                        };
+                    }
                     memos.push(memo);
                     setSelectedMemo(memo.id);
                 }
