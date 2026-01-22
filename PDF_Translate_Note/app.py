@@ -2676,8 +2676,9 @@ HTML_TEMPLATE = """
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            height: 100vh;
             padding: 5px;
+            overflow: hidden;  /* 전체 페이지 스크롤 방지 */
         }
         .container {
             width: 100%;
@@ -2687,7 +2688,10 @@ HTML_TEMPLATE = """
             border-radius: 6px;
             padding: 5px 10px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            min-height: calc(100vh - 10px);
+            height: calc(100vh - 10px);  /* 화면에 맞춤 */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
         .header-row {
             display: flex;
@@ -2997,7 +3001,8 @@ HTML_TEMPLATE = """
         /* 에디터 레이아웃 */
         .editor-container {
             display: none;
-            height: calc(100vh - 70px);
+            flex: 1;  /* 남은 공간 모두 차지 */
+            min-height: 0;  /* flex 자식 overflow 허용 */
             position: relative;
         }
         .editor-container.active {
