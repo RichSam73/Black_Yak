@@ -7,9 +7,14 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.9.8"
+VERSION = "1.9.9"
 VERSION_DATE = "2026-01-22"
 VERSION_NOTES = """
+v1.9.9 (2026-01-22)
+- ★ object-fit: contain 좌표 보정: 화살표 스냅이 정확한 위치로 연결
+- getActualImageSize() 함수로 실제 이미지 렌더링 크기/오프셋 계산
+- getBoundingClientRect() 대신 실제 렌더링 치수 사용으로 좌표 정확도 향상
+
 v1.9.8 (2026-01-22)
 - ★ 줌 호환: 화살표 스냅이 확대/축소 상태에서도 정확히 동작
 - 화살표 드래그 시 줌 레벨 고려한 좌표 변환
@@ -194,55 +199,131 @@ def get_vision_client():
         vision_client = vision.ImageAnnotatorClient(credentials=credentials)
     return vision_client
 
-def merge_adjacent_words(words, horizontal_gap=20, vertical_threshold=10):
+def merge_adjacent_words(words, horizontal_gap=20, vertical_threshold=10, debug=True):
     """인접한 단어들을 하나의 텍스트 박스로 병합 (PaddleOCR 스타일)
-    
+
     Args:
         words: [(text, bbox), ...] where bbox = [x1, y1, x2, y2]
         horizontal_gap: 이 픽셀 이내면 같은 그룹으로 병합
         vertical_threshold: y좌표 차이가 이 이내면 같은 줄로 판단
-    
+        debug: 디버그 로그 출력 여부
+
     Returns:
         list: [[bbox, (merged_text, confidence)], ...]
     """
+    import datetime
+
+    # 디버그 로그 파일
+    log_path = os.path.join(os.path.dirname(__file__), "ocr_merge_debug.log")
+
+    def log(msg):
+        if debug:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(msg + "\n")
+
     if not words:
         return []
-    
+
+    # ===== 디버그: 시작 =====
+    if debug:
+        log("\n" + "="*80)
+        log(f"[{datetime.datetime.now()}] merge_adjacent_words 시작")
+        log(f"설정: horizontal_gap={horizontal_gap}, vertical_threshold={vertical_threshold}")
+        log(f"입력 단어 수: {len(words)}")
+        log("-"*80)
+        log("[원본 단어 목록 (정렬 전)]")
+        for i, (text, bbox) in enumerate(words):
+            x1, y1, x2, y2 = bbox
+            cy = (y1 + y2) / 2
+            log(f"  [{i:2d}] '{text}' | bbox=[{x1}, {y1}, {x2}, {y2}] | y_center={cy:.1f} | width={x2-x1}")
+
     # y좌표 기준으로 정렬 (같은 줄끼리 묶기)
     sorted_words = sorted(words, key=lambda w: (w[1][1], w[1][0]))  # y, x 순
-    
+
+    # ===== 디버그: 정렬 후 =====
+    if debug:
+        log("-"*80)
+        log("[정렬 후 단어 목록 (y1, x1 순)]")
+        for i, (text, bbox) in enumerate(sorted_words):
+            x1, y1, x2, y2 = bbox
+            cy = (y1 + y2) / 2
+            log(f"  [{i:2d}] '{text}' | bbox=[{x1}, {y1}, {x2}, {y2}] | y_center={cy:.1f}")
+        log("-"*80)
+        log("[병합 과정]")
+
     merged_results = []
     current_group = [sorted_words[0]]
-    
-    for word in sorted_words[1:]:
+    group_num = 1
+
+    if debug:
+        t, b = sorted_words[0]
+        log(f"  그룹#{group_num} 시작: '{t}'")
+
+    for idx, word in enumerate(sorted_words[1:], start=1):
         text, bbox = word
         x1, y1, x2, y2 = bbox
-        
+
         # 현재 그룹의 마지막 단어
         last_text, last_bbox = current_group[-1]
         last_x1, last_y1, last_x2, last_y2 = last_bbox
-        
+
         # 같은 줄인지 확인 (y좌표 차이)
         y_center = (y1 + y2) / 2
         last_y_center = (last_y1 + last_y2) / 2
-        same_line = abs(y_center - last_y_center) <= vertical_threshold
-        
+        y_diff = abs(y_center - last_y_center)
+        same_line = y_diff <= vertical_threshold
+
         # 수평 간격 확인
         h_gap = x1 - last_x2
         close_enough = h_gap <= horizontal_gap and h_gap >= -5  # 약간 겹쳐도 허용
-        
+
+        # ===== 디버그: 각 비교 =====
+        if debug:
+            log(f"\n  --- 비교 [{idx}]: '{last_text}' vs '{text}' ---")
+            log(f"      last: x1={last_x1}, y1={last_y1}, x2={last_x2}, y2={last_y2}, y_center={last_y_center:.1f}")
+            log(f"      curr: x1={x1}, y1={y1}, x2={x2}, y2={y2}, y_center={y_center:.1f}")
+            log(f"      y_diff={y_diff:.1f} (threshold={vertical_threshold}) → same_line={same_line}")
+            log(f"      h_gap={h_gap} (range=[-5, {horizontal_gap}]) → close_enough={close_enough}")
+
         if same_line and close_enough:
             # 같은 그룹에 추가
             current_group.append(word)
+            if debug:
+                log(f"      ✅ 병합: 그룹#{group_num}에 '{text}' 추가")
         else:
             # 현재 그룹 병합 후 새 그룹 시작
             merged_results.append(_merge_word_group(current_group))
+            if debug:
+                group_texts = [w[0] for w in current_group]
+                log(f"      ❌ 분리: 그룹#{group_num} 완료 → {group_texts}")
+                if not same_line:
+                    log(f"         이유: y_diff({y_diff:.1f}) > threshold({vertical_threshold})")
+                if not close_enough:
+                    if h_gap > horizontal_gap:
+                        log(f"         이유: h_gap({h_gap}) > horizontal_gap({horizontal_gap})")
+                    elif h_gap < -5:
+                        log(f"         이유: h_gap({h_gap}) < -5 (역순 정렬 의심!)")
             current_group = [word]
-    
+            group_num += 1
+            if debug:
+                log(f"      그룹#{group_num} 시작: '{text}'")
+
     # 마지막 그룹 처리
     if current_group:
         merged_results.append(_merge_word_group(current_group))
-    
+        if debug:
+            group_texts = [w[0] for w in current_group]
+            log(f"\n  그룹#{group_num} 완료 (마지막) → {group_texts}")
+
+    # ===== 디버그: 최종 결과 =====
+    if debug:
+        log("-"*80)
+        log(f"[최종 병합 결과] {len(words)}개 → {len(merged_results)}개 그룹")
+        for i, result in enumerate(merged_results):
+            bbox, (text, conf) = result
+            log(f"  그룹#{i+1}: '{text}'")
+        log("="*80 + "\n")
+
     return merged_results
 
 
@@ -326,7 +407,8 @@ def ocr_with_google_vision(image_path):
         words.append((text.description, [x1, y1, x2, y2]))
 
     # ★ 인접 단어 병합 (PaddleOCR 스타일) - gap 증가로 더 적극적 병합
-    results = merge_adjacent_words(words, horizontal_gap=35, vertical_threshold=15)
+    # horizontal_gap: 35→50 (숲+프린트 병합), vertical_threshold: 15→20 (한글 높이 차이)
+    results = merge_adjacent_words(words, horizontal_gap=50, vertical_threshold=20)
 
     elapsed = time.time() - start_time
     print(f"[Vision OCR] Detected {len(texts)-1} words → Merged to {len(results)} groups in {elapsed:.2f}s")
@@ -4578,6 +4660,9 @@ HTML_TEMPLATE = """
             currentPage = pageIdx;
             const page = pagesData[pageIdx];
 
+            // 페이지 전환 시 줌 리셋
+            applyZoom(100);
+
             // 미리보기 모드에 따라 이미지 표시
             if (isPreviewMode) {
                 showPreviewImage(pageIdx);
@@ -4939,6 +5024,33 @@ HTML_TEMPLATE = """
             renderArrows(memos, stageWidth, stageHeight);
         }
 
+        // ★ object-fit: contain 이미지의 실제 렌더링 크기 계산
+        // 주의: max-width/max-height: none이면 이미지는 자연 크기로 표시됨
+        function getActualImageSize(imgElement) {
+            // getBoundingClientRect()는 transform(줌) 적용 후 크기 반환
+            const rect = imgElement.getBoundingClientRect();
+            const zoomScale = currentZoom / 100;
+            
+            // 줌 적용 전 원본 렌더링 크기 (줌 제거)
+            const baseWidth = rect.width / zoomScale;
+            const baseHeight = rect.height / zoomScale;
+            
+            const naturalWidth = imgElement.naturalWidth || 1;
+            const naturalHeight = imgElement.naturalHeight || 1;
+            
+            // object-fit: contain이 실제로 적용되는 경우를 위한 계산
+            // (현재 CSS에서는 max-width/max-height: none이라 적용 안됨)
+            // 이미지가 자연 크기로 표시되므로 offset은 0
+            return {
+                width: baseWidth,
+                height: baseHeight,
+                offsetX: 0,
+                offsetY: 0,
+                containerWidth: baseWidth,
+                containerHeight: baseHeight
+            };
+        }
+
         function renderArrows(memos, stageWidth, stageHeight) {
             // ★ 줌을 고려한 이미지 위치 계산
             const imgRect = previewImg.getBoundingClientRect();
@@ -5019,9 +5131,8 @@ HTML_TEMPLATE = """
             const relClickY = clickY;
             
             // 이미지 실제 크기 (bbox는 이미지 픽셀 좌표 기준)
-            const imgEl = previewImg;
-            const imgWidth = imgEl.naturalWidth || 1;
-            const imgHeight = imgEl.naturalHeight || 1;
+            const imgWidth = previewImg.naturalWidth || 1;
+            const imgHeight = previewImg.naturalHeight || 1;
             
             // ★ 줌 적용된 이미지 렌더링 크기
             const renderedWidth = imgRect.width || 1;
@@ -5420,10 +5531,18 @@ HTML_TEMPLATE = """
                 return;
             }
 
+            // 한글이 포함된 텍스트만 필터링 (영어/숫자만 있는 항목 제외)
+            const koreanRegex = /[\uAC00-\uD7AF]/;
+            let displayIdx = 0;
+
             page.translations.forEach((item, idx) => {
+                // 한글이 없으면 제외
+                if (!koreanRegex.test(item.text)) return;
+
+                displayIdx++;
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td class="idx">${idx + 1}</td>
+                    <td class="idx">${displayIdx}</td>
                     <td class="korean">${escapeHtml(item.text)}</td>
                     <td>
                         <input type="text" class="trans-input"
