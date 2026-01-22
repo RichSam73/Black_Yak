@@ -7,9 +7,18 @@ PDF Translator - 한글 텍스트를 다국어로 번역하는 웹앱
 """
 
 # 버전 정보
-VERSION = "1.9.6"
-VERSION_DATE = "2026-01-20"
+VERSION = "1.9.8"
+VERSION_DATE = "2026-01-22"
 VERSION_NOTES = """
+v1.9.8 (2026-01-22)
+- ★ 줌 호환: 화살표 스냅이 확대/축소 상태에서도 정확히 동작
+- 화살표 드래그 시 줌 레벨 고려한 좌표 변환
+- 화살표 렌더링 시 이미지 렌더링 크기 기준 좌표 계산
+
+v1.9.7 (2026-01-22)
+- ★ 화살표 스냅 기능: 화살촉이 가장 가까운 텍스트 박스 중앙으로 자동 스냅
+- 우클릭 드래그 시 bbox 중앙으로 정확히 지시선 연결
+
 v1.9.6 (2026-01-20)
 - ★ Gemini 프롬프트 강화: 괄호 설명 추가 금지
 - ★ Google Vision 병합 gap 증가: 20→35px, 10→15px (더 적극적 병합)
@@ -3123,14 +3132,18 @@ HTML_TEMPLATE = """
             align-items: flex-start;
         }
         .preview-image img {
-            max-width: 100%;
-            max-height: 100%;
+            max-width: none;
+            max-height: none;
             object-fit: contain;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            pointer-events: none;  /* 이벤트가 previewStage로 전달되도록 */
+            transform-origin: top left;  /* 좌상단 기준 확대 - 스크롤 정상 동작 */
+            transition: transform 0.1s ease;
         }
         .preview-stage {
             position: relative;
             display: inline-block;
+            cursor: crosshair;  /* 미리보기 영역임을 표시 */
         }
         .arrow-layer {
             position: absolute;
@@ -4001,6 +4014,32 @@ HTML_TEMPLATE = """
         // 미리보기 상태
         let isPreviewMode = false;
         let previewCache = {};  // 페이지별 미리보기 캐시
+
+        // 줌 상태
+        let currentZoom = 100;
+        const ZOOM_MIN = 50;
+        const ZOOM_MAX = 200;
+        const ZOOM_STEP = 10;
+
+        // 줌 적용 함수
+        function applyZoom(zoom) {
+            currentZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
+            previewImg.style.transform = `scale(${currentZoom / 100})`;
+            console.log(`Zoom: ${currentZoom}%`);
+        }
+
+        // Ctrl+휠 줌 이벤트 (PDF 미리보기 영역에서만)
+        const previewImageContainer = document.querySelector('.preview-image');
+        if (previewImageContainer) {
+            previewImageContainer.addEventListener('wheel', function(e) {
+                if (e.ctrlKey) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+                    applyZoom(currentZoom + delta);
+                }
+            }, { passive: false });
+        }
 
         // 메모 상태
         let selectedMemoId = null;
@@ -4896,6 +4935,14 @@ HTML_TEMPLATE = """
         }
 
         function renderArrows(memos, stageWidth, stageHeight) {
+            // ★ 줌을 고려한 이미지 위치 계산
+            const imgRect = previewImg.getBoundingClientRect();
+            const stageRect = previewStage.getBoundingClientRect();
+            const imgOffsetX = imgRect.left - stageRect.left;
+            const imgOffsetY = imgRect.top - stageRect.top;
+            const imgWidth = imgRect.width || 1;
+            const imgHeight = imgRect.height || 1;
+            
             let arrowsHtml = `
                 <defs>
                     <marker id="arrowhead-saved" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -4907,8 +4954,9 @@ HTML_TEMPLATE = """
                 if (memo.arrow) {
                     const memoX = memo.x * stageWidth;
                     const memoY = memo.y * stageHeight;
-                    const targetX = memo.arrow.targetX * stageWidth;
-                    const targetY = memo.arrow.targetY * stageHeight;
+                    // ★ 화살표 타겟은 이미지 기준 비율이므로 이미지 렌더링 크기로 변환
+                    const targetX = imgOffsetX + memo.arrow.targetX * imgWidth;
+                    const targetY = imgOffsetY + memo.arrow.targetY * imgHeight;
                     arrowsHtml += `
                         <line x1="${memoX}" y1="${memoY}" x2="${targetX}" y2="${targetY}"
                               stroke="#ff6b6b" stroke-width="2" marker-end="url(#arrowhead-saved)"
@@ -4949,6 +4997,122 @@ HTML_TEMPLATE = """
             renderMemos();
         }
 
+        // ★ 클릭 위치에서 가장 가까운 bbox 찾아 중앙 좌표 반환
+        function findNearestBboxCenter(clickX, clickY) {
+            const page = pagesData[currentPage];
+            if (!page || !page.translations || page.translations.length === 0) {
+                console.log('[Arrow] No translations data');
+                return null;
+            }
+
+            // ★ 줌을 고려한 이미지 렌더링 크기 사용
+            const imgRect = previewImg.getBoundingClientRect();
+            const stageRect = previewStage.getBoundingClientRect();
+            
+            // 스테이지 내에서의 상대 클릭 좌표
+            const relClickX = clickX;
+            const relClickY = clickY;
+            
+            // 이미지 실제 크기 (bbox는 이미지 픽셀 좌표 기준)
+            const imgEl = previewImg;
+            const imgWidth = imgEl.naturalWidth || 1;
+            const imgHeight = imgEl.naturalHeight || 1;
+            
+            // ★ 줌 적용된 이미지 렌더링 크기
+            const renderedWidth = imgRect.width || 1;
+            const renderedHeight = imgRect.height || 1;
+            
+            // ★ 이미지가 스테이지 내에서 어디에 위치하는지 계산
+            const imgOffsetX = imgRect.left - stageRect.left;
+            const imgOffsetY = imgRect.top - stageRect.top;
+            
+            // ★ 클릭이 이미지 영역 내인지 확인하고 이미지 내 좌표로 변환
+            const imgClickX = ((relClickX - imgOffsetX) / renderedWidth) * imgWidth;
+            const imgClickY = ((relClickY - imgOffsetY) / renderedHeight) * imgHeight;
+
+            console.log('[Arrow] Zoom level:', currentZoom + '%');
+            console.log('[Arrow] Click pos (stage):', clickX, clickY);
+            console.log('[Arrow] Image offset in stage:', imgOffsetX, imgOffsetY);
+            console.log('[Arrow] Rendered size:', renderedWidth, 'x', renderedHeight);
+            console.log('[Arrow] Natural size:', imgWidth, 'x', imgHeight);
+            console.log('[Arrow] Click pos (image px):', imgClickX, imgClickY);
+
+            let nearestBbox = null;
+            let minDistance = Infinity;
+            let nearestText = '';
+
+            page.translations.forEach((item, idx) => {
+                if (!item.bbox || item.bbox.length < 4) return;
+
+                // bbox 형식 확인: [[x1,y1], [x2,y1], [x2,y2], [x1,y2]] 또는 다른 형식
+                let bboxX1, bboxY1, bboxX2, bboxY2;
+                
+                // bbox[0]이 배열인지 확인
+                if (Array.isArray(item.bbox[0])) {
+                    // [[x1,y1], [x2,y1], [x2,y2], [x1,y2]] 형식
+                    const xs = item.bbox.map(p => p[0]);
+                    const ys = item.bbox.map(p => p[1]);
+                    bboxX1 = Math.min(...xs);
+                    bboxY1 = Math.min(...ys);
+                    bboxX2 = Math.max(...xs);
+                    bboxY2 = Math.max(...ys);
+                } else {
+                    // [x1, y1, x2, y2] 형식
+                    bboxX1 = item.bbox[0];
+                    bboxY1 = item.bbox[1];
+                    bboxX2 = item.bbox[2];
+                    bboxY2 = item.bbox[3];
+                }
+
+                // bbox 중앙 좌표
+                const centerX = (bboxX1 + bboxX2) / 2;
+                const centerY = (bboxY1 + bboxY2) / 2;
+
+                // 클릭이 bbox 내부인지 확인
+                const isInside = imgClickX >= bboxX1 && imgClickX <= bboxX2 &&
+                                 imgClickY >= bboxY1 && imgClickY <= bboxY2;
+
+                // 거리 계산 (내부면 0, 외부면 중앙까지 거리)
+                let distance;
+                if (isInside) {
+                    distance = 0;
+                } else {
+                    distance = Math.sqrt(
+                        Math.pow(imgClickX - centerX, 2) +
+                        Math.pow(imgClickY - centerY, 2)
+                    );
+                }
+
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    nearestText = item.text || item.translated || '';
+                    nearestBbox = {
+                        centerX: centerX,
+                        centerY: centerY,
+                        imgWidth: imgWidth,
+                        imgHeight: imgHeight,
+                        bbox: [bboxX1, bboxY1, bboxX2, bboxY2]
+                    };
+                }
+            });
+
+            // 스냅 거리 제한 (이미지 픽셀 기준 150px 이내)
+            if (nearestBbox && minDistance <= 150) {
+                console.log('[Arrow] Nearest bbox:', nearestBbox.bbox, 'text:', nearestText);
+                console.log('[Arrow] Center (image px):', nearestBbox.centerX, nearestBbox.centerY);
+                // 이미지 좌표를 비율(0~1)로 변환
+                const result = {
+                    x: nearestBbox.centerX / nearestBbox.imgWidth,
+                    y: nearestBbox.centerY / nearestBbox.imgHeight
+                };
+                console.log('[Arrow] Center (ratio):', result.x, result.y);
+                return result;
+            }
+
+            console.log('[Arrow] No snap target (distance:', minDistance, ')');
+            return null;  // 스냅 대상 없음
+        }
+
         // 화살표 드래그 헬퍼 함수
         function drawTempArrow(x1, y1, x2, y2) {
             arrowLayer.innerHTML = `
@@ -4976,10 +5140,39 @@ HTML_TEMPLATE = """
             const rect = getStageRect();
             const startX = e.clientX - rect.left;
             const startY = e.clientY - rect.top;
-            const startPosition = clientToStageRatio(e.clientX, e.clientY);
+            
+            // ★ bbox 중앙으로 스냅 시도 (에러 방지)
+            let snappedPosition = null;
+            try {
+                snappedPosition = findNearestBboxCenter(startX, startY);
+            } catch (err) {
+                console.error('[Arrow] Snap error:', err);
+            }
+            
+            let startPosition;
+            let snappedStartX = startX;
+            let snappedStartY = startY;
+            
+            if (snappedPosition) {
+                // ★ 줌을 고려하여 비율 → 스테이지 픽셀 변환
+                const imgRect = previewImg.getBoundingClientRect();
+                const imgOffsetX = imgRect.left - rect.left;
+                const imgOffsetY = imgRect.top - rect.top;
+                
+                startPosition = snappedPosition;
+                snappedStartX = imgOffsetX + snappedPosition.x * imgRect.width;
+                snappedStartY = imgOffsetY + snappedPosition.y * imgRect.height;
+                console.log('[Arrow] Snapped to bbox center:', snappedPosition);
+                console.log('[Arrow] Image offset:', imgOffsetX, imgOffsetY);
+                console.log('[Arrow] Snapped stage coords:', snappedStartX, snappedStartY);
+            } else {
+                // 스냅 대상 없으면 원래 클릭 위치 사용
+                startPosition = clientToStageRatio(e.clientX, e.clientY);
+            }
 
             arrowDragState = {
-                startX, startY,
+                startX: snappedStartX,
+                startY: snappedStartY,
                 startPosition,
                 startClientX: e.clientX,
                 startClientY: e.clientY,
@@ -5008,7 +5201,7 @@ HTML_TEMPLATE = """
             if (!arrowDragState) return;
 
             if (arrowDragState.hasDragged) {
-                clearTempArrow();
+                // ★ 화살표 유지 (clearTempArrow 제거) - 메모 에디터에서 처리
                 const endPosition = clientToStageRatio(e.clientX, e.clientY);
                 // 메모 에디터 열기 (화살표 정보 포함)
                 openMemoEditor({
@@ -5055,9 +5248,11 @@ HTML_TEMPLATE = """
             }
         });
 
-        memoLayer.addEventListener('click', () => {
+        previewStage.addEventListener('click', (e) => {
+            // memoContextMenu 내부 클릭은 무시
+            if (memoContextMenu.contains(e.target)) return;
             closeMemoContextMenu();
-            if (selectedMemoId) {
+            if (selectedMemoId && !e.target.closest('.memo-item')) {
                 setSelectedMemo(null);
             }
         });
