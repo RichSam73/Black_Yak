@@ -2770,7 +2770,7 @@ HTML_TEMPLATE = """
             border-radius: 6px;
             padding: 5px 10px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            height: calc(100vh - 10px);  /* 화면에 맞춤 */
+            height: calc(100vh - 10px);
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -3083,8 +3083,8 @@ HTML_TEMPLATE = """
         /* 에디터 레이아웃 */
         .editor-container {
             display: none;
-            flex: 1;  /* 남은 공간 모두 차지 */
-            min-height: 0;  /* flex 자식 overflow 허용 */
+            flex: 1;           /* 남은 공간 채움 */
+            min-height: 0;     /* flex 오버플로우 허용 */
             position: relative;
         }
         .editor-container.active {
@@ -3215,7 +3215,7 @@ HTML_TEMPLATE = """
             padding: 10px;
             background: #f0f0f0;
             display: flex;
-            justify-content: center;
+            justify-content: flex-start;  /* center→flex-start: 왼쪽 잘림 방지 */
             align-items: flex-start;
         }
         .preview-image img {
@@ -3431,6 +3431,7 @@ HTML_TEMPLATE = """
             border-top: 1px solid #eee;
             background: #fafbff;
             padding: 6px 10px;
+            flex-shrink: 0;  /* 항상 표시 - 잘림 방지 */
         }
         .memo-toolbar {
             display: flex;

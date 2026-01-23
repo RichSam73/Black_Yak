@@ -3234,15 +3234,23 @@ HTML_TEMPLATE = """
         // 마우스 휠로 확대/축소 (Alt + 휠) - PDF 영역에서만
         // Ctrl+휠은 브라우저 줌이라 막을 수 없음, Alt+휠 사용
         const previewImageContainer = document.querySelector('.preview-image');
+        console.log('previewImageContainer:', previewImageContainer);
         
-        previewImageContainer.addEventListener('wheel', function(e) {
-            if (e.altKey) {
-                e.preventDefault();
-                e.stopPropagation();
-                const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-                applyZoom(currentZoom + delta);
-            }
-        }, { passive: false });
+        if (previewImageContainer) {
+            previewImageContainer.addEventListener('wheel', function(e) {
+                console.log('wheel event:', e.altKey, e.ctrlKey, e.deltaY);
+                if (e.altKey) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+                    console.log('zooming:', currentZoom, '->', currentZoom + delta);
+                    applyZoom(currentZoom + delta);
+                }
+            }, { passive: false });
+            console.log('wheel listener added');
+        } else {
+            console.error('previewImageContainer not found!');
+        }
 
         // 설정 관련 요소
         const settingsBtn = document.getElementById('settingsBtn');
