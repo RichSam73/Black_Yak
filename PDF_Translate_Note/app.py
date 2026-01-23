@@ -2778,12 +2778,19 @@ HTML_TEMPLATE = """
         .header-row {
             display: flex;
             align-items: center;
-            justify-content: center;
+            justify-content: space-between;  /* 메뉴 왼쪽, 로그 오른쪽 */
             gap: 8px;
             margin-bottom: 8px;
             flex-wrap: nowrap;
             border-bottom: 1px solid #eee;
             padding-bottom: 8px;
+            flex-shrink: 0;
+        }
+        .header-menu-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: nowrap;
         }
         .header-row h1 {
             color: #333;
@@ -3674,27 +3681,27 @@ HTML_TEMPLATE = """
             font-size: 0.9em;
         }
 
-        /* 상태 메시지 */
+        /* 상태 메시지 - 헤더 내 인라인 표시 */
         .status {
-            text-align: center;
-            padding: 8px;
-            margin: 8px 0;
+            padding: 4px 12px;
             border-radius: 6px;
             display: none;
-            font-size: 0.9em;
+            font-size: 0.8em;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
         .status.processing {
-            display: block;
+            display: inline-block;
             background: #fff3cd;
             color: #856404;
         }
         .status.success {
-            display: block;
+            display: inline-block;
             background: #d4edda;
             color: #155724;
         }
         .status.error {
-            display: block;
+            display: inline-block;
             background: #f8d7da;
             color: #721c24;
         }
@@ -3770,21 +3777,24 @@ HTML_TEMPLATE = """
         <input type="hidden" id="targetLang" value="english">
 
         <div class="header-row">
-            <h1>📝 PDF Translate Note</h1>
-            <span class="version-badge">v{{ version }}</span>
-            <span class="subtitle">한글→다국어</span>
-            <button type="button" class="lang-btn active" data-lang="english">🇺🇸EN</button>
-            <button type="button" class="lang-btn" data-lang="vietnamese">🇻🇳VI</button>
-            <button type="button" class="lang-btn" data-lang="chinese">🇨🇳中</button>
-            <button type="button" class="lang-btn" data-lang="indonesian">🇮🇩ID</button>
-            <button type="button" class="lang-btn" data-lang="bengali">🇧🇩BN</button>
-            <button type="button" class="lang-btn" data-lang="myanmar">🇲🇲MY</button>
-            <button type="button" class="file-select-btn" id="fileSelectBtn">📁 파일선택</button>
-            <button type="button" class="translate-btn" id="translateBtn" disabled>🚀 번역</button>
-            <button type="button" class="dict-btn" id="dictBtn" title="용어 사전 관리">📖</button>
-            <button type="button" class="settings-btn" id="settingsBtn">⚙️</button>
-            <span id="currentOcrDisplay" class="current-ocr-display">PaddleOCR v5</span>
-            <span id="currentAiDisplay" class="current-ai-display">GPT-4o-mini</span>
+            <div class="header-menu-group">
+                <h1>📝 PDF Translate Note</h1>
+                <span class="version-badge">v{{ version }}</span>
+                <span class="subtitle">한글→다국어</span>
+                <button type="button" class="lang-btn active" data-lang="english">🇺🇸EN</button>
+                <button type="button" class="lang-btn" data-lang="vietnamese">🇻🇳VI</button>
+                <button type="button" class="lang-btn" data-lang="chinese">🇨🇳中</button>
+                <button type="button" class="lang-btn" data-lang="indonesian">🇮🇩ID</button>
+                <button type="button" class="lang-btn" data-lang="bengali">🇧🇩BN</button>
+                <button type="button" class="lang-btn" data-lang="myanmar">🇲🇲MY</button>
+                <button type="button" class="file-select-btn" id="fileSelectBtn">📁 파일선택</button>
+                <button type="button" class="translate-btn" id="translateBtn" disabled>🚀 번역</button>
+                <button type="button" class="dict-btn" id="dictBtn" title="용어 사전 관리">📖</button>
+                <button type="button" class="settings-btn" id="settingsBtn">⚙️</button>
+                <span id="currentOcrDisplay" class="current-ocr-display">PaddleOCR v5</span>
+                <span id="currentAiDisplay" class="current-ai-display">GPT-4o-mini</span>
+            </div>
+            <div class="status" id="status"></div>
         </div>
 
         <!-- 설정 모달 -->
@@ -3934,8 +3944,6 @@ HTML_TEMPLATE = """
                 </div>
             </div>
         </div>
-
-        <div class="status" id="status"></div>
 
         <!-- 초기 안내 화면 -->
         <div class="initial-guide" id="initialGuide">
@@ -4661,8 +4669,8 @@ HTML_TEMPLATE = """
             currentPage = pageIdx;
             const page = pagesData[pageIdx];
 
-            // 페이지 전환 시 줌 리셋
-            applyZoom(100);
+            // 페이지 전환 시 현재 줌 유지 (리셋 제거)
+            // applyZoom(100);  // 제거: 사용자 설정 줌 유지
 
             // 미리보기 모드에 따라 이미지 표시
             if (isPreviewMode) {
