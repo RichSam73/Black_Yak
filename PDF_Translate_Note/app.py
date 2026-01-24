@@ -3597,6 +3597,49 @@ HTML_TEMPLATE = """
             flex-shrink: 0;
             white-space: nowrap;
         }
+        .dict-ai-form {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            padding: 12px;
+            background: linear-gradient(135deg, #e8f4f8 0%, #f0e6ff 100%);
+            border-radius: 10px;
+            border: 2px dashed #667eea;
+        }
+        .dict-ai-form input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            font-size: 0.95em;
+            background: white;
+        }
+        .dict-ai-form input:focus {
+            outline: none;
+            border-color: #764ba2;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }
+        .btn-ai {
+            flex-shrink: 0;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .btn-ai:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn-ai:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
         .dict-search {
             margin-bottom: 10px;
         }
@@ -3919,6 +3962,10 @@ HTML_TEMPLATE = """
                         <input type="text" id="dictTranslation" placeholder="번역">
                         <input type="text" id="dictAbbr" placeholder="약어 (선택)">
                         <button type="button" class="btn-primary" id="addTermBtn">➕ 추가</button>
+                    </div>
+                    <div class="dict-ai-form">
+                        <input type="text" id="aiTermInput" placeholder="🤖 자연어로 입력 (예: 제원단은 self fabric이야)">
+                        <button type="button" class="btn-ai" id="aiAddTermBtn">🤖 AI 추가</button>
                     </div>
                     <div class="dict-search">
                         <input type="text" id="dictSearch" placeholder="🔍 검색...">
@@ -5789,6 +5836,8 @@ HTML_TEMPLATE = """
         const addTermBtn = document.getElementById('addTermBtn');
         const dictSearch = document.getElementById('dictSearch');
         const dictCount = document.getElementById('dictCount');
+        const aiTermInput = document.getElementById('aiTermInput');
+        const aiAddTermBtn = document.getElementById('aiAddTermBtn');
 
         let currentDictLang = 'english';
         let dictData = {};
@@ -5892,6 +5941,56 @@ HTML_TEMPLATE = """
                 }
             } catch (err) {
                 alert('오류: ' + err.message);
+            }
+        });
+
+        // AI로 용어 추가 (자연어 입력)
+        aiAddTermBtn.addEventListener('click', async () => {
+            const userInput = aiTermInput.value.trim();
+            if (!userInput) {
+                alert('자연어로 용어를 입력하세요.\n예: "제원단은 self fabric이야"');
+                return;
+            }
+
+            aiAddTermBtn.disabled = true;
+            aiAddTermBtn.textContent = '⏳ AI 처리중...';
+
+            try {
+                // 현재 설정된 AI 엔진과 API 키 가져오기
+                const aiEngine = currentAiEngine || 'gemini';
+                const apiKey = aiApiKeys[aiEngine] || '';
+
+                const res = await fetch('/api/ai-add-term', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        input: userInput,
+                        ai_engine: aiEngine,
+                        api_key: apiKey
+                    })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    const langs = Object.keys(data.translations).join(', ');
+                    alert(`✅ "${data.korean}" 추가 완료!\n\n번역:\n${Object.entries(data.translations).map(([k,v]) => `• ${k}: ${v}`).join('\n')}`);
+                    aiTermInput.value = '';
+                    await loadDictionary();
+                } else {
+                    alert('❌ 추가 실패: ' + (data.error || '알 수 없는 오류'));
+                }
+            } catch (err) {
+                alert('오류: ' + err.message);
+            } finally {
+                aiAddTermBtn.disabled = false;
+                aiAddTermBtn.textContent = '🤖 AI 추가';
+            }
+        });
+
+        // Enter 키로 AI 추가
+        aiTermInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                aiAddTermBtn.click();
             }
         });
 
@@ -6526,6 +6625,154 @@ def bulk_add_terms():
     if updated and save_garment_dict(GARMENT_DICT):
         return jsonify({"success": True, "korean": korean, "updated_languages": updated})
     return jsonify({"error": "No valid translations provided or save failed"}), 400
+
+
+@app.route('/api/ai-add-term', methods=['POST'])
+def ai_add_term():
+    """AI로 자연어 파싱 후 5개 언어로 사전에 추가"""
+    global GARMENT_DICT
+    
+    data = request.json
+    user_input = data.get('input', '').strip()
+    ai_engine = data.get('ai_engine', 'gemini')
+    api_key = data.get('api_key', '')
+    
+    if not user_input:
+        return jsonify({"error": "입력이 필요합니다"}), 400
+    
+    # API 키 확인
+    if not api_key:
+        api_key = HARDCODED_API_KEYS.get(ai_engine, '')
+    
+    if not api_key:
+        return jsonify({"error": f"{ai_engine} API 키가 필요합니다"}), 400
+    
+    # AI 프롬프트 구성
+    prompt = f"""다음 자연어 입력에서 한글 의류 용어와 영어 번역을 추출하고, 5개 언어로 번역해주세요.
+
+입력: "{user_input}"
+
+반드시 아래 JSON 형식으로만 응답하세요 (다른 텍스트 없이):
+{{
+  "korean": "한글용어",
+  "english": "English Translation",
+  "vietnamese": "Bản dịch tiếng Việt",
+  "chinese": "中文翻译",
+  "indonesian": "Terjemahan Indonesia",
+  "bengali": "বাংলা অনুবাদ"
+}}
+
+규칙:
+1. 입력에 영어 번역이 명시되어 있으면 그것을 사용
+2. 영어 번역이 없으면 의류/봉제 전문 용어로 적절히 번역
+3. 각 언어는 해당 분야의 전문 용어 사용
+4. JSON만 출력 (설명 없이)"""
+
+    try:
+        if ai_engine == 'gemini':
+            # Gemini API 호출
+            model = "gemini-2.5-flash"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "maxOutputTokens": 500
+                }
+            }
+            
+            response = requests.post(url, json=payload, headers={"Content-Type": "application/json"})
+            
+            if response.status_code != 200:
+                return jsonify({"error": f"Gemini API 오류: {response.status_code}"}), 500
+            
+            result = response.json()
+            response_text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            
+        elif ai_engine == 'openai':
+            # OpenAI API 호출
+            url = "https://api.openai.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1
+            }
+            
+            response = requests.post(url, json=payload, headers=headers)
+            
+            if response.status_code != 200:
+                return jsonify({"error": f"OpenAI API 오류: {response.status_code}"}), 500
+            
+            result = response.json()
+            response_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            
+        elif ai_engine == 'claude':
+            # Claude API 호출
+            url = "https://api.anthropic.com/v1/messages"
+            headers = {
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 500,
+                "messages": [{"role": "user", "content": prompt}]
+            }
+            
+            response = requests.post(url, json=payload, headers=headers)
+            
+            if response.status_code != 200:
+                return jsonify({"error": f"Claude API 오류: {response.status_code}"}), 500
+            
+            result = response.json()
+            response_text = result.get("content", [{}])[0].get("text", "")
+        else:
+            return jsonify({"error": f"지원하지 않는 AI 엔진: {ai_engine}"}), 400
+        
+        # JSON 파싱
+        import re
+        json_match = re.search(r'\{[^{}]*\}', response_text, re.DOTALL)
+        if not json_match:
+            return jsonify({"error": "AI 응답에서 JSON을 찾을 수 없습니다", "raw": response_text}), 500
+        
+        parsed = json.loads(json_match.group())
+        
+        korean = parsed.get('korean', '').strip()
+        if not korean:
+            return jsonify({"error": "한글 용어를 추출할 수 없습니다"}), 400
+        
+        # 사전에 추가
+        GARMENT_DICT = load_garment_dict()
+        
+        languages = ['english', 'vietnamese', 'chinese', 'indonesian', 'bengali']
+        added = {}
+        
+        for lang in languages:
+            translation = parsed.get(lang, '').strip()
+            if translation and lang in GARMENT_DICT:
+                GARMENT_DICT[lang][korean] = {"full": translation, "abbr": ""}
+                added[lang] = translation
+        
+        if added and save_garment_dict(GARMENT_DICT):
+            return jsonify({
+                "success": True,
+                "korean": korean,
+                "translations": added,
+                "message": f"'{korean}' 용어가 {len(added)}개 언어에 추가되었습니다"
+            })
+        
+        return jsonify({"error": "사전 저장 실패"}), 500
+        
+    except json.JSONDecodeError as e:
+        return jsonify({"error": f"JSON 파싱 오류: {str(e)}", "raw": response_text}), 500
+    except Exception as e:
+        return jsonify({"error": f"오류 발생: {str(e)}"}), 500
 
 
 if __name__ == '__main__':
