@@ -5566,14 +5566,24 @@ HTML_TEMPLATE = """
 
         // 화살표 드래그 헬퍼 함수
         function drawTempArrow(x1, y1, x2, y2) {
+            // ★ 줌이 적용된 상태에서는 좌표를 줌 비율로 나눠야 SVG 내부 좌표와 일치
+            const zoom = currentZoom / 100;
+            const adjX1 = x1 / zoom;
+            const adjY1 = y1 / zoom;
+            const adjX2 = x2 / zoom;
+            const adjY2 = y2 / zoom;
+            
+            // ★ 반드시 display: block으로 설정 (renderMemos에서 none으로 바뀔 수 있음)
+            arrowLayer.style.display = 'block';
+            
             arrowLayer.innerHTML = `
                 <defs>
                     <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
                         <polygon points="0 0, 10 3.5, 0 7" fill="#667eea"/>
                     </marker>
                 </defs>
-                <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"
-                      stroke="#667eea" stroke-width="2" marker-end="url(#arrowhead)"/>
+                <line x1="${adjX1}" y1="${adjY1}" x2="${adjX2}" y2="${adjY2}"
+                      stroke="#667eea" stroke-width="3" marker-end="url(#arrowhead)"/>
             `;
         }
         function clearTempArrow() {
