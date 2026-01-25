@@ -5392,7 +5392,7 @@ HTML_TEMPLATE = """
             let arrowsHtml = `
                 <defs>
                     <marker id="arrowhead-saved" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                        <polygon points="0 0, 10 3.5, 0 7" fill="#ff6b6b"/>
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#667eea"/>
                     </marker>
                 </defs>
             `;
@@ -5405,7 +5405,7 @@ HTML_TEMPLATE = """
                     const targetY = imgOffsetY + memo.arrow.targetY * imgHeight;
                     arrowsHtml += `
                         <line x1="${memoX}" y1="${memoY}" x2="${targetX}" y2="${targetY}"
-                              stroke="#ff6b6b" stroke-width="2" marker-end="url(#arrowhead-saved)"
+                              stroke="#667eea" stroke-width="2" marker-end="url(#arrowhead-saved)"
                               data-memo-id="${memo.id}"/>
                     `;
                 }
