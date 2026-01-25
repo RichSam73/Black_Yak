@@ -1547,6 +1547,10 @@
     "바람막이": {
       "full": "Windbreaker",
       "abbr": ""
+    },
+    "착좌": {
+      "full": "wearer's left",
+      "abbr": ""
     }
   },
   "vietnamese": {
@@ -2497,6 +2501,14 @@
     "바람막이": {
       "full": "Áo khoác gió",
       "abbr": "AKG"
+    },
+    "착 좌": {
+      "full": "bên trái người mặc",
+      "abbr": "TNM"
+    },
+    "착좌": {
+      "full": "bên trái của người mặc",
+      "abbr": "TNM"
     }
   },
   "chinese": {
@@ -3459,6 +3471,14 @@
     "바람막이": {
       "full": "防风衣",
       "abbr": "FFY"
+    },
+    "착 좌": {
+      "full": "穿着者左侧",
+      "abbr": "穿左"
+    },
+    "착좌": {
+      "full": "穿着者左侧",
+      "abbr": "穿左"
     }
   },
   "indonesian": {
@@ -4713,6 +4733,14 @@
     "바람막이": {
       "full": "Jaket parasut",
       "abbr": "JP"
+    },
+    "착 좌": {
+      "full": "kiri pemakai",
+      "abbr": "KP"
+    },
+    "착좌": {
+      "full": "sisi kiri pemakai",
+      "abbr": "SKP"
     }
   },
   "bengali": {
@@ -5967,6 +5995,14 @@
     "바람막이": {
       "full": "উইন্ডব্রেকার",
       "abbr": "WB"
+    },
+    "착 좌": {
+      "full": "পরিধানকারীর বাম দিক",
+      "abbr": "পবাম"
+    },
+    "착좌": {
+      "full": "পরিধানকারীর বাম দিক",
+      "abbr": "পবা"
     }
   },
   "myanmar": {
@@ -5985,6 +6021,14 @@
     "바람막이": {
       "full": "လေကာအင်္ကျီ",
       "abbr": "LKA"
+    },
+    "착 좌": {
+      "full": "ဝတ်ဆင်သူ၏ ဘယ်ဘက်",
+      "abbr": "ဝဘဘ"
+    },
+    "착좌": {
+      "full": "ဝတ်ဆင်သူ၏ ဘယ်ဘက်",
+      "abbr": "ဝဘဘ"
     }
   }
 }
