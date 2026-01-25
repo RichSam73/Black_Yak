@@ -2202,7 +2202,7 @@ def wrap_text_to_lines(draw, text, font, max_width):
     return lines
 
 
-def draw_arrow_on_image(draw, start_x, start_y, end_x, end_y, color=(255, 107, 107), width=2):
+def draw_arrow_on_image(draw, start_x, start_y, end_x, end_y, color=(102, 126, 234), width=2):
     """이미지에 화살표 그리기 (선 + 화살촉)"""
     import math
     
@@ -2260,7 +2260,7 @@ def render_memos_on_image(img, memos):
         target_x = clamp(safe_float(arrow.get("targetX"), 0.0), 0.0, 1.0) * base.size[0]
         target_y = clamp(safe_float(arrow.get("targetY"), 0.0), 0.0, 1.0) * base.size[1]
         
-        # 화살표 그리기 (빨간색)
+        # 화살표 그리기 (파란색)
         draw_arrow_on_image(draw, int(memo_x), int(memo_y), int(target_x), int(target_y))
 
     # ★ 2단계: 메모 그리기
