@@ -49,3 +49,10 @@ test_*.png
 
 # PDF files (업로드 데이터)
 *.pdf
+
+# Log files (대용량 디버그 로그)
+*.log
+*_debug.log
+overlap_debug.log
+gemini_debug.log
+ocr_merge_debug.log
