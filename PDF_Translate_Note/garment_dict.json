@@ -509,7 +509,7 @@
       "abbr": ""
     },
     "신축성": {
-      "full": "Stretch",
+      "full": "Elasticity",
       "abbr": ""
     },
     "스판": {
@@ -573,11 +573,11 @@
       "abbr": ""
     },
     "식서": {
-      "full": "Selvage",
+      "full": "Selvedge",
       "abbr": ""
     },
     "올": {
-      "full": "Grain",
+      "full": "Yarn",
       "abbr": ""
     },
     "결": {
@@ -589,7 +589,7 @@
       "abbr": ""
     },
     "주름": {
-      "full": "Pleat",
+      "full": "Pleats",
       "abbr": ""
     },
     "개더": {
@@ -634,7 +634,7 @@
     },
     "자수": {
       "full": "Embroidery",
-      "abbr": ""
+      "abbr": "Emb."
     },
     "아플리케": {
       "full": "Applique",
@@ -657,8 +657,8 @@
       "abbr": ""
     },
     "체인스티치": {
-      "full": "Chain Stitch",
-      "abbr": ""
+      "full": "Chainstitch",
+      "abbr": "Chain St."
     },
     "지그재그": {
       "full": "Zigzag",
@@ -813,8 +813,8 @@
       "abbr": ""
     },
     "열접착": {
-      "full": "Heat Sealing",
-      "abbr": ""
+      "full": "Heat Bonding",
+      "abbr": "Heat Bond"
     },
     "초음파": {
       "full": "Ultrasonic",
@@ -974,7 +974,7 @@
     },
     "보강": {
       "full": "Reinforcement",
-      "abbr": ""
+      "abbr": "Reinf."
     },
     "스테이": {
       "full": "Stay",
@@ -994,10 +994,10 @@
     },
     "형광": {
       "full": "Fluorescent",
-      "abbr": ""
+      "abbr": "Fluor."
     },
     "야광": {
-      "full": "Glow",
+      "full": "Glow in Dark",
       "abbr": ""
     },
     "발열": {
@@ -1064,10 +1064,6 @@
       "full": "Waterproof Zipper",
       "abbr": "WP Zip"
     },
-    "플랩": {
-      "full": "Flap",
-      "abbr": ""
-    },
     "포켓플랩": {
       "full": "Pocket Flap",
       "abbr": "Pkt Flap"
@@ -1092,17 +1088,9 @@
       "full": "Kangaroo Pocket",
       "abbr": "Kang. Pkt"
     },
-    "바인딩": {
-      "full": "Binding",
-      "abbr": ""
-    },
     "바이어스바인딩": {
       "full": "Bias Binding",
       "abbr": "Bias Bind."
-    },
-    "파이핑": {
-      "full": "Piping",
-      "abbr": ""
     },
     "케이싱": {
       "full": "Casing",
@@ -1114,10 +1102,6 @@
     },
     "안단": {
       "full": "Facing",
-      "abbr": ""
-    },
-    "요크": {
-      "full": "Yoke",
       "abbr": ""
     },
     "견요크": {
@@ -1132,60 +1116,12 @@
       "full": "Gusset",
       "abbr": ""
     },
-    "벤트": {
-      "full": "Vent",
-      "abbr": ""
-    },
-    "슬릿": {
-      "full": "Slit",
-      "abbr": ""
-    },
-    "플리츠": {
-      "full": "Pleats",
-      "abbr": ""
-    },
-    "주름": {
-      "full": "Pleats",
-      "abbr": ""
-    },
-    "턱": {
-      "full": "Tuck",
-      "abbr": ""
-    },
-    "다트": {
-      "full": "Dart",
-      "abbr": ""
-    },
-    "개더": {
-      "full": "Gather",
-      "abbr": ""
-    },
     "셔링": {
       "full": "Shirring",
       "abbr": ""
     },
-    "러플": {
-      "full": "Ruffle",
-      "abbr": ""
-    },
-    "프릴": {
-      "full": "Frill",
-      "abbr": ""
-    },
     "바택": {
       "full": "Bar Tack",
-      "abbr": ""
-    },
-    "보강": {
-      "full": "Reinforcement",
-      "abbr": "Reinf."
-    },
-    "후크": {
-      "full": "Hook",
-      "abbr": ""
-    },
-    "아이": {
-      "full": "Eye",
       "abbr": ""
     },
     "후크앤아이": {
@@ -1256,10 +1192,6 @@
       "full": "Cord Lock",
       "abbr": ""
     },
-    "토글": {
-      "full": "Toggle",
-      "abbr": ""
-    },
     "코드엔드": {
       "full": "Cord End",
       "abbr": ""
@@ -1272,25 +1204,9 @@
       "full": "Webbing",
       "abbr": ""
     },
-    "테이핑": {
-      "full": "Taping",
-      "abbr": ""
-    },
-    "심테이프": {
-      "full": "Seam Tape",
-      "abbr": ""
-    },
     "심실링": {
       "full": "Seam Sealing",
       "abbr": "Seam Seal"
-    },
-    "본딩": {
-      "full": "Bonding",
-      "abbr": ""
-    },
-    "열접착": {
-      "full": "Heat Bonding",
-      "abbr": "Heat Bond"
     },
     "초음파접착": {
       "full": "Ultrasonic Bonding",
@@ -1300,24 +1216,12 @@
       "full": "Grain",
       "abbr": ""
     },
-    "식서": {
-      "full": "Selvedge",
-      "abbr": ""
-    },
-    "바이어스": {
-      "full": "Bias",
-      "abbr": ""
-    },
     "경사": {
       "full": "Warp",
       "abbr": ""
     },
     "위사": {
       "full": "Weft",
-      "abbr": ""
-    },
-    "올": {
-      "full": "Yarn",
       "abbr": ""
     },
     "데니어": {
@@ -1336,10 +1240,6 @@
       "full": "Stretch",
       "abbr": ""
     },
-    "신축성": {
-      "full": "Elasticity",
-      "abbr": ""
-    },
     "회복력": {
       "full": "Recovery",
       "abbr": ""
@@ -1354,10 +1254,6 @@
     },
     "저지": {
       "full": "Jersey",
-      "abbr": ""
-    },
-    "플리스": {
-      "full": "Fleece",
       "abbr": ""
     },
     "본딩원단": {
@@ -1384,17 +1280,9 @@
       "full": "Lockstitch",
       "abbr": "Lock St."
     },
-    "체인스티치": {
-      "full": "Chainstitch",
-      "abbr": "Chain St."
-    },
     "커버스티치": {
       "full": "Coverstitch",
       "abbr": "Cover St."
-    },
-    "지그재그": {
-      "full": "Zigzag",
-      "abbr": ""
     },
     "더블스티치": {
       "full": "Double Stitch",
@@ -1440,10 +1328,6 @@
       "full": "Notching",
       "abbr": ""
     },
-    "트리밍": {
-      "full": "Trimming",
-      "abbr": ""
-    },
     "그레이딩심": {
       "full": "Grading Seam",
       "abbr": "Grad. Seam"
@@ -1482,10 +1366,6 @@
     },
     "퍼블릭": {
       "full": "Fabric",
-      "abbr": ""
-    },
-    "커프스": {
-      "full": "Cuffs",
       "abbr": ""
     },
     "소매커프스": {
@@ -1584,25 +1464,9 @@
       "full": "Hood String",
       "abbr": "Hood Str."
     },
-    "벨트루프": {
-      "full": "Belt Loop",
-      "abbr": ""
-    },
     "반사테이프": {
       "full": "Reflective Tape",
       "abbr": "Refl. Tape"
-    },
-    "형광": {
-      "full": "Fluorescent",
-      "abbr": "Fluor."
-    },
-    "야광": {
-      "full": "Glow in Dark",
-      "abbr": ""
-    },
-    "자수": {
-      "full": "Embroidery",
-      "abbr": "Emb."
     },
     "나염": {
       "full": "Print",
@@ -1623,10 +1487,6 @@
     "디지털프린트": {
       "full": "Digital Print",
       "abbr": "Digi. Prt"
-    },
-    "패치": {
-      "full": "Patch",
-      "abbr": ""
     },
     "와펜": {
       "full": "Wappen",
@@ -1679,6 +1539,14 @@
     "디자인시트": {
       "full": "Design Sheet",
       "abbr": "Design Sht"
+    },
+    "결재진행중": {
+      "full": "Approval in progress",
+      "abbr": ""
+    },
+    "바람막이": {
+      "full": "Windbreaker",
+      "abbr": ""
     }
   },
   "vietnamese": {
@@ -2203,7 +2071,7 @@
       "abbr": ""
     },
     "플리스": {
-      "full": "Lông cừu",
+      "full": "Vải nỉ",
       "abbr": ""
     },
     "고어텍스": {
@@ -2223,7 +2091,7 @@
       "abbr": ""
     },
     "바이어스": {
-      "full": "Xéo",
+      "full": "Chéo",
       "abbr": ""
     },
     "식서": {
@@ -2231,11 +2099,11 @@
       "abbr": ""
     },
     "다트": {
-      "full": "Chiết ly",
+      "full": "Chiết",
       "abbr": ""
     },
     "주름": {
-      "full": "Xếp ly",
+      "full": "Ly xếp",
       "abbr": ""
     },
     "개더": {
@@ -2243,11 +2111,11 @@
       "abbr": ""
     },
     "턱": {
-      "full": "Xếp nếp",
+      "full": "Chiết ly",
       "abbr": ""
     },
     "파이핑": {
-      "full": "Viền ống",
+      "full": "Đường ống",
       "abbr": ""
     },
     "바인딩": {
@@ -2331,7 +2199,7 @@
       "abbr": ""
     },
     "커프스": {
-      "full": "Măng sét",
+      "full": "Măng séc",
       "abbr": ""
     },
     "요크": {
@@ -2339,7 +2207,7 @@
       "abbr": ""
     },
     "벤트": {
-      "full": "Xẻ",
+      "full": "Xẻ tà",
       "abbr": ""
     },
     "슬릿": {
@@ -2347,7 +2215,7 @@
       "abbr": ""
     },
     "플랩": {
-      "full": "Nắp",
+      "full": "Nắp túi",
       "abbr": ""
     },
     "웰트": {
@@ -2355,7 +2223,7 @@
       "abbr": ""
     },
     "패치": {
-      "full": "Đắp",
+      "full": "Miếng đắp",
       "abbr": ""
     },
     "벨트루프": {
@@ -2414,10 +2282,6 @@
       "full": "Khóa kéo chống nước",
       "abbr": ""
     },
-    "플랩": {
-      "full": "Nắp túi",
-      "abbr": ""
-    },
     "포켓플랩": {
       "full": "Nắp túi",
       "abbr": ""
@@ -2442,16 +2306,8 @@
       "full": "Túi kangaroo",
       "abbr": ""
     },
-    "바인딩": {
-      "full": "Viền",
-      "abbr": ""
-    },
     "바이어스바인딩": {
       "full": "Viền chéo",
-      "abbr": ""
-    },
-    "파이핑": {
-      "full": "Đường ống",
       "abbr": ""
     },
     "케이싱": {
@@ -2466,10 +2322,6 @@
       "full": "Lót mặt",
       "abbr": ""
     },
-    "요크": {
-      "full": "Cầu vai",
-      "abbr": ""
-    },
     "견요크": {
       "full": "Cầu vai",
       "abbr": ""
@@ -2482,32 +2334,8 @@
       "full": "Miếng ghép",
       "abbr": ""
     },
-    "벤트": {
-      "full": "Xẻ tà",
-      "abbr": ""
-    },
-    "슬릿": {
-      "full": "Xẻ",
-      "abbr": ""
-    },
     "플리츠": {
       "full": "Ly xếp",
-      "abbr": ""
-    },
-    "주름": {
-      "full": "Ly xếp",
-      "abbr": ""
-    },
-    "턱": {
-      "full": "Chiết ly",
-      "abbr": ""
-    },
-    "다트": {
-      "full": "Chiết",
-      "abbr": ""
-    },
-    "개더": {
-      "full": "Nhún",
       "abbr": ""
     },
     "셔링": {
@@ -2524,14 +2352,6 @@
     },
     "바택": {
       "full": "Bọ",
-      "abbr": ""
-    },
-    "보강": {
-      "full": "Gia cố",
-      "abbr": ""
-    },
-    "후크": {
-      "full": "Móc",
       "abbr": ""
     },
     "아이": {
@@ -2642,10 +2462,6 @@
       "full": "Dán nhiệt",
       "abbr": ""
     },
-    "바이어스": {
-      "full": "Chéo",
-      "abbr": ""
-    },
     "니트": {
       "full": "Dệt kim",
       "abbr": ""
@@ -2658,16 +2474,8 @@
       "full": "Lưới",
       "abbr": ""
     },
-    "플리스": {
-      "full": "Vải nỉ",
-      "abbr": ""
-    },
     "저지": {
       "full": "Vải jersey",
-      "abbr": ""
-    },
-    "자수": {
-      "full": "Thêu",
       "abbr": ""
     },
     "나염": {
@@ -2678,21 +2486,17 @@
       "full": "In chuyển nhiệt",
       "abbr": ""
     },
-    "패치": {
-      "full": "Miếng đắp",
-      "abbr": ""
-    },
     "라펠": {
       "full": "Ve áo",
       "abbr": ""
     },
-    "커프스": {
-      "full": "Măng séc",
+    "결재진행중": {
+      "full": "Đang chờ phê duyệt",
       "abbr": ""
     },
-    "요크": {
-      "full": "Cầu vai",
-      "abbr": ""
+    "바람막이": {
+      "full": "Áo khoác gió",
+      "abbr": "AKG"
     }
   },
   "chinese": {
@@ -3249,7 +3053,7 @@
       "abbr": ""
     },
     "바이어스": {
-      "full": "斜向",
+      "full": "斜纹",
       "abbr": ""
     },
     "식서": {
@@ -3265,11 +3069,11 @@
       "abbr": ""
     },
     "개더": {
-      "full": "褶裥",
+      "full": "抽褶",
       "abbr": ""
     },
     "턱": {
-      "full": "褶",
+      "full": "褶裥",
       "abbr": ""
     },
     "파이핑": {
@@ -3365,15 +3169,15 @@
       "abbr": ""
     },
     "벤트": {
-      "full": "开叉",
-      "abbr": ""
-    },
-    "슬릿": {
       "full": "开衩",
       "abbr": ""
     },
+    "슬릿": {
+      "full": "开叉",
+      "abbr": ""
+    },
     "플랩": {
-      "full": "盖",
+      "full": "盖片",
       "abbr": ""
     },
     "웰트": {
@@ -3381,7 +3185,7 @@
       "abbr": ""
     },
     "패치": {
-      "full": "贴袋",
+      "full": "贴布",
       "abbr": ""
     },
     "벨트루프": {
@@ -3389,7 +3193,7 @@
       "abbr": ""
     },
     "후크": {
-      "full": "挂钩",
+      "full": "钩",
       "abbr": ""
     },
     "스냅": {
@@ -3440,10 +3244,6 @@
       "full": "防水拉链",
       "abbr": ""
     },
-    "플랩": {
-      "full": "盖片",
-      "abbr": ""
-    },
     "포켓플랩": {
       "full": "口袋盖",
       "abbr": ""
@@ -3468,16 +3268,8 @@
       "full": "袋鼠口袋",
       "abbr": ""
     },
-    "바인딩": {
-      "full": "滚边",
-      "abbr": ""
-    },
     "바이어스바인딩": {
       "full": "斜纹滚边",
-      "abbr": ""
-    },
-    "파이핑": {
-      "full": "嵌条",
       "abbr": ""
     },
     "케이싱": {
@@ -3492,10 +3284,6 @@
       "full": "贴边",
       "abbr": ""
     },
-    "요크": {
-      "full": "过肩",
-      "abbr": ""
-    },
     "견요크": {
       "full": "肩育克",
       "abbr": ""
@@ -3508,32 +3296,8 @@
       "full": "补片",
       "abbr": ""
     },
-    "벤트": {
-      "full": "开衩",
-      "abbr": ""
-    },
-    "슬릿": {
-      "full": "开叉",
-      "abbr": ""
-    },
     "플리츠": {
       "full": "褶",
-      "abbr": ""
-    },
-    "주름": {
-      "full": "褶",
-      "abbr": ""
-    },
-    "턱": {
-      "full": "褶裥",
-      "abbr": ""
-    },
-    "다트": {
-      "full": "省道",
-      "abbr": ""
-    },
-    "개더": {
-      "full": "抽褶",
       "abbr": ""
     },
     "셔링": {
@@ -3550,10 +3314,6 @@
     },
     "바택": {
       "full": "打枣",
-      "abbr": ""
-    },
-    "후크": {
-      "full": "钩",
       "abbr": ""
     },
     "아이": {
@@ -3664,10 +3424,6 @@
       "full": "热粘合",
       "abbr": ""
     },
-    "바이어스": {
-      "full": "斜纹",
-      "abbr": ""
-    },
     "니트": {
       "full": "针织",
       "abbr": ""
@@ -3680,16 +3436,8 @@
       "full": "网眼",
       "abbr": ""
     },
-    "플리스": {
-      "full": "摇粒绒",
-      "abbr": ""
-    },
     "저지": {
       "full": "汗布",
-      "abbr": ""
-    },
-    "자수": {
-      "full": "刺绣",
       "abbr": ""
     },
     "나염": {
@@ -3700,17 +3448,17 @@
       "full": "热转印",
       "abbr": ""
     },
-    "패치": {
-      "full": "贴布",
-      "abbr": ""
-    },
     "라펠": {
       "full": "翻领",
       "abbr": ""
     },
-    "커프스": {
-      "full": "袖口",
+    "결재진행중": {
+      "full": "审批中",
       "abbr": ""
+    },
+    "바람막이": {
+      "full": "防风衣",
+      "abbr": "FFY"
     }
   },
   "indonesian": {
@@ -4957,6 +4705,14 @@
     "디자인시트": {
       "full": "Lembar Desain",
       "abbr": ""
+    },
+    "결재진행중": {
+      "full": "Persetujuan sedang berlangsung",
+      "abbr": ""
+    },
+    "바람막이": {
+      "full": "Jaket parasut",
+      "abbr": "JP"
     }
   },
   "bengali": {
@@ -6203,6 +5959,14 @@
     "디자인시트": {
       "full": "ডিজাইন শীট",
       "abbr": ""
+    },
+    "결재진행중": {
+      "full": "অনুমোদন প্রক্রিয়াধীন",
+      "abbr": ""
+    },
+    "바람막이": {
+      "full": "উইন্ডব্রেকার",
+      "abbr": "WB"
     }
   },
   "myanmar": {
@@ -6217,6 +5981,10 @@
     "자켓": {
       "full": "ဂျက်ကတ်",
       "abbr": ""
+    },
+    "바람막이": {
+      "full": "လေကာအင်္ကျီ",
+      "abbr": "LKA"
     }
   }
 }

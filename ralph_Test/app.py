@@ -983,17 +983,10 @@ def translate_with_claude(image_path, texts, target_lang, api_key, model=None):
 
     korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(preprocessed_list)])
 
-    prompt = f"""You are a professional translator specializing in garment manufacturing and sewing.
+    prompt = f"""This is a garment/clothing technical specification image (tech pack).
+Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
 
-[Context]
-- Technical documents used in garment/sewing factories
-- Pattern, fabric, sewing techniques, accessories terminology
-- Work instructions for overseas production factories (Vietnam, China, Indonesia, Bangladesh)
-
-[Task]
-Translate ALL the following Korean texts to {lang_config['prompt_lang']}.
-
-[Rules]
+RULES:
 - Translate EVERY item, even if it contains English or numbers
 - Use FULL words only, do NOT abbreviate (e.g., "Consumption" not "Cons.", "Management" not "Mgmt.")
 - Use format: "1. translation" (number + dot + space + translation)
@@ -1150,17 +1143,10 @@ def translate_with_openai(image_path, texts, target_lang, api_key, model=None):
 
     korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(preprocessed_list)])
 
-    prompt = f"""You are a professional translator specializing in garment manufacturing and sewing.
+    prompt = f"""This is a garment/clothing technical specification image (tech pack).
+Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
 
-[Context]
-- Technical documents used in garment/sewing factories
-- Pattern, fabric, sewing techniques, accessories terminology
-- Work instructions for overseas production factories (Vietnam, China, Indonesia, Bangladesh)
-
-[Task]
-Translate ALL the following Korean texts to {lang_config['prompt_lang']}.
-
-[Rules]
+RULES:
 - Translate EVERY item, even if it contains English or numbers
 - Use FULL words only, do NOT abbreviate (e.g., "Consumption" not "Cons.", "Management" not "Mgmt.")
 - Use format: "1. translation" (number + dot + space + translation)
@@ -1275,22 +1261,13 @@ def _translate_chunk_with_gemini(chunk_texts, lang_config, api_key, model, chunk
     """청크 단위로 Gemini API 호출 (내부 함수)"""
     korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(chunk_texts)])
 
-    prompt = f"""You are a professional translator specializing in garment manufacturing and sewing.
-
-[Context]
-- Technical documents used in garment/sewing factories
-- Pattern, fabric, sewing techniques, accessories terminology
-- Work instructions for overseas production factories (Vietnam, China, Indonesia, Bangladesh)
-
-[Task]
-Translate ALL the following Korean texts to {lang_config['prompt_lang']}.
-Keep translations SHORT and professional. Only respond with numbered translations.
+    prompt = f"""This is a garment/clothing technical specification document (tech pack).
+Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
+Keep translations SHORT and professional. Only respond with numbered translations in {lang_config['prompt_lang']}.
 There are {len(chunk_texts)} items. Translate ALL of them in the EXACT same order.
-
-[Rules]
-- Keep <<TERM_N>> placeholders exactly as they are (do not translate them)
-- Respond with the EXACT SAME numbering (1 to {len(chunk_texts)})
-- DO NOT add any explanations, notes, or comments in parentheses. Translation ONLY.
+IMPORTANT: Keep <<TERM_N>> placeholders exactly as they are (do not translate them).
+IMPORTANT: Respond with the EXACT SAME numbering (1 to {len(chunk_texts)}).
+IMPORTANT: DO NOT add any explanations, notes, or comments in parentheses. Translation ONLY.
 
 Korean texts:
 {korean_joined}
@@ -1479,17 +1456,10 @@ def translate_with_gemini(image_path, texts, target_lang, api_key, model=None):
 
     korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(preprocessed_list)])
 
-    prompt = f"""You are a professional translator specializing in garment manufacturing and sewing.
+    prompt = f"""This is a garment/clothing technical specification image (tech pack).
+Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
 
-[Context]
-- Technical documents used in garment/sewing factories
-- Pattern, fabric, sewing techniques, accessories terminology
-- Work instructions for overseas production factories (Vietnam, China, Indonesia, Bangladesh)
-
-[Task]
-Translate ALL the following Korean texts to {lang_config['prompt_lang']}.
-
-[Rules]
+RULES:
 - Translate EVERY item, even if it contains English or numbers
 - Use FULL words only, do NOT abbreviate (e.g., "Consumption" not "Cons.", "Management" not "Mgmt.")
 - Use format: "1. translation" (number + dot + space + translation)
@@ -1684,17 +1654,10 @@ def translate_with_vlm(image_path, texts, target_lang, ai_engine="ollama", api_k
 
     korean_joined = "\n".join([f"{i+1}. {t}" for i, t in enumerate(preprocessed_list)])
 
-    prompt = f"""You are a professional translator specializing in garment manufacturing and sewing.
+    prompt = f"""This is a garment/clothing technical specification image (tech pack).
+Translate ALL the following Korean texts to {lang_config['prompt_lang']}. These are garment industry terms.
 
-[Context]
-- Technical documents used in garment/sewing factories
-- Pattern, fabric, sewing techniques, accessories terminology
-- Work instructions for overseas production factories (Vietnam, China, Indonesia, Bangladesh)
-
-[Task]
-Translate ALL the following Korean texts to {lang_config['prompt_lang']}.
-
-[Rules]
+RULES:
 - Translate EVERY item, even if it contains English or numbers
 - Use FULL words only, do NOT abbreviate (e.g., "Consumption" not "Cons.", "Management" not "Mgmt.")
 - Use format: "1. translation" (number + dot + space + translation)
@@ -3634,181 +3597,6 @@ HTML_TEMPLATE = """
             flex-shrink: 0;
             white-space: nowrap;
         }
-        .dict-ai-section {
-            margin-bottom: 15px;
-            padding: 15px;
-            background: linear-gradient(135deg, #e8f4f8 0%, #f0e6ff 100%);
-            border-radius: 10px;
-            border: 2px dashed #667eea;
-        }
-        .dict-ai-title {
-            font-weight: 600;
-            color: #667eea;
-            margin-bottom: 10px;
-            font-size: 0.9em;
-        }
-        .dict-ai-chat {
-            background: white;
-            border-radius: 8px;
-            padding: 10px;
-            margin-bottom: 10px;
-            min-height: 200px;
-            max-height: 300px;
-            overflow-y: auto;
-            font-size: 0.9em;
-            border: 1px solid #ddd;
-        }
-        .dict-ai-chat:empty::before {
-            content: "번역할 한글 용어를 입력하면 영어 옵션을 제시해 드립니다.";
-            color: #999;
-            font-style: italic;
-        }
-        .dict-ai-msg {
-            padding: 8px 12px;
-            margin: 5px 0;
-            border-radius: 8px;
-            line-height: 1.4;
-            white-space: pre-line;
-        }
-        .dict-ai-msg.user {
-            background: #667eea;
-            color: white;
-            margin-left: 20%;
-            text-align: right;
-        }
-        .dict-ai-msg.ai {
-            background: #f0f0f0;
-            color: #333;
-            margin-right: 20%;
-        }
-        .dict-ai-msg.error {
-            background: #ffe0e0;
-            color: #c00;
-        }
-        .dict-ai-msg.success {
-            background: #e0ffe0;
-            color: #060;
-        }
-        .dict-ai-msg.preview {
-            background: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffc107;
-        }
-        .dict-ai-btn-group {
-            margin-top: 8px;
-        }
-        .dict-ai-confirm-btn {
-            padding: 6px 16px;
-            background: #28a745;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 0.85em;
-            margin-right: 5px;
-        }
-        .dict-ai-confirm-btn:hover {
-            background: #218838;
-        }
-        .dict-ai-cancel-btn {
-            padding: 6px 16px;
-            background: #6c757d;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 0.85em;
-        }
-        .dict-ai-cancel-btn:hover {
-            background: #5a6268;
-        }
-        .dict-ai-msg.options {
-            background: linear-gradient(135deg, #e8f4fd 0%, #d4e8f9 100%);
-            border-left: 4px solid #2196F3;
-        }
-        .dict-ai-option-btn {
-            display: block;
-            width: 100%;
-            padding: 10px 15px;
-            margin: 5px 0;
-            background: white;
-            border: 2px solid #667eea;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.95em;
-            text-align: left;
-            transition: all 0.2s;
-        }
-        .dict-ai-option-btn:hover {
-            background: #667eea;
-            color: white;
-            transform: translateX(5px);
-        }
-        .dict-ai-custom-input {
-            display: flex;
-            gap: 8px;
-            margin-top: 10px;
-        }
-        .dict-ai-custom-eng {
-            flex: 1;
-            padding: 8px 12px;
-            border: 2px solid #ccc;
-            border-radius: 6px;
-            font-size: 0.9em;
-        }
-        .dict-ai-custom-eng:focus {
-            border-color: #667eea;
-            outline: none;
-        }
-        .dict-ai-custom-btn {
-            padding: 8px 16px;
-            background: #667eea;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-        .dict-ai-custom-btn:hover {
-            background: #5a6fd6;
-        }
-        .dict-ai-form {
-            display: flex;
-            gap: 10px;
-        }
-        .dict-ai-form input {
-            flex: 1;
-            padding: 12px 15px;
-            border: 2px solid #667eea;
-            border-radius: 8px;
-            font-size: 0.95em;
-            background: white;
-        }
-        .dict-ai-form input:focus {
-            outline: none;
-            border-color: #764ba2;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
-        }
-        .btn-ai {
-            flex-shrink: 0;
-            padding: 12px 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s;
-        }
-        .btn-ai:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-        }
-        .btn-ai:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
         .dict-search {
             margin-bottom: 10px;
         }
@@ -4132,14 +3920,6 @@ HTML_TEMPLATE = """
                         <input type="text" id="dictAbbr" placeholder="약어 (선택)">
                         <button type="button" class="btn-primary" id="addTermBtn">➕ 추가</button>
                     </div>
-                    <div class="dict-ai-section">
-                        <div class="dict-ai-title">AI 용어 도우미</div>
-                        <div class="dict-ai-chat" id="aiChatArea"></div>
-                        <div class="dict-ai-form">
-                            <input type="text" id="aiTermInput" placeholder="번역할 한글 용어를 입력하세요">
-                            <button type="button" class="btn-ai" id="aiAddTermBtn">전송</button>
-                        </div>
-                    </div>
                     <div class="dict-search">
                         <input type="text" id="dictSearch" placeholder="🔍 검색...">
                     </div>
@@ -4411,12 +4191,12 @@ HTML_TEMPLATE = """
         apiKeyInput.addEventListener('contextmenu', (e) => e.preventDefault());
 
         // AI 설정 상태 (localStorage에서 로드)
-        let currentAiEngine = localStorage.getItem('pdf_translator_ai_engine') || 'gemini';
+        let currentAiEngine = localStorage.getItem('pdf_translator_ai_engine') || 'openai';
         let currentModel = localStorage.getItem('pdf_translator_model') || '';
         let apiKeys = JSON.parse(localStorage.getItem('pdf_translator_api_keys') || '{}');
 
         // OCR 엔진 설정
-        let currentOcrEngine = localStorage.getItem('pdf_translator_ocr_engine') || 'google_vision';
+        let currentOcrEngine = localStorage.getItem('pdf_translator_ocr_engine') || 'paddleocr';
 
         // 번역 처리 방식 설정
         let currentTranslateMode = localStorage.getItem('pdf_translator_translate_mode') || 'sequential';
@@ -6009,8 +5789,6 @@ HTML_TEMPLATE = """
         const addTermBtn = document.getElementById('addTermBtn');
         const dictSearch = document.getElementById('dictSearch');
         const dictCount = document.getElementById('dictCount');
-        const aiTermInput = document.getElementById('aiTermInput');
-        const aiAddTermBtn = document.getElementById('aiAddTermBtn');
 
         let currentDictLang = 'english';
         let dictData = {};
@@ -6114,190 +5892,6 @@ HTML_TEMPLATE = """
                 }
             } catch (err) {
                 alert('오류: ' + err.message);
-            }
-        });
-
-        // 채팅 메시지 추가 함수
-        function addChatMsg(text, type) {
-            const chatArea = document.getElementById('aiChatArea');
-            const msg = document.createElement('div');
-            msg.className = 'dict-ai-msg ' + type;
-            msg.textContent = text;
-            chatArea.appendChild(msg);
-            chatArea.scrollTop = chatArea.scrollHeight;
-            return msg;
-        }
-
-        // AI로 용어 추가 - 2단계 방식
-        aiAddTermBtn.addEventListener('click', async () => {
-            const userInput = aiTermInput.value.trim();
-            if (!userInput) {
-                addChatMsg('한글 용어를 입력해주세요.', 'error');
-                return;
-            }
-
-            // 사용자 메시지 표시
-            addChatMsg(userInput, 'user');
-            aiTermInput.value = '';
-
-            aiAddTermBtn.disabled = true;
-            aiAddTermBtn.textContent = '...';
-
-            try {
-                const aiEngine = currentAiEngine || 'gemini';
-                const apiKey = apiKeys[aiEngine] || '';
-
-                // Step 1: 영어 옵션 요청
-                const res = await fetch('/api/ai-add-term', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        input: userInput,
-                        ai_engine: aiEngine,
-                        api_key: apiKey,
-                        step: 1
-                    })
-                });
-                const data = await res.json();
-
-                if (data.step === 1 && data.options) {
-                    // 영어 옵션 표시
-                    const chatArea = document.getElementById('aiChatArea');
-                    const msgDiv = document.createElement('div');
-                    msgDiv.className = 'dict-ai-msg options';
-                    
-                    let optionsHtml = '<b>' + data.korean + '</b> 영어 번역 선택:<br><br>';
-                    data.options.forEach((opt, idx) => {
-                        optionsHtml += '<button class="dict-ai-option-btn" data-eng="' + opt + '">' + (idx+1) + '. ' + opt + '</button><br>';
-                    });
-                    optionsHtml += '<br><div class="dict-ai-custom-input">';
-                    optionsHtml += '<input type="text" placeholder="또는 직접 입력..." class="dict-ai-custom-eng">';
-                    optionsHtml += '<button class="dict-ai-custom-btn">확인</button>';
-                    optionsHtml += '</div>';
-                    
-                    msgDiv.innerHTML = optionsHtml;
-                    chatArea.appendChild(msgDiv);
-                    chatArea.scrollTop = chatArea.scrollHeight;
-                    
-                    const koreanTerm = data.korean;
-                    
-                    // 옵션 버튼 클릭 핸들러
-                    msgDiv.querySelectorAll('.dict-ai-option-btn').forEach(btn => {
-                        btn.onclick = async function() {
-                            const selectedEng = this.dataset.eng;
-                            await processStep2(koreanTerm, selectedEng, aiEngine, apiKey, msgDiv);
-                        };
-                    });
-                    
-                    // 직접 입력 핸들러
-                    msgDiv.querySelector('.dict-ai-custom-btn').onclick = async function() {
-                        const customEng = msgDiv.querySelector('.dict-ai-custom-eng').value.trim();
-                        if (!customEng) {
-                            alert('영어를 입력해주세요.');
-                            return;
-                        }
-                        await processStep2(koreanTerm, customEng, aiEngine, apiKey, msgDiv);
-                    };
-                    
-                } else if (data.error) {
-                    addChatMsg('오류: ' + data.error, 'error');
-                }
-
-            } catch (err) {
-                addChatMsg('오류: ' + err.message, 'error');
-            } finally {
-                aiAddTermBtn.disabled = false;
-                aiAddTermBtn.textContent = '전송';
-            }
-        });
-        
-        // Step 2: 선택된 영어로 전체 번역
-        async function processStep2(korean, english, aiEngine, apiKey, msgDiv) {
-            msgDiv.innerHTML = '<b>' + korean + '</b> → <b>' + english + '</b><br>다른 언어 번역 중...';
-            
-            try {
-                const res = await fetch('/api/ai-add-term', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        step: 2,
-                        korean: korean,
-                        selected_english: english,
-                        ai_engine: aiEngine,
-                        api_key: apiKey,
-                        save: false
-                    })
-                });
-                const data = await res.json();
-                
-                if (data.preview) {
-                    // 미리보기 표시
-                    let reply = '<b>' + korean + '</b> 번역 결과:<br><br>';
-                    const langOrder = ['english', 'vietnamese', 'indonesian', 'chinese', 'bengali', 'myanmar'];
-                    langOrder.forEach(lang => {
-                        const t = data.translations[lang];
-                        if (t && t.full) {
-                            reply += '<b>' + lang + ':</b> ' + t.full + (t.abbr ? ' (' + t.abbr + ')' : '') + '<br>';
-                        }
-                    });
-                    
-                    reply += '<br><div class="dict-ai-btn-group">';
-                    reply += '<button class="dict-ai-confirm-btn">사전에 등록</button>';
-                    reply += '<button class="dict-ai-cancel-btn">취소</button>';
-                    reply += '</div>';
-                    
-                    msgDiv.className = 'dict-ai-msg preview';
-                    msgDiv.innerHTML = reply;
-                    
-                    // 등록 버튼
-                    msgDiv.querySelector('.dict-ai-confirm-btn').onclick = async function() {
-                        this.disabled = true;
-                        this.textContent = '등록중...';
-                        
-                        const saveRes = await fetch('/api/ai-add-term', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                step: 2,
-                                korean: korean,
-                                selected_english: english,
-                                ai_engine: aiEngine,
-                                api_key: apiKey,
-                                save: true
-                            })
-                        });
-                        const saveData = await saveRes.json();
-                        
-                        if (saveData.success) {
-                            msgDiv.className = 'dict-ai-msg success';
-                            msgDiv.innerHTML = '"' + korean + '" 사전에 등록 완료!';
-                            await loadDictionary();
-                        } else {
-                            msgDiv.className = 'dict-ai-msg error';
-                            msgDiv.textContent = '등록 실패: ' + (saveData.error || '알 수 없는 오류');
-                        }
-                    };
-                    
-                    // 취소 버튼
-                    msgDiv.querySelector('.dict-ai-cancel-btn').onclick = function() {
-                        msgDiv.className = 'dict-ai-msg ai';
-                        msgDiv.textContent = '등록 취소됨';
-                    };
-                    
-                } else if (data.error) {
-                    msgDiv.className = 'dict-ai-msg error';
-                    msgDiv.textContent = '오류: ' + data.error;
-                }
-            } catch (err) {
-                msgDiv.className = 'dict-ai-msg error';
-                msgDiv.textContent = '오류: ' + err.message;
-            }
-        }
-
-        // Enter 키로 AI 추가
-        aiTermInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                aiAddTermBtn.click();
             }
         });
 
@@ -6932,159 +6526,6 @@ def bulk_add_terms():
     if updated and save_garment_dict(GARMENT_DICT):
         return jsonify({"success": True, "korean": korean, "updated_languages": updated})
     return jsonify({"error": "No valid translations provided or save failed"}), 400
-
-
-@app.route('/api/ai-add-term', methods=['POST'])
-def ai_add_term():
-    """AI로 자연어 파싱 - 2단계 방식"""
-    global GARMENT_DICT
-    
-    data = request.json
-    user_input = data.get('input', '').strip()
-    ai_engine = data.get('ai_engine', 'gemini')
-    api_key = data.get('api_key', '')
-    step = data.get('step', 1)  # 1: 영어 옵션 제시, 2: 전체 번역
-    selected_english = data.get('selected_english', '')  # step 2에서 사용
-    korean_term = data.get('korean', '')  # step 2에서 사용
-    save_to_dict = data.get('save', False)
-    
-    if not user_input and step == 1:
-        return jsonify({"error": "입력이 필요합니다"}), 400
-    
-    # API 키 확인
-    if not api_key:
-        api_key = HARDCODED_API_KEYS.get(ai_engine, '')
-    
-    if not api_key:
-        return jsonify({"error": f"{ai_engine} API 키가 필요합니다"}), 400
-    
-    # Step 1: 한글 → 영어 옵션 3개 제시
-    if step == 1:
-        prompt = f"""You are a garment/sewing industry translator.
-
-Input: "{user_input}"
-
-Task: Extract the Korean term and suggest 3 English translation options.
-
-Respond with JSON ONLY:
-{{"korean": "한글용어", "options": ["Option 1", "Option 2", "Option 3"]}}
-
-Rules:
-- If English is already given in input, put it as first option
-- Provide industry-standard garment/sewing terminology
-- JSON ONLY, no markdown, no explanations"""
-
-    # Step 2: 선택된 영어로 나머지 언어 번역
-    else:
-        prompt = f"""Translate this garment/sewing term to 5 languages with abbreviations.
-
-Korean: "{korean_term}"
-English: "{selected_english}"
-
-Respond with JSON ONLY:
-{{
-  "vietnamese": {{"full": "...", "abbr": "..."}},
-  "indonesian": {{"full": "...", "abbr": "..."}},
-  "chinese": {{"full": "...", "abbr": "..."}},
-  "bengali": {{"full": "...", "abbr": "..."}},
-  "myanmar": {{"full": "...", "abbr": "..."}}
-}}
-
-Rules:
-- Use garment/sewing industry terminology
-- Abbreviations: 2-5 characters
-- JSON ONLY, no markdown, no explanations"""
-
-    try:
-        # AI 호출
-        if ai_engine == 'gemini':
-            model = "gemini-2.5-flash"
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1500}
-            }
-            response = requests.post(url, json=payload, headers={"Content-Type": "application/json"})
-            if response.status_code != 200:
-                return jsonify({"error": f"Gemini API error: {response.status_code}"}), 500
-            result = response.json()
-            response_text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-            
-        elif ai_engine == 'openai':
-            url = "https://api.openai.com/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-            payload = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}
-            response = requests.post(url, json=payload, headers=headers)
-            if response.status_code != 200:
-                return jsonify({"error": f"OpenAI API error: {response.status_code}"}), 500
-            result = response.json()
-            response_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-            
-        elif ai_engine == 'claude':
-            url = "https://api.anthropic.com/v1/messages"
-            headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"}
-            payload = {"model": "claude-sonnet-4-20250514", "max_tokens": 800, "messages": [{"role": "user", "content": prompt}]}
-            response = requests.post(url, json=payload, headers=headers)
-            if response.status_code != 200:
-                return jsonify({"error": f"Claude API error: {response.status_code}"}), 500
-            result = response.json()
-            response_text = result.get("content", [{}])[0].get("text", "")
-        else:
-            return jsonify({"error": f"Unsupported AI engine: {ai_engine}"}), 400
-        
-        print(f"[AI-Dict] Step {step} response: {response_text}", flush=True)
-        
-        # JSON 파싱
-        import re
-        parsed = None
-        try:
-            parsed = json.loads(response_text.strip())
-        except:
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-            if json_match:
-                try:
-                    parsed = json.loads(json_match.group())
-                except:
-                    pass
-        
-        if not parsed:
-            return jsonify({"error": "JSON 파싱 실패", "raw": response_text[:300]}), 200
-        
-        # Step 1 응답
-        if step == 1:
-            korean = parsed.get('korean', '').strip()
-            options = parsed.get('options', [])
-            if not korean or not options:
-                return jsonify({"error": "한글 용어 또는 옵션을 추출할 수 없습니다", "raw": response_text[:300]}), 200
-            return jsonify({"step": 1, "korean": korean, "options": options})
-        
-        # Step 2 응답
-        else:
-            translations = {"english": {"full": selected_english, "abbr": ""}}
-            for lang in ['vietnamese', 'indonesian', 'chinese', 'bengali', 'myanmar']:
-                trans_data = parsed.get(lang, {})
-                if isinstance(trans_data, dict):
-                    translations[lang] = {"full": trans_data.get('full', ''), "abbr": trans_data.get('abbr', '')}
-                else:
-                    translations[lang] = {"full": str(trans_data), "abbr": ""}
-            
-            # save=False면 미리보기
-            if not save_to_dict:
-                return jsonify({"step": 2, "preview": True, "korean": korean_term, "translations": translations})
-            
-            # save=True면 저장
-            GARMENT_DICT = load_garment_dict()
-            for lang, trans in translations.items():
-                if lang in GARMENT_DICT and trans.get('full'):
-                    GARMENT_DICT[lang][korean_term] = trans
-            
-            if save_garment_dict(GARMENT_DICT):
-                return jsonify({"success": True, "korean": korean_term, "translations": translations})
-            return jsonify({"error": "사전 저장 실패"}), 500
-            
-    except Exception as e:
-        print(f"[AI-Dict] Error: {e}", flush=True)
-        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':
