@@ -5205,6 +5205,7 @@ HTML_TEMPLATE = """
             memoEditor.classList.remove('active');
             memoEditorState = null;
             memoEditorText.value = '';
+            clearTempArrow();  // 메모 취소 시 임시 화살표도 제거
         }
 
         function openMemoEditor({ mode, memoId, position, clientX, clientY, arrow = null }) {
@@ -5395,7 +5396,7 @@ HTML_TEMPLATE = """
             
             let arrowsHtml = `
                 <defs>
-                    <marker id="arrowhead-saved" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                    <marker id="arrowhead-saved" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
                         <polygon points="0 0, 10 3.5, 0 7" fill="#667eea"/>
                     </marker>
                 </defs>
@@ -5582,7 +5583,7 @@ HTML_TEMPLATE = """
             
             arrowLayer.innerHTML = `
                 <defs>
-                    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
                         <polygon points="0 0, 10 3.5, 0 7" fill="#667eea"/>
                     </marker>
                 </defs>
@@ -5595,6 +5596,7 @@ HTML_TEMPLATE = """
         }
 
         // 우클릭 + 드래그로 화살표 생성
+        // 시작점 = 화살촉 (텍스트), 끝점 = 메모박스
         previewStage.addEventListener('mousedown', (e) => {
             if (e.button !== 2) return;  // 우클릭만
             if (!isPreviewMode) return;
@@ -5602,43 +5604,21 @@ HTML_TEMPLATE = """
             const memoEl = e.target.closest('.memo-item');
             if (memoEl) return;  // 메모 위에서는 기존 동작
 
+            // ★ 이전 상태 강제 초기화
+            arrowDragState = null;
+            clearTempArrow();
+
             const rect = getStageRect();
             const startX = e.clientX - rect.left;
             const startY = e.clientY - rect.top;
             
-            // ★ bbox 중앙으로 스냅 시도 (에러 방지)
-            let snappedPosition = null;
-            try {
-                snappedPosition = findNearestBboxCenter(startX, startY);
-            } catch (err) {
-                console.error('[Arrow] Snap error:', err);
-            }
-            
-            let startPosition;
-            let snappedStartX = startX;
-            let snappedStartY = startY;
-            
-            if (snappedPosition) {
-                // ★ 줌을 고려하여 비율 → 스테이지 픽셀 변환
-                const imgRect = previewImg.getBoundingClientRect();
-                const imgOffsetX = imgRect.left - rect.left;
-                const imgOffsetY = imgRect.top - rect.top;
-                
-                startPosition = snappedPosition;
-                snappedStartX = imgOffsetX + snappedPosition.x * imgRect.width;
-                snappedStartY = imgOffsetY + snappedPosition.y * imgRect.height;
-                console.log('[Arrow] Snapped to bbox center:', snappedPosition);
-                console.log('[Arrow] Image offset:', imgOffsetX, imgOffsetY);
-                console.log('[Arrow] Snapped stage coords:', snappedStartX, snappedStartY);
-            } else {
-                // 스냅 대상 없으면 원래 클릭 위치 사용
-                startPosition = clientToStageRatio(e.clientX, e.clientY);
-            }
+            // ★ 클릭한 위치 그대로 사용 (스냅 없음)
+            const arrowTargetPosition = clientToStageRatio(e.clientX, e.clientY);
 
             arrowDragState = {
-                startX: snappedStartX,
-                startY: snappedStartY,
-                startPosition,
+                startX: startX,
+                startY: startY,
+                arrowTargetPosition,
                 startClientX: e.clientX,
                 startClientY: e.clientY,
                 hasDragged: false
@@ -5666,18 +5646,19 @@ HTML_TEMPLATE = """
             if (!arrowDragState) return;
 
             if (arrowDragState.hasDragged) {
-                // ★ 화살표 유지 (clearTempArrow 제거) - 메모 에디터에서 처리
-                const endPosition = clientToStageRatio(e.clientX, e.clientY);
+                // ★ 끝점 = 메모박스 위치 (마우스 놓은 곳)
+                const memoPosition = clientToStageRatio(e.clientX, e.clientY);
+                
                 // 메모 에디터 열기 (화살표 정보 포함)
                 openMemoEditor({
                     mode: 'add',
                     memoId: null,
-                    position: endPosition,  // 메모박스 위치
+                    position: memoPosition,  // 메모박스 위치 = 드래그 끝점
                     clientX: e.clientX,
                     clientY: e.clientY,
                     arrow: {
-                        targetX: arrowDragState.startPosition.x,  // 화살촉 위치
-                        targetY: arrowDragState.startPosition.y
+                        targetX: arrowDragState.arrowTargetPosition.x,  // 화살촉 위치 = 드래그 시작점 (bbox 스냅)
+                        targetY: arrowDragState.arrowTargetPosition.y
                     }
                 });
             }
