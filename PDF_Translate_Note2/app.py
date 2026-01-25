@@ -5267,13 +5267,6 @@ HTML_TEMPLATE = """
             memoLayer.innerHTML = '';
             arrowLayer.innerHTML = '';  // ★ 화살표도 초기화
             
-            // ★ 미리보기 모드일 때는 SVG 오버레이 숨김 (이미지에 합성됨)
-            if (isPreviewMode) {
-                memoLayer.style.display = 'none';
-                arrowLayer.style.display = 'none';
-                return;
-            }
-            
             const page = pagesData[currentPage];
             if (!page) {
                 memoLayer.style.display = 'none';
@@ -5282,7 +5275,8 @@ HTML_TEMPLATE = """
             }
             const memos = ensureMemoArray(page);
             memoLayer.style.display = 'block';
-            arrowLayer.style.display = 'block';
+            // ★ 미리보기 모드에서는 화살표 레이어 숨김 (이미지에 합성됨)
+            arrowLayer.style.display = isPreviewMode ? 'none' : 'block';
 
             const rect = getStageRect();
             const stageWidth = rect.width || 1;
@@ -5299,13 +5293,23 @@ HTML_TEMPLATE = """
                 memoEl.style.width = `${style.width}px`;
                 memoEl.style.padding = `${style.padding}px`;
                 memoEl.style.fontSize = `${style.fontSize}px`;
-                memoEl.style.color = style.color;
-                memoEl.style.opacity = style.opacity;
                 memoEl.style.fontWeight = style.bold ? 'bold' : 'normal';
-                memoEl.style.backgroundColor = style.backgroundEnabled ? style.backgroundColor : 'transparent';
                 memoEl.style.border = style.borderWidth > 0
                     ? `${style.borderWidth}px solid ${style.borderColor}`
                     : 'none';
+                
+                // ★ 미리보기 모드에서는 투명하게 (클릭 영역만 제공)
+                if (isPreviewMode) {
+                    memoEl.style.color = 'transparent';
+                    memoEl.style.backgroundColor = 'transparent';
+                    memoEl.style.border = 'none';
+                    memoEl.style.opacity = '0.01';  // 완전 투명하면 클릭 안될 수 있음
+                    memoEl.style.cursor = 'pointer';
+                } else {
+                    memoEl.style.color = style.color;
+                    memoEl.style.opacity = style.opacity;
+                    memoEl.style.backgroundColor = style.backgroundEnabled ? style.backgroundColor : 'transparent';
+                }
 
                 memoEl.addEventListener('mousedown', (e) => {
                     if (e.button !== 0) return;
