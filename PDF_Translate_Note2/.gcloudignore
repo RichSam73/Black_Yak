@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Test files
+test_*.py
+*_test.py
+
+# Output files
+output/
+uploads/
+
+# Documentation
+*.md
+
+# Local config
+.env
+
+# Misc
+diff_check.txt
+
+# Binary files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.pdf

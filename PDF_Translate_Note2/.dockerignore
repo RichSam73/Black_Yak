@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Test files
+test_*.py
+*_test.py
+
+# Output files (generated at runtime)
+output/
+uploads/
+
+# Documentation
+*.md
+
+# Local config (use environment variables in Cloud Run)
+.env
+
+# Misc
+diff_check.txt
+
+# Binary files that cause issues
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.pdf
+*.cpython*

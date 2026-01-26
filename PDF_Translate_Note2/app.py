@@ -135,13 +135,28 @@ import time
 from collections import Counter
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed  # 병렬 처리용
-from flask import Flask, render_template_string, request, send_file, jsonify
+from flask import Flask, render_template_string, request, send_file, jsonify, redirect, url_for
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
-from paddleocr import PaddleOCR
 import cv2
 import fitz  # PyMuPDF
-from img2table.document import Image as Img2TableImage  # 테이블 감지용
+
+# PaddleOCR (선택적 - Cloud Run에서는 Google Vision만 사용)
+try:
+    from paddleocr import PaddleOCR
+    PADDLEOCR_AVAILABLE = True
+except ImportError:
+    PaddleOCR = None
+    PADDLEOCR_AVAILABLE = False
+
+# img2table (선택적)
+try:
+    from img2table.document import Image as Img2TableImage
+    IMG2TABLE_AVAILABLE = True
+except ImportError:
+    Img2TableImage = None
+    IMG2TABLE_AVAILABLE = False
 
 # Google Cloud Vision OCR
 from google.cloud import vision
@@ -178,6 +193,42 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='repla
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 app = Flask(__name__)
+app.secret_key = 'pdf_translator_secret_key_2026'  # 세션 암호화 키
+
+# ★ 로그인 설정
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.login_message = '로그인이 필요합니다.'
+
+# ★ 사용자 계정 (하드코딩) - 필요시 여기서 수정
+USERS = {
+    "sije_sam": "sije_sam",  # 아이디: 비밀번호
+    # 사용자 추가 예시:
+    # "user2": "password2",
+}
+
+class User(UserMixin):
+    def __init__(self, username):
+        self.id = username
+
+@login_manager.user_loader
+def load_user(username):
+    if username in USERS:
+        return User(username)
+    return None
+
+# ★ 모든 라우트 보호 (로그인 제외)
+@app.before_request
+def require_login():
+    # 로그인 페이지와 정적 파일은 제외
+    allowed_endpoints = ['login', 'static']
+    if request.endpoint not in allowed_endpoints and not current_user.is_authenticated:
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            # API 요청인 경우 401 반환
+            return jsonify({"success": False, "error": "로그인이 필요합니다."}), 401
+        # 일반 요청인 경우 로그인 페이지로 리다이렉트
+        return redirect(url_for('login'))
 
 # 설정
 OLLAMA_URL = "http://localhost:11434/api/generate"
@@ -192,6 +243,28 @@ HARDCODED_API_KEYS = {
     "claude_seam": os.environ.get("CLAUDE_API_KEY_SEAM", ""),
     "gemini": os.environ.get("GEMINI_API_KEY", "")
 }
+
+# ★ 한글 폰트 경로 (Windows + Linux 호환)
+KOREAN_FONT_PATHS = [
+    # Windows
+    "malgun.ttf",
+    "C:/Windows/Fonts/malgun.ttf",
+    # Linux (Cloud Run - Noto CJK)
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJKkr-Regular.otf",
+]
+
+def load_korean_font(font_size):
+    """한글 폰트 로드 (Windows/Linux 호환)"""
+    font_size = max(6, font_size)
+    for font_path in KOREAN_FONT_PATHS:
+        try:
+            return ImageFont.truetype(font_path, font_size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
 
 # ★ Google Cloud Vision OCR 설정
 VISION_KEY_PATH = os.path.join(os.path.dirname(__file__), "vision-key.json")
@@ -531,7 +604,11 @@ GARMENT_DICT = load_garment_dict()
 ocr_engine = None
 
 def get_ocr_engine():
+    """PaddleOCR 엔진 반환 (Cloud Run에서는 None 반환)"""
     global ocr_engine
+    if not PADDLEOCR_AVAILABLE:
+        print("[init] PaddleOCR not available - using Google Vision only")
+        return None
     if ocr_engine is None:
         import os
         # ★ 연결 체크 비활성화 (속도 향상)
@@ -2045,14 +2122,8 @@ def render_legend(draw, used_abbreviations, image_width, legend_y, font_size=8):
     legend_parts = [f"{abbr}={full}" for abbr, full in sorted(used_abbreviations)]
     legend_text = "* " + ", ".join(legend_parts)
 
-    # 폰트 로드
-    try:
-        font = ImageFont.truetype("malgun.ttf", font_size)
-    except:
-        try:
-            font = ImageFont.truetype("C:/Windows/Fonts/malgun.ttf", font_size)
-        except:
-            font = ImageFont.load_default()
+    # 폰트 로드 (Windows/Linux 호환)
+    font = load_korean_font(font_size)
 
     # 텍스트 너비 계산
     text_bbox = draw.textbbox((0, 0), legend_text, font=font)
@@ -2083,13 +2154,7 @@ def draw_vertical_text(draw, text, x, y, font, fill, box_width, box_height):
     font_size = min(int(char_height * 0.9), int(box_width * 0.9))
     font_size = max(font_size, 6)  # 최소 6px
     
-    try:
-        adjusted_font = ImageFont.truetype("malgun.ttf", font_size)
-    except:
-        try:
-            adjusted_font = ImageFont.truetype("C:/Windows/Fonts/malgun.ttf", font_size)
-        except:
-            adjusted_font = font
+    adjusted_font = load_korean_font(font_size)
     
     # 각 글자를 세로로 배치
     current_y = y
@@ -2152,7 +2217,14 @@ def load_memo_font(font_size, bold=False):
     font_candidates = []
     if bold:
         font_candidates.extend(["arialbd.ttf", "C:/Windows/Fonts/arialbd.ttf"])
+    # Windows 폰트
     font_candidates.extend(["malgun.ttf", "C:/Windows/Fonts/malgun.ttf"])
+    # Linux 폰트 (Cloud Run용 - Noto CJK)
+    font_candidates.extend([
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    ])
 
     for font_path in font_candidates:
         try:
@@ -2379,14 +2451,7 @@ def replace_text_in_image(image_path, translations, output_path, target_lang="en
         font = None
         text_width = 0
         for size in font_sizes:
-            try:
-                font = ImageFont.truetype("malgun.ttf", size)
-            except:
-                try:
-                    font = ImageFont.truetype("C:/Windows/Fonts/malgun.ttf", size)
-                except:
-                    font = ImageFont.load_default()
-                    break
+            font = load_korean_font(size)
 
             text_bbox_size = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
             text_width = text_bbox_size[2] - text_bbox_size[0]
@@ -2632,14 +2697,7 @@ def generate_preview_image(image_base64, translations, target_lang='english', me
         font = None
         text_width = 0
         for size in font_sizes:
-            try:
-                font = ImageFont.truetype("malgun.ttf", size)
-            except:
-                try:
-                    font = ImageFont.truetype("C:/Windows/Fonts/malgun.ttf", size)
-                except:
-                    font = ImageFont.load_default()
-                    break
+            font = load_korean_font(size)
 
             text_bbox_size = draw_temp.textbbox((0, 0), translated_text, font=font, anchor="lt")
             text_width = text_bbox_size[2] - text_bbox_size[0]
@@ -6488,7 +6546,158 @@ HTML_TEMPLATE = """
 """
 
 
+# ★ 로그인 페이지 HTML
+LOGIN_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Translator - 로그인</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Malgun Gothic', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .login-container {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            width: 100%;
+            max-width: 400px;
+        }
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .login-header h1 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        .login-header p {
+            color: #666;
+            font-size: 14px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e1e1e1;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .error-message {
+            background: #fee;
+            color: #c00;
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .flash-message {
+            background: #e7f3ff;
+            color: #0066cc;
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>PDF Translator</h1>
+            <p>의류 기술 문서 번역 시스템</p>
+        </div>
+        {% if error %}
+        <div class="error-message">{{ error }}</div>
+        {% endif %}
+        {% if message %}
+        <div class="flash-message">{{ message }}</div>
+        {% endif %}
+        <form method="POST" action="/login">
+            <div class="form-group">
+                <label for="username">아이디</label>
+                <input type="text" id="username" name="username" required autofocus>
+            </div>
+            <div class="form-group">
+                <label for="password">비밀번호</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit" class="login-btn">로그인</button>
+        </form>
+    </div>
+</body>
+</html>
+"""
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    error = None
+    message = request.args.get('message', None)
+
+    if request.method == 'POST':
+        username = request.form.get('username', '')
+        password = request.form.get('password', '')
+
+        if username in USERS and USERS[username] == password:
+            user = User(username)
+            login_user(user, remember=True)
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('index'))
+        else:
+            error = '아이디 또는 비밀번호가 올바르지 않습니다.'
+
+    return render_template_string(LOGIN_TEMPLATE, error=error, message=message)
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login', message='로그아웃되었습니다.'))
+
 @app.route('/')
+@login_required
 def index():
     return render_template_string(HTML_TEMPLATE, version=VERSION)
 
@@ -6545,7 +6754,7 @@ def analyze():
         ai_engine = request.form.get('ai_engine', 'openai')
         api_key = request.form.get('api_key', None)
         model = request.form.get('model', None)
-        ocr_engine = request.form.get('ocr_engine', 'paddleocr')
+        ocr_engine = request.form.get('ocr_engine', 'google_vision')
         translate_mode = request.form.get('translate_mode', 'sequential')  # 'batch' 또는 'sequential'
 
         # ★ 하드코딩된 API 키 우선 사용
@@ -7214,4 +7423,7 @@ if __name__ == '__main__':
     # OCR 엔진 미리 로드
     get_ocr_engine()
 
-    app.run(host='0.0.0.0', port=7001, debug=True)
+    # Cloud Run은 PORT 환경변수 사용, 로컬은 7001
+    port = int(os.environ.get('PORT', 7001))
+    debug = os.environ.get('FLASK_DEBUG', 'true').lower() == 'true'
+    app.run(host='0.0.0.0', port=port, debug=debug)
